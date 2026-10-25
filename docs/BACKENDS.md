@@ -9,7 +9,7 @@ Create an executable file on the remote machine:
 
 - INPUT_MASTER: already clean DaVinci output, containing mixed audio.
 - OUTPUT_ENHANCED: intermediate MKV, **video 1920x1080, constant 60 fps, same presentation duration (tolerance 0.5 seconds), no embedded ASS, no original hard subs**.
-- EPISODE: S01E49..S01E55, used for logging/profiles only.
+- EPISODE: any matching first-season ID (`S01E01`, `S01E49`, ...), dynamically discovered from queued jobs.
 - Exit nonzero on failure. Never replace an already validated final video.
 - Worker uses enhanced video for picture, mixed audio comes directly from master; it then burns approved ASS after all AI processing.
 
@@ -20,7 +20,7 @@ Create an executable file on the remote machine:
 - Target order to benchmark: AI repair / upscale first → RIFE second vs RIFE first → upscale second. Choose the faster/better measured path, not a hard-coded dogma.
 - NVIDIA RTX A4000 primary GPU; identify Tesla T10 through nvidia-smi, test CUDA backend compatibility. Do not mandate a dual-GPU pipeline if slower than one.
 - Keep audio sync. No audio re-encoding during AI video inference.
-- Final encode: prefer libass + correct font files → hevc_nvenc, with a low-loss 10-bit profile if supported. Check actual output with ffprobe and sample frames.
+- Final encode: libass + correct font files **after AI** → HEVC NVENC. **Audio from DaVinci mixed master must become lossless 24-bit FLAC at >=48 kHz** (preserve native 96 kHz+ when present), not AAC or an ordinary `-c:a copy` passthrough. Output MKV and verify codec/sample-rate/bits-per-raw-sample with ffprobe. See docs/HIRES.md.
 
 ## Operational requirements
 - No sudo assumed; use venv, user-owned binaries, installed compatible CUDA.
@@ -33,3 +33,7 @@ Create an executable file on the remote machine:
 
 ## Important honesty
 The included `scripts/server_worker.py` cannot perform AI enhancement until the real `enhance.sh` is implemented and made executable. It will report WAIT_BACKEND. Do NOT replace it with a simple FFmpeg fps filter and call that AI enhancement. Backend quality and throughput are unknown until measured.
+
+## Season profile
+
+Read `config/seasons/S01.json` (cut starts after 30s, tail first white frame, OCR horizontal full-width/vertical auto). These rules apply across the whole first season, not just E49–E55. The existing in-progress E49–E55 items are merely the initial adoption set. Derive episode IDs from source file names / job files, do not code fixed episode ranges.
