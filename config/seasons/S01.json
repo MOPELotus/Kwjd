@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "season": "S01",
+  "source_basename_pattern": "^坑王驾到S01E(?P<episode>\\d{2,3})\\.",
+  "cut": {
+    "mode": "stream_copy",
+    "opening_seconds": 30,
+    "tail": "first_white_frame",
+    "scan_tail_seconds": [
+      180,
+      300,
+      600
+    ],
+    "allow_extra_cut_only": true,
+    "tail_safety_seconds": 0.25
+  },
+  "ocr": {
+    "backend_preference": "VideOCR",
+    "use_ui_baseline_defaults": true,
+    "crop": {
+      "horizontal": "full_width",
+      "vertical": "auto_from_representative_samples",
+      "include_short_long_two_line": true
+    },
+    "preserve_visible_spaces": true,
+    "forbid_invented_punctuation": true,
+    "remove_background_clothes_logo": true
+  },
+  "master": {
+    "engine": "DaVinci Resolve Studio",
+    "human_steps": [
+      "Magic Mask",
+      "scenic background composition",
+      "Fairlight mix"
+    ],
+    "track_reference_db": {
+      "background": -14,
+      "show": 10
+    },
+    "check_peak_and_clipping": true
+  },
+  "post": {
+    "quality_target": "1080p60",
+    "interpolation": "RIFE_scene_cut_aware",
+    "upscale": "test_against_no_upscale",
+    "subtitle": "ASS_final_stage",
+    "audio_preset": "bilibili_hires"
+  }
+}
