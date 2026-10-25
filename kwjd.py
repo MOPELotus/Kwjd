@@ -179,6 +179,30 @@ def cmd_validate_srt(args: argparse.Namespace) -> int:
     return 0 if not overlaps or args.allow_overlaps else 2
 
 
+
+def cmd_seal_srt(args: argparse.Namespace) -> int:
+    if not args.approve:
+        raise ValueError("Explicit --approve required; file existence is not OCR-review completion")
+    file = Path(args.file)
+    cues = read_srt(file)
+    overlaps = sum(cues[i][0] < cues[i - 1][1] for i in range(1, len(cues)))
+    if overlaps:
+        raise ValueError(f"Refusing to seal SRT with {overlaps} overlapping entries")
+    marker = Path(args.marker) if args.marker else file.with_name(file.name + ".ready.json")
+    sha = hashlib.sha256(file.read_bytes()).hexdigest()
+    if marker.exists():
+        prior = json.loads(marker.read_text(encoding="utf-8"))
+        if prior.get("sha256") == sha:
+            print(f"Already sealed: {marker}")
+            return 0
+        raise ValueError(f"Existing seal differs: {marker}; inspect first, do not overwrite")
+    atomic_json(marker, {"schema_version": 1, "source": file.name, "sha256": sha,
+                         "bytes": file.stat().st_size, "cues": len(cues),
+                         "reviewed": True, "completed_at": stamp()})
+    print(f"Explicitly sealed reviewed OCR result: {marker}")
+    return 0
+
+
 def ass_time(milliseconds: int) -> str:
     cs = (milliseconds + 5) // 10
     hours, rest = divmod(cs, 360000)
@@ -238,6 +262,11 @@ def build_parser() -> argparse.ArgumentParser:
     v.add_argument("file")
     v.add_argument("--allow-overlaps", action="store_true")
     v.set_defaults(func=cmd_validate_srt)
+    seal = sub.add_parser("seal-srt")
+    seal.add_argument("--file", required=True)
+    seal.add_argument("--marker")
+    seal.add_argument("--approve", action="store_true")
+    seal.set_defaults(func=cmd_seal_srt)
     a = sub.add_parser("make-ass")
     a.add_argument("--srt", required=True)
     a.add_argument("--template", required=True)
