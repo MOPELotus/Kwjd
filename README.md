@@ -1,13 +1,13 @@
 # Kwjd — 坑王驾到半自动视频制作流水线
 
-Windows DaVinci Resolve + Linux GPU + Codex CLI 的双端协作工程。当前实例是《坑王驾到·卿卿误我》S01E49–E55；架构允许通过项目配置复用到其他故事。
+Windows DaVinci Resolve + Linux GPU + Codex CLI 的双端协作工程。当前配置覆盖《坑王驾到》**第一季 S01**（片头、片尾白帧、OCR 规则共用），剧集编号从素材动态发现；**S01E49–E55 是已经启动的首次接管实例，不是节目范围上限**。
 
 > **状态**：仓库含已验证的本地无损裁剪脚本和可接管现有素材的协调工具；Linux AI 增强推理后端需要由服务器端 Codex 根据实际 GPU 环境安装、实测、选择，不会伪装成已完成的功能。
 
 ## 分工
 
 - **Windows**：从原片检测白帧并无损裁切（已经完成的文件直接接管）；DaVinci Studio Magic Mask、风景+BGM 合成、Fairlight 混音；Aegisub 设计 ASS 样式；上传合成母版、取回成品。
-- **Linux**：保留现有 VideOCR/Codex OCR 任务；直接复用 `~/qingqingwu/input/S01E49.mp4` ～ `S01E55.mp4` 和已生成的 `output/*.zh.srt`；负责后续字幕审校、超分、补帧、ASS 渲染和最终编码。
+- **Linux**：保留现有 VideOCR/Codex OCR 任务；直接复用 `~/qingqingwu/input/S01E49.mp4` ～ `S01E55.mp4` 和已生成的 `output/*.zh.srt`；负责后续字幕审校、超分、补帧、ASS 渲染、HEVC/FLAC Hi-Res 规格最终编码。
 - **交接**：GitHub 存放共享代码，SSH/SCP 传输素材，磁盘上的 JSON 清单是持久化状态；**两个 Codex 不需要长期互相聊天**。
 
 ## 快速开始
@@ -50,7 +50,8 @@ python3 kwjd.py status --role linux
 
 ```text
 AGENTS.md                  双端 Codex 约定
-config/project.json        可复用实例配置（E49–E55）
+config/project.json        S01 动态剧集发现、后期输出及音频规格
+config/seasons/S01.json    第一季共用片头、片尾白帧与 OCR 配置
 kwjd.py                    接管、状态、字幕校验与样式生成
 scripts/
   cut/qqw-local-cut-upload-v2.ps1   已确认可用的裁剪/传输脚本
@@ -63,3 +64,12 @@ tests/                    不依赖 GPU 的回归测试
 ```
 
 本仓库不上传任何大型媒体。真实工作数据保留在 `D:\qingqingwu` 和 `~/qingqingwu`。
+
+## 第一季配置与 Hi-Res 投稿音频
+
+- **动态发现**：`config/project.json` 的 `season=S01`；`config/seasons/S01.json` 固定本季片头 30 秒、片尾取首个纯白帧、OCR 横向全宽/纵向自检。不再限制 S01E49–55。新素材用 `S01E##`（可扩展 3 位数字）识别，实际文件名仍可包含节目标题。
+- **已有进度接管**：`bootstrap_episodes` 里的 E49–55 仅为了首次显示当前任务，不意味着必须重跑或必须处理全部 E01–E58。执行 adopt/status 不会重新裁剪/识别。
+- **最后输出音频**：默认 HEVC 1080p60 视频 + **FLAC 24-bit / 48 kHz（或母版已具备的 ≥96 kHz 原生采样率）** 封装为 MKV；不是 AAC 码率升级。B 站官方 Hi-Res 投稿规格要求无损编码、≥48 kHz、≥24-bit，投稿时还需要账号/投稿入口提供相应功能并勾选 Hi-Res，不能由本工具保证平台显示标识。
+- **真实性**：从普通 AAC 或 16-bit 重新量化为 24-bit 并不会恢复原本不存在的高频/动态细节；只是保证最终混音采用无损编码并满足已公开的上传音频参数。
+
+详情：[第一季配置](config/seasons/S01.json) · [音频导出与 B 站投稿](docs/HIRES.md) · [动态命名与迁移](docs/ADOPTION.md)。
