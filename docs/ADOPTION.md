@@ -40,3 +40,13 @@ Edit `config/project.json` episode range, target settings, source directories, a
 - `adopt --refresh` intentionally replaces only its own discovery snapshot, not media or job state.
 - Job files live in `post/jobs` and are written atomically. Running `server_worker.py --once` handles the first eligible job. `--loop` can remain alive across SSH disconnect when started via tmux/systemd user.
 - Unexpected `FAILED` job states require investigation; do not automatically requeue and destroy evidence.
+
+### How to bridge an already-running OCR Codex
+Do NOT send a second OCR command. In that existing remote Codex conversation, after a particular episode has completed final review, ask it to run:
+
+```bash
+cd ~/qingqingwu/repo
+python3 kwjd.py seal-srt --file ~/qingqingwu/output/S01E49.zh.srt --approve
+```
+
+Repeat for E50–E55 only as each one actually finishes. Do not seal incomplete results. The sidecar `*.srt.ready.json` is required by both the Windows fetch command and the Linux Worker; it protects against an unfinished SRT being picked up by another process.
