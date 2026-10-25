@@ -5,7 +5,7 @@ from argparse import Namespace
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from kwjd import read_srt, ass_time, cmd_make_ass, episode, inventory, discover_episodes
+from kwjd import read_srt, ass_time, cmd_make_ass, episode, inventory, discover_episodes, PROJECT, SEASON
 
 SRT = "1\n00:00:01,000 --> 00:00:02,300\n艺术啊 最简单\n\n2\n00:00:03,000 --> 00:00:04,100\n真实字幕\n"
 
@@ -38,6 +38,13 @@ class Tests(unittest.TestCase):
             self.assertIn("艺术啊 最简单", text)
             self.assertNotIn("艺术啊，最简单。", text)
             self.assertEqual(text.count("Dialogue:"), 2)
+
+    def test_first_season_audio_profile(self):
+        self.assertEqual(SEASON, "S01")
+        self.assertEqual(PROJECT["episode_discovery"], "filesystem")
+        self.assertEqual(PROJECT["audio"]["codec"], "flac")
+        self.assertGreaterEqual(PROJECT["audio"]["minimum_sample_rate"], 48000)
+        self.assertGreaterEqual(PROJECT["audio"]["minimum_bits_per_sample"], 24)
 
     def test_discovers_episode_outside_original_seven(self):
         with tempfile.TemporaryDirectory() as tmp:
