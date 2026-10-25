@@ -97,7 +97,21 @@ foreach($n in $numbers){
  $id=Ep $n
  switch($Command){
   'fetch-srt' {
-   Download "qingqingwu/output/$id.zh.srt" (Join-Path $RootDir "subtitles\$id.zh.srt")
+   $srtRemote="qingqingwu/output/$id.zh.srt"
+   $sealRemote="$srtRemote.ready.json"
+   if(-not (RemoteHash $sealRemote)){
+    Write-Warning "$id OCR review is not sealed yet; skip download"
+    break
+   }
+   $srtLocal=Join-Path $RootDir "subtitles\$id.zh.srt"
+   $sealLocal="$srtLocal.ready.json"
+   Download $srtRemote $srtLocal
+   Download $sealRemote $sealLocal
+   $seal=Get-Content -LiteralPath $sealLocal -Raw -Encoding UTF8|ConvertFrom-Json
+   if(-not $seal.reviewed){throw "Unreviewed OCR seal: $id"}
+   $digest=(Get-FileHash -LiteralPath $srtLocal -Algorithm SHA256).Hash.ToLowerInvariant()
+   if($digest -ne $seal.sha256){throw "OCR seal hash mismatch: $id"}
+   Write-Host "$id reviewed SRT verified" -ForegroundColor Green
   }
   'send-master' {
    if($MasterPath){
