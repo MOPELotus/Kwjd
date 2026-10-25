@@ -113,6 +113,16 @@ def do_job(job_path):
     if not ready(srt):
         update(job_path, job, "WAIT_SUBTITLE", "Existing OCR SRT still missing or being written")
         return
+    # OCR/Codex explicitly seals a reviewed SRT. A stable-sized file alone is not completion.
+    marker = srt.with_name(srt.name + ".ready.json")
+    if not marker.is_file():
+        update(job_path, job, "WAIT_SUBTITLE", "Waiting for explicit reviewed SRT seal")
+        return
+    seal = json.loads(marker.read_text(encoding="utf-8-sig"))
+    current_hash = hashlib.sha256(srt.read_bytes()).hexdigest()
+    if not seal.get("reviewed") or seal.get("sha256") != current_hash:
+        update(job_path, job, "WAIT_SUBTITLE", "SRT seal absent/obsolete; OCR review may still be running")
+        return
     if not style.is_file():
         update(job_path, job, "WAIT_STYLE", "Aegisub template missing")
         return
