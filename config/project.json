@@ -1,9 +1,18 @@
 {
-  "schema_version": 1,
-  "project_id": "qingqingwu-s01",
+  "schema_version": 2,
+  "project_id": "kwjd-s01",
   "season": "S01",
-  "episode_start": 49,
-  "episode_end": 55,
+  "season_profile": "config/seasons/S01.json",
+  "episode_discovery": "filesystem",
+  "bootstrap_episodes": [
+    49,
+    50,
+    51,
+    52,
+    53,
+    54,
+    55
+  ],
   "windows_root": "D:\\qingqingwu",
   "windows_source": "D:\\K坑王驾到S1",
   "linux_root": "~/qingqingwu",
@@ -13,9 +22,19 @@
     "height": 1080,
     "fps": 60,
     "codec": "hevc",
-    "audio": "preserve-fairlight-mix"
+    "container": "mkv",
+    "subtitle": "ass_burn_in_last"
+  },
+  "audio": {
+    "preset": "bilibili_hires",
+    "codec": "flac",
+    "container": "mkv",
+    "minimum_sample_rate": 48000,
+    "minimum_bits_per_sample": 24,
+    "preserve_native_rate_if_at_least": 96000,
+    "minimum_channels": 1
   },
   "minimum_free_gib": 25,
   "keep_enhanced": false,
-  "comment": "Codex must measure GPU model/backend compatibility and benchmark 30–60 sec before approving enhancement."
+  "note": "First season profile shared by all discovered S01 episodes; existing E49–E55 bootstrap without restricting later episodes."
 }
