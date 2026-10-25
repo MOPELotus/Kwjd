@@ -11,7 +11,7 @@ python kwjd.py adopt --role windows
 python kwjd.py status --role windows
 ```
 - The legacy cutter outputs `D:\qingqingwu\videos\*.mp4`, `manifests\S01E49.json`, etc. The scanner finds these and records whether the existing v2 manifest claims validated stream-copy. It does NOT rerun anything.
-- Source is `D:\K坑王驾到S1` and contains other unrelated episodes; cutter restricts to E49..E55.
+- Source is `D:\K坑王驾到S1` and contains the entire S01. The existing v2 white-frame cutter now dynamically selects every matching **S01** file, while `-OnlyEpisode 49` explicitly limits a run. This does not select any other season.
 - If a previous successful cut exists, use it. Launching `cut` yourself runs existing v2 logic which skips video + manifest unless forced. No automated recuts on startup.
 - After E49 OCR finished, `fetch-srt` downloads the remote file. Since its existence is not proof that Codex review is done, **ask remote Codex to mark review complete before fetching**.
 - Once you export `D:\qingqingwu\masters\S01E49.clean-master.mp4`, use `send-master`, then `submit`.
@@ -33,7 +33,7 @@ df -h ~
 - To bring up queued AI jobs, implement and validate the backend per BACKENDS.md first. Never mark AI output done from file existence alone.
 
 ### Multiple projects later
-Edit `config/project.json` episode range, target settings, source directories, and filenames. E49–E55 are the first instance, not assumed to be every story. The current Windows cutter and controller are story-specific; future refactoring should separate generic orchestration from story adapters, preserving reproducibility.
+Current profile is the **entire first season** (`config/seasons/S01.json`), not a seven-episode project. Episodes are discovered from existing S01 files; `bootstrap_episodes` lists E49–E55 only to make existing in-progress work visible. The cutter's known-good first-season crop/white-frame logic applies to other S01 episodes too. A future new season should get its own profile and cutter validation, not silently reuse the S01 rules.
 
 ### Restarts
 - `status` is side-effect free.
@@ -50,3 +50,10 @@ python3 kwjd.py seal-srt --file ~/qingqingwu/output/S01E49.zh.srt --approve
 ```
 
 Repeat for E50–E55 only as each one actually finishes. Do not seal incomplete results. The sidecar `*.srt.ready.json` is required by both the Windows fetch command and the Linux Worker; it protects against an unfinished SRT being picked up by another process.
+
+## Dynamic episode naming
+
+- Full original filenames can be e.g. `坑王驾到S01E01. 2016-09-25丨探地穴（一）....mp4`; use the `S01E01` stable identifier for intermediate/remote files and retain the original title in the local trimmed video.
+- The controller finds `S01E##` (or 3-digit extension) from existing files under `videos/`, `masters/`, `subtitles/`, etc.; the Linux worker scans matching `post/jobs/S01E*.json` and will not assume E49–55 is the complete season.
+- Examples: `pwsh ./scripts/qqw.ps1 -Command cut -Episode 8`; `pwsh ./scripts/qqw.ps1 -Command send-master -Episode 8` when E08 has a clean master.
+- The original E49–55 videos and already-running SRTs are untouched; `adopt` remains non-destructive. Never bulk-create reviewed-SRT seals from file presence alone.
