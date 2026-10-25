@@ -1,6 +1,6 @@
 #requires -Version 7.0
 <#
-《卿卿误我》S01E49-E55 本地无重编码裁剪与 SSH 上传（v2：多组白帧选首组）
+《坑王驾到》第一季 S01 通用无重编码裁剪与 SSH 上传（延续 v2 白帧逻辑）
 运行：pwsh -NoProfile -ExecutionPolicy Bypass -File .\qqw-local-cut-upload.ps1
 试运行（只裁剪不上传）：... -Mode CutOnly -OnlyEpisode 49 -ReuseWhiteCache
 只上传已裁剪文件：... -Mode UploadOnly
@@ -258,24 +258,25 @@ function RemoteSize([string]$remote) {
     return [long]::Parse($line[-1])
 }
 function Upload([string]$local, [int]$ep) {
-    $remote = "qingqingwu/input/S01E$ep.mp4"
+    $id = 'S01E{0:d2}' -f $ep
+    $remote = "qingqingwu/input/$id.mp4"
     $size = (Get-Item -LiteralPath $local).Length
     $existing = RemoteSize $remote
     if ($existing -eq $size) { Write-Host "  服务器已有同体积文件，跳过 E$ep 上传" -ForegroundColor DarkGreen; return }
-    $part = "qingqingwu/input/S01E$ep.mp4.uploading"
+    $part = "qingqingwu/input/$id.mp4.uploading"
     Write-Host "  上传 E$ep / $([Math]::Round($size / 1GB,2)) GiB（SCP -O）..." -ForegroundColor Cyan
     & scp.exe -O -o Compression=no -o ServerAliveInterval=30 -o ServerAliveCountMax=6 -- $local "${SshAlias}:$part"
     if ($LASTEXITCODE -ne 0) { throw "E$ep 上传失败。SCP 不支持可靠断点续传，该集可重跑。" }
     $uploaded = RemoteSize $part
     if ($uploaded -ne $size) { throw "E$ep 上传大小校验失败！本地 $size 远端 $uploaded" }
-    & ssh -o BatchMode=yes $SshAlias "mv -f '$part' '$remote'"
+    & ssh -o BatchMode=yes $SshAlias "test ! -e '$remote' && mv '$part' '$remote'"
     if ($LASTEXITCODE -ne 0) { throw "E$ep 临时文件重命名失败" }
     Write-Host "  E$ep 上传完成" -ForegroundColor Green
 }
 function GetFiles {
     if (-not (Test-Path -LiteralPath $SourceDir)) { throw "源视频目录不存在：$SourceDir" }
-    $selected = @(Get-ChildItem -LiteralPath $SourceDir -File -Filter '*.mp4' | Where-Object { $_.Name -match '^坑王驾到S01E(49|5[0-5])\.' } | Sort-Object Name)
-    if ($selected.Count -ne 7) { throw "预期 E49～E55 共 7 个视频，实际找到 $($selected.Count) 个。不会误处理其余剧集。" }
+    $selected = @(Get-ChildItem -LiteralPath $SourceDir -File -Filter '*.mp4' | Where-Object { $_.Name -match '^坑王驾到S01E\d{2,3}\.' } | Sort-Object Name)
+    if ($selected.Count -eq 0) { throw "未找到《坑王驾到》第一季 S01 源视频。" }
     return $selected
 }
 
@@ -283,19 +284,21 @@ if ($Mode -in @('CutUpload','CutOnly')) { Need 'ffmpeg'; Need 'ffprobe' }
 if ($Mode -in @('CutUpload','UploadOnly','FetchSubtitles')) { Need 'ssh'; Need 'scp.exe' }
 $all = @(GetFiles)
 if ($OnlyEpisode -ne 0) {
-    if ($OnlyEpisode -lt 49 -or $OnlyEpisode -gt 55) { throw '-OnlyEpisode 仅支持 49～55，或默认 0 表示全部。' }
-    $all = @($all | Where-Object { $_.Name -match ('^坑王驾到S01E{0}\.' -f $OnlyEpisode) })
+    if ($OnlyEpisode -lt 1 -or $OnlyEpisode -gt 999) { throw '-OnlyEpisode 必须为 1～999，0 表示自动扫描所有第一季素材。' }
+    $all = @($all | Where-Object { [int]([regex]::Match($_.Name, '^坑王驾到S01E(\d{2,3})\.')).Groups[1].Value -eq $OnlyEpisode })
     if ($all.Count -ne 1) { throw "找不到 E$OnlyEpisode 的唯一源视频。" }
 }
 Write-Host "来源: $SourceDir"
 Write-Host "输出: $RootDir"
-Write-Host "模式: $Mode | 视频: E49-E55" -ForegroundColor Cyan
+Write-Host "模式: $Mode | 第一季已发现 $($all.Count) 回" -ForegroundColor Cyan
 
 if ($Mode -eq 'FetchSubtitles') {
+    throw '请使用 scripts/qqw.ps1 -Command fetch-srt（需审校完成哈希标记），禁止旧脚本直接下载未完成字幕。'
     foreach ($file in $all) {
         $ep = [int]([regex]::Match($file.Name, '^坑王驾到S01E(\d+)')).Groups[1].Value
         $local = Join-Path $script:SubtitleDir ($file.BaseName + '.zh.srt')
-        $remote = "${SshAlias}:qingqingwu/output/S01E$ep.zh.srt"
+        $id = 'S01E{0:d2}' -f $ep
+        $remote = "${SshAlias}:qingqingwu/output/$id.zh.srt"
         & scp.exe -O -o Compression=no $remote $local
         if ($LASTEXITCODE -ne 0) { Write-Warning "E$ep 字幕尚未生成或下载失败" }
         else { Write-Host "已下载：$local" -ForegroundColor Green }
@@ -310,7 +313,8 @@ $reports = @()
 foreach ($file in $all) {
     $ep = [int]([regex]::Match($file.Name, '^坑王驾到S01E(\d+)')).Groups[1].Value
     $out = Join-Path $script:VideoDir $file.Name
-    $manifest = Join-Path $script:ManifestDir "S01E$ep.json"
+    $id = 'S01E{0:d2}' -f $ep
+    $manifest = Join-Path $script:ManifestDir "$id.json"
     Write-Host "`n========== E$ep ==========" -ForegroundColor Yellow
     try {
         if ($Mode -ne 'UploadOnly' -and ($ForceRebuild -or -not (Test-Path -LiteralPath $out) -or -not (Test-Path -LiteralPath $manifest))) {
@@ -326,7 +330,7 @@ foreach ($file in $all) {
             Write-Host "  起始关键帧：$(Fmt $start) 秒，额外删除 $(Fmt ($start-$OpeningSeconds)) 秒"
             $copyDuration = CreateCut $file.FullName $out $start $white $TailSafetySeconds
             $meta = [ordered]@{
-                Episode = "S01E$ep"
+                Episode = $id
                 InputName = $file.Name
                 OutputName = $file.Name
                 SourceDurationSeconds = $total
@@ -348,10 +352,10 @@ foreach ($file in $all) {
             Write-Host '  使用之前已通过验证的本地裁剪结果'
         }
         if ($Mode -in @('CutUpload','UploadOnly')) { Upload $out $ep }
-        $reports += [pscustomobject]@{ Episode = "S01E$ep"; Status = 'OK'; Local = $out; Remote = "~/qingqingwu/input/S01E$ep.mp4" }
+        $reports += [pscustomobject]@{ Episode = $id; Status = 'OK'; Local = $out; Remote = "~/qingqingwu/input/$id.mp4" }
     } catch {
         Write-Warning "E$ep 处理失败：$($_.Exception.Message)"
-        $reports += [pscustomobject]@{ Episode = "S01E$ep"; Status = 'FAILED'; Error = $_.Exception.Message }
+        $reports += [pscustomobject]@{ Episode = $id; Status = 'FAILED'; Error = $_.Exception.Message }
     }
     $reports | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $script:Report -Encoding utf8
 }
@@ -359,6 +363,6 @@ $failed = @($reports | Where-Object { $_.Status -ne 'OK' })
 Write-Host "`n执行完成：$($reports.Count - $failed.Count)/$($reports.Count) 成功。详细结果：$script:Report"
 if ($failed.Count -gt 0) { throw "$($failed.Count) 回未通过校验或上传失败；请查看报告。" }
 if ($Mode -in @('CutUpload','UploadOnly')) {
-    Write-Host '服务器视频位置：~/qingqingwu/input/S01E49.mp4 ... S01E55.mp4' -ForegroundColor Green
+    Write-Host '服务器视频位置：~/qingqingwu/input/S01E*.mp4' -ForegroundColor Green
     Write-Host 'Codex 无需裁剪，直接以这些成品视频作为 OCR 输入。' -ForegroundColor Green
 }
