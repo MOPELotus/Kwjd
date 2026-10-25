@@ -44,3 +44,13 @@ A local Codex watches for finished DaVinci output; do not upload until the file 
 
 ## Avoiding rework
 Never rerun OCR to process a clean-master: OCR timecodes belong to the already trimmed source and are retained. Do not apply another 30s offset. Do not recode just to cut source. All later image composition, AI enhancement and subtitle burn-in are inherently pixel transforms and require encoding.
+
+## Mandatory OCR completion seal
+After the existing Linux Codex finishes visual/text review and validates each subtitle, run:
+
+```bash
+python3 ~/qingqingwu/repo/kwjd.py validate-srt ~/qingqingwu/output/S01E49.zh.srt
+python3 ~/qingqingwu/repo/kwjd.py seal-srt --file ~/qingqingwu/output/S01E49.zh.srt --approve
+```
+
+This writes `S01E49.zh.srt.ready.json` with SHA-256 and count. Only do this **after** Codex confirms OCR is complete. Worker and Windows fetch will refuse unsealed or changed SRT. Run once per finished episode, never during OCR generation.
