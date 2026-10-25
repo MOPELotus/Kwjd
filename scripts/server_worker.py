@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from kwjd import read_srt, PROJECT
+from kwjd import read_srt, PROJECT, EPISODE_RE
 
 ROOT = Path.home() / "qingqingwu"
 POST = ROOT / "post"
@@ -90,8 +90,8 @@ def update(job_path, job, status, reason=""):
 def do_job(job_path):
     job = json.loads(job_path.read_text(encoding="utf-8-sig"))
     ep = job["episode"]
-    if ep not in [f"S01E{n:02d}" for n in range(PROJECT["episode_start"], PROJECT["episode_end"] + 1)]:
-        raise ValueError("Episode outside project range")
+    if not EPISODE_RE.fullmatch(ep):
+        raise ValueError("Episode identifier must match configured season and E-number")
     if job.get("schema_version") != 1:
         raise ValueError("Unsupported job schema")
     master_rel = check_rel(job["master"])
@@ -143,6 +143,14 @@ def do_job(job_path):
     from argparse import Namespace
     cmd_make_ass(Namespace(srt=str(srt), template=str(style), output=str(ass)))
     src = probe(master)
+    audio_streams = [item for item in src["streams"] if item["codec_type"] == "audio"]
+    if not audio_streams:
+        raise ValueError("Bilibili Hi-Res final requires a mixed audio track in the master")
+    audio_cfg = PROJECT["audio"]
+    # Never fabricate new frequency detail: stay at 48 kHz unless source >= 96 kHz.
+    original_rate = int(audio_streams[0].get("sample_rate", 0) or 0)
+    final_rate = (original_rate if original_rate >= audio_cfg["preserve_native_rate_if_at_least"]
+                  else audio_cfg["minimum_sample_rate"])
     # Contract: enhance.sh INPUT OUTPUT EPISODE; output must be 1080p60 and duration-preserving.
     if not ready(enhanced):
         code = command([str(BACKEND), str(master), str(enhanced), ep], log)
@@ -168,7 +176,9 @@ def do_job(job_path):
                     "-map", "0:v:0", "-map", "1:a:0?",
                     "-vf", vf, "-c:v", "hevc_nvenc", "-preset", "p6",
                     "-rc", "vbr", "-cq", "18", "-b:v", "0", "-pix_fmt", "yuv420p10le",
-                    "-c:a", "copy", "-shortest", str(temp)], log)
+                    "-c:a", "flac", "-sample_fmt", "s32",
+                    "-bits_per_raw_sample", "24", "-ar", str(final_rate),
+                    "-shortest", str(temp)], log)
     if code:
         raise RuntimeError(f"ASS burn-in/encode failed ({code}); see {log}")
     out = probe(temp)
@@ -177,6 +187,15 @@ def do_job(job_path):
         raise ValueError("Final does not match codec/resolution requirements")
     if abs(duration(src) - duration(out)) > 1.0:
         raise ValueError("Final duration is inconsistent with master")
+    audio_out = [item for item in out["streams"] if item["codec_type"] == "audio"]
+    if len(audio_out) != 1:
+        raise ValueError("Final must contain the single mixed audio track")
+    if audio_out[0].get("codec_name") != "flac":
+        raise ValueError("Bilibili Hi-Res preset requires lossless FLAC audio")
+    if int(audio_out[0].get("sample_rate", 0)) < 48000:
+        raise ValueError("Audio sampling rate below 48 kHz")
+    if int(audio_out[0].get("bits_per_raw_sample", 0)) < 24:
+        raise ValueError("FLAC stream is not verified 24-bit")
     digest = hashlib.sha256()
     with temp.open("rb") as f:
         for block in iter(lambda: f.read(1024 * 1024), b""):
@@ -186,6 +205,10 @@ def do_job(job_path):
         "episode": ep, "completed_at": now(), "sha256": digest.hexdigest(),
         "master_duration": duration(src), "output_duration": duration(out),
         "final_path": str(final), "ai_backend": str(BACKEND),
+        "audio_preset": "bilibili_hires", "audio_codec": "flac",
+        "audio_bits_per_sample": 24, "audio_sample_rate": final_rate,
+        "audio_source_sample_rate": original_rate,
+        "audio_note": "High-spec lossless output cannot recover source details; Bilibili Hi-Res visibility depends on platform submission eligibility.",
         "note": "Technical checks only; user must approve video edge quality and audio.",
     }
     write_json(POST / "reports" / f"{ep}.json", report)
@@ -210,7 +233,8 @@ def main():
         except BlockingIOError:
             raise SystemExit("Another Kwjd worker owns this queue")
         while True:
-            jobs = sorted((POST / "jobs").glob("S01E??.json"))
+            jobs = sorted(path for path in (POST / "jobs").glob(f"{PROJECT['season']}E*.json")
+                          if EPISODE_RE.fullmatch(path.stem))
             for file in jobs:
                 try:
                     job = json.loads(file.read_text(encoding="utf-8-sig"))
