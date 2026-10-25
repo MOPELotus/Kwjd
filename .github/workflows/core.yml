@@ -19,3 +19,21 @@ jobs:
         run: |
           python kwjd.py --help
           python kwjd.py status --role linux --root /tmp
+
+  ps-parse:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse PowerShell scripts without running them
+        shell: pwsh
+        run: |
+          $files = @('scripts/qqw.ps1', 'scripts/cut/qqw-local-cut-upload-v2.ps1', 'scripts/diagnose/qqw-transfer-diagnose.ps1')
+          foreach ($file in $files) {
+            $tokens = $null
+            $parseErrors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file), [ref]$tokens, [ref]$parseErrors)
+            if ($parseErrors.Count -gt 0) {
+              $parseErrors | ForEach-Object { Write-Error $_.ToString() }
+              throw "PowerShell parse errors in $file"
+            }
+          }
