@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "project_id": "qingqingwu-s01",
+  "season": "S01",
+  "episode_start": 49,
+  "episode_end": 55,
+  "windows_root": "D:\\qingqingwu",
+  "windows_source": "D:\\K坑王驾到S1",
+  "linux_root": "~/qingqingwu",
+  "ssh_alias": "TodayEatUbuntu-7K62",
+  "target": {
+    "width": 1920,
+    "height": 1080,
+    "fps": 60,
+    "codec": "hevc",
+    "audio": "preserve-fairlight-mix"
+  },
+  "minimum_free_gib": 25,
+  "keep_enhanced": false,
+  "comment": "Codex must measure GPU model/backend compatibility and benchmark 30–60 sec before approving enhancement."
+}
