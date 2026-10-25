@@ -5,7 +5,7 @@ The orchestration and ASS stages exist. GPU inference must be **measured and imp
 ## Interface
 Create an executable file on the remote machine:
 
-\`~/qingqingwu/post/backend/enhance.sh INPUT_MASTER OUTPUT_ENHANCED EPISODE\`
+`~/qingqingwu/post/backend/enhance.sh INPUT_MASTER OUTPUT_ENHANCED EPISODE`
 
 - INPUT_MASTER: already clean DaVinci output, containing mixed audio.
 - OUTPUT_ENHANCED: intermediate MKV, **video 1920x1080, constant 60 fps, same presentation duration (tolerance 0.5 seconds), no embedded ASS, no original hard subs**.
@@ -32,4 +32,4 @@ Create an executable file on the remote machine:
 - A possible two-pass intermediate+sub burn exists in current Worker to make recovery simpler. If implementing fused one-pass vs-mlrt→libass→NVENC, preserve same interface or adjust Worker with tests.
 
 ## Important honesty
-The included \`scripts/server_worker.py\` cannot perform AI enhancement until the real \`enhance.sh\` is implemented and made executable. It will report WAIT_BACKEND. Do NOT replace it with a simple FFmpeg fps filter and call that AI enhancement. Backend quality and throughput are unknown until measured.
+The included `scripts/server_worker.py` cannot perform AI enhancement until the real `enhance.sh` is implemented and made executable. It will report WAIT_BACKEND. Do NOT replace it with a simple FFmpeg fps filter and call that AI enhancement. Backend quality and throughput are unknown until measured.
