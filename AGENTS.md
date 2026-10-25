@@ -37,3 +37,6 @@ Read this before touching files. Ask the human to identify your role, or infer *
 - Avoid simultaneous edits of same files by both Codex instances. One end owns a change and pushes; the other fetches and reviews. Only Linux Worker writes post/jobs state after submission.
 - Review status via kwjd.py status plus post/jobs/*.json (do not assume status command alone includes the Worker queue).
 - Completion requires actual media quality and sync checks, not just exit code.
+
+## SRT review completion handshake
+When the running OCR Codex has actually finalized one episode, explicitly run `python3 kwjd.py seal-srt --file ~/qingqingwu/output/S01E49.zh.srt --approve` (adjust episode). The resulting `.srt.ready.json` sidecar binds reviewed content to a SHA-256. Do not seal while OCR is writing. Windows fetch and AI Worker refuse an unfinished/unsealed SRT. Never manufacture completion markers in bulk.
