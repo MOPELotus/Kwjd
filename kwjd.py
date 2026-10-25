@@ -18,9 +18,10 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 PROJECT = json.loads((HERE / "config" / "project.json").read_text(encoding="utf-8"))
-EPISODES = list(range(PROJECT["episode_start"], PROJECT["episode_end"] + 1))
+SEASON = PROJECT["season"]
+BOOTSTRAP = set(PROJECT.get("bootstrap_episodes", []))
 TIMING = re.compile(r"^(\d{2,}):(\d\d):(\d\d)[,.](\d{3})\s*-->\s*(\d{2,}):(\d\d):(\d\d)[,.](\d{3})(?:\s+.*)?$")
-EPISODE_RE = re.compile(r"S01E(\d{2})", re.IGNORECASE)
+EPISODE_RE = re.compile(rf"{re.escape(SEASON)}E(\d{{2,3}})(?!\d)", re.IGNORECASE)
 
 
 def stamp() -> str:
@@ -28,9 +29,28 @@ def stamp() -> str:
 
 
 def episode(num: int) -> str:
-    if num not in EPISODES:
-        raise ValueError(f"E{num} is outside configured range {EPISODES[0]}-{EPISODES[-1]}")
-    return f"S01E{num:02d}"
+    if not 1 <= num <= 999:
+        raise ValueError(f"Invalid episode number: E{num} (expected 1..999)")
+    return f"{SEASON}E{num:02d}"
+
+
+def discover_episodes(role: str, root: Path) -> list[int]:
+    """Inventory existing S01 assets; bootstrap makes existing E49-E55 visible without
+    limiting discovery to them. A source directory with other shows is not traversed."""
+    found = set(BOOTSTRAP)
+    folders = ["videos", "manifests", "subtitles", "masters", "final"] if role == "windows" else [
+        "input", "output", "post/incoming", "post/jobs", "post/final"]
+    for folder in folders:
+        base = root / folder
+        if base.is_dir():
+            for entry in base.iterdir():
+                if entry.is_file():
+                    match = EPISODE_RE.search(entry.name)
+                    if match:
+                        n = int(match.group(1))
+                        if 1 <= n <= 999:
+                            found.add(n)
+    return sorted(found)
 
 
 def root_for(role: str, value: str | None) -> Path:
@@ -56,7 +76,7 @@ def info(path: Path | None, verified: bool = False) -> dict:
 
 def inventory(role: str, root: Path) -> dict:
     data = {"role": role, "root": str(root), "captured_at": stamp(), "episodes": {}}
-    for num in EPISODES:
+    for num in discover_episodes(role, root):
         ep = episode(num)
         if role == "windows":
             cut = safe_find(root / "videos", ep, (".mp4", ".mkv", ".mov"))
