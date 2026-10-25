@@ -16,12 +16,30 @@ param(
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 $repo=Split-Path -Parent $PSScriptRoot
+$project=Get-Content -LiteralPath (Join-Path $repo 'config/project.json') -Raw -Encoding utf8 | ConvertFrom-Json
+$season=[string]$project.season
 function AssertExit([string]$operation) {
  if($LASTEXITCODE -ne 0){ throw "$operation failed ($LASTEXITCODE)" }
 }
 function Ep([int]$n){
- if($n -lt 49 -or $n -gt 55){throw 'Allowed episodes: 49..55'}
- return ('S01E{0:d2}' -f $n)
+ if($n -lt 1 -or $n -gt 999){throw 'Episode must be 1..999'}
+ return ('{0}E{1:d2}' -f $season,$n)
+}
+function DiscoverEpisodes {
+ $candidates=New-Object 'System.Collections.Generic.HashSet[int]'
+ # Existing 49-55 are bootstrap hints, not an exclusive episode range.
+ foreach($n in $project.bootstrap_episodes){ [void]$candidates.Add([int]$n) }
+ foreach($folder in @('videos','masters','subtitles','final')){
+  $path=Join-Path $RootDir $folder
+  if(Test-Path -LiteralPath $path -PathType Container){
+   foreach($f in (Get-ChildItem -LiteralPath $path -File)){
+    if($f.Name -match ("(?i)" + [regex]::Escape($season) + "E(\d{2,3})(?!\d)")){
+     [void]$candidates.Add([int]$Matches[1])
+    }
+   }
+  }
+ }
+ return @($candidates|Sort-Object)
 }
 function RemoteHash([string]$p) {
  if($p -notmatch '^[A-Za-z0-9_./-]+$'){ throw "Unsafe remote path: $p" }
@@ -92,7 +110,8 @@ if($Command -eq 'sync-style'){
  Write-Host 'Style copied. Verify libass selected expected font before production.'
  return
 }
-$numbers=if($Episode){@($Episode)}else{@(49..55)}
+$numbers=if($Episode){@($Episode)}else{@(DiscoverEpisodes)}
+if($numbers.Count -eq 0){throw "No $season episodes discovered under $RootDir"}
 foreach($n in $numbers){
  $id=Ep $n
  switch($Command){
