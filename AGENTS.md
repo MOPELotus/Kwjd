@@ -4,9 +4,9 @@ Read this before touching files. Ask the human to identify your role, or infer *
 
 ## Shared immutable rules
 - Data roots are outside this Git repository: Windows D:\qingqingwu; Linux ~/qingqingwu.
-- Existing work is authoritative. Windows cutter v2 output/manifests may already exist. Linux OCR in ~/qingqingwu/input and ~/qingqingwu/output may be active. **Adopt and validate, do not restart, kill or overwrite.**
+- This repository covers the **entire first season S01**. Load `config/seasons/S01.json`: 30-second intro, first white frame as tail cue, horizontal full-width OCR crop with vertical detection. **Episode numbering is dynamic**, not limited to E49–E55. E49–E55 are the initial existing work. Windows cutter v2 output/manifests may already exist; Linux OCR in ~/qingqingwu/input and ~/qingqingwu/output may be active. **Adopt and validate, do not restart, kill or overwrite.**
 - Source videos and DaVinci projects are read-only. No destructive cleanup without proof there is another verified copy and specific user approval.
-- Stage contracts: stream-copy ONLY for initial trimming; DaVinci handles Magic Mask + scenic background + Fairlight mix; separate Linux GPU backend does AI enhancement; custom ASS subtitles are rendered **after** enhancement.
+- Stage contracts: stream-copy ONLY for initial trimming; DaVinci handles Magic Mask + scenic background + Fairlight mix; separate Linux GPU backend does AI enhancement; custom ASS subtitles are rendered **after** enhancement. Final video HEVC NVENC 1080p60 + **24-bit/≥48 kHz FLAC lossless mixed audio in MKV** for Bilibili Hi-Res audio-spec eligibility; see docs/HIRES.md. No automatic audio gain or loudness changes at this step.
 - Original hard-sub subtitles mostly disappear with Magic Mask replacement. Residual fragments, if any, must be corrected in the clean master before GPU enhancement.
 - OCR content must reflect video pixels: no new punctuation, keep original spaces, do not silently replace with ASR.
 - Use documented, atomic handoffs and hashes. Never mark a stage DONE on mere presence of a file. Never track or commit video, subtitle contents, proprietary fonts, cache or credentials.
@@ -16,7 +16,7 @@ Read this before touching files. Ask the human to identify your role, or infer *
 
 ## Windows role
 - Checkout repo at D:\qingqingwu\repo (or set root args). Read docs/WORKFLOW.md and docs/ADOPTION.md.
-- Run: python kwjd.py adopt --role windows; python kwjd.py status --role windows
+- Run: python kwjd.py adopt --role windows; python kwjd.py status --role windows; discover episodes from S01 filenames.
 - Respect existing D:\qingqingwu\videos and manifests. The included scripts/cut/qqw-local-cut-upload-v2.ps1 is **the previous confirmed working cutter**, not a request to recut.
 - Human operates DaVinci Studio Magic Mask and Fairlight. Create one S01E49.clean-master.mp4 under D:\qingqingwu\masters and import the finalized OCR SRT into Aegisub to design styles/template.ass. Sync actual licensed font files directly to Linux, not Git.
 - scripts/qqw.ps1 uploads verified masters over existing SSH alias; read docs/WORKFLOW.md. Windows may turn off while Linux continues.
@@ -40,3 +40,8 @@ Read this before touching files. Ask the human to identify your role, or infer *
 
 ## SRT review completion handshake
 When the running OCR Codex has actually finalized one episode, explicitly run `python3 kwjd.py seal-srt --file ~/qingqingwu/output/S01E49.zh.srt --approve` (adjust episode). The resulting `.srt.ready.json` sidecar binds reviewed content to a SHA-256. Do not seal while OCR is writing. Windows fetch and AI Worker refuse an unfinished/unsealed SRT. Never manufacture completion markers in bulk.
+
+## Season and publishing workflow
+- You may improve dynamic discovery/name parsing across all S01 material, but don't change established trimmed sources or already-sealed SRTs. A new season requires its own new profile and acceptance tests, not an automatic copy of S01 assumptions.
+- For published audio, preserve the actual Fairlight-mixed signal. Convert at final encoding to verified FLAC 24-bit and >=48kHz, sample rate >=96kHz only when present natively. Do not claim genuine new audio fidelity from resampling and do not claim the Bilibili upload UI will definitely show a Hi-Res control.
+- User has **not cloned or started using the repository yet**, so structural refactoring is welcome now; preserve existing Windows cut results and active Linux OCR tasks.
