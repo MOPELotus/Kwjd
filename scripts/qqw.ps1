@@ -5,7 +5,7 @@ Run from repository: pwsh ./scripts/qqw.ps1 -Command status
 #>
 [CmdletBinding()]
 param(
- [ValidateSet('adopt','status','doctor','cut','upload-cut','fetch-srt','send-master','sync-style','submit','fetch-final','remote-status','complete-episode','cleanup-cache')]
+ [ValidateSet('adopt','status','doctor','cut','upload-cut','fetch-srt','send-master','confirm-upload','sync-style','submit','fetch-final','remote-status','complete-episode','cleanup-cache')]
  [string]$Command='status',
  [int]$Episode=0,
  [string]$RootDir='D:\qingqingwu',
@@ -88,6 +88,18 @@ function Download([string]$from,[string]$to){
  if((Get-FileHash -Algorithm SHA256 -LiteralPath $part).Hash.ToLowerInvariant() -ne $hash){throw 'Download SHA mismatch'}
  Move-Item -LiteralPath $part -Destination $to
  Write-Host "Verified download $to" -ForegroundColor Green
+}
+function ConfirmUpload([string]$id){
+ $record=Get-Content -LiteralPath (Join-Path $RootDir ".kwjd/uploads/$id.json") -Raw -Encoding utf8|ConvertFrom-Json
+ if($record.episode -ne $id -or -not $record.verified -or -not $record.local_master_deleted){throw 'Local master release must be verified first'}
+ if((RemoteHash $record.remote_path) -ne $record.sha256){throw 'Remote master changed before release handoff'}
+ $confirmation=[ordered]@{schema_version=1;episode=$id;sha256=$record.sha256;verified=$true;local_master_deleted=$true;local_master_deleted_at=$record.local_master_deleted_at}
+ $folder=Join-Path $RootDir '.kwjd/handoffs'
+ New-Item -ItemType Directory -Force $folder|Out-Null
+ $path=Join-Path $folder "$id.upload.json"
+ $confirmation|ConvertTo-Json|Set-Content -LiteralPath "$path.tmp" -Encoding utf8
+ Move-Item -LiteralPath "$path.tmp" -Destination $path -Force
+ Upload $path "qingqingwu/post/receipts/$id.upload.json" | Out-Null
 }
 if($Episode -ne 0){[void](Ep $Episode)}
 if($Command -in @('cut','upload-cut')){
@@ -207,7 +219,9 @@ foreach($n in $numbers){
    if($LASTEXITCODE -ne 0){Write-Warning 'Upload verified; CacheClip was retained. Inspect cache state before cleanup.'}
    & python -X utf8 (Join-Path $PSScriptRoot 'resolve_cache.py') delete-uploaded-master --root $RootDir --episode $id --execute
    AssertExit 'delete only the SHA-verified uploaded local master'
+   ConfirmUpload $id
   }
+  'confirm-upload' { ConfirmUpload $id }
   'cleanup-cache' {
    & python -X utf8 (Join-Path $PSScriptRoot 'resolve_cache.py') cleanup --root $RootDir --episode $id --execute
    AssertExit 'verified upload CacheClip cleanup'

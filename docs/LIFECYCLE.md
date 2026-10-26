@@ -15,6 +15,7 @@
 用户最新持续授权：逐阶段校验交接后，清理上一步不再需要的产物，避免累积母片和缓存。只有服务器最终成片的删除必须等Windows接收验收；不要把这道门禁套到所有中间物。
 
 1. 本地母片技术检查、原子上传、双方新鲜SHA匹配后，保存上传收据并删除本地该导出母片；只清`D:/ResolveWork/CacheClip`内容，保留目录、`.gallery`及其他ResolveWork内容。开始上传先快照，清理前两次复核；新Mask或缓存变化就保留，不误删新工作。
+   本地释放后向`post/receipts/S01Exx.upload.json`发送小型确认，绑定episode/SHA、verified和local_master_deleted。Linux释放incoming前还须验证该确认，避免在Windows仍做fresh SHA核验时提前删远端母片。`send-master`自动发送，异常恢复可用`confirm-upload -Episode 49`幂等补发；它不重新上传媒体。
 2. 上一步完成后Windows可开始下一集Mask；不必等云端上一集最终回传。`gate-next`只检查此前本地上传释放，不以Windows最终接收阻挡云端已接任务。
 3. 云端母片释放前，必须保留下一步所需画面输入和原始混音的无损音频交接，校验完整解码PCM等价、哈希、时长；检查点绑定母片SHA。每步成功后才清上步，失败保留恢复必要输入和证据。
 4. 云端独立全托管至增强、补帧、ASS烧录、最终验证；一台Worker一次一集。自动选择用户可写挂载，逐文件系统计模型/输入/临时/输出峰值仍留25GiB。Windows夜间关机不阻挡云端处理；只在无法自主解决时通知。
