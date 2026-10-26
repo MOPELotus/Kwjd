@@ -81,20 +81,25 @@ def ensure_enhanced(master, enhanced, backend, episode, log, reserve_gib=25):
     if master.stat().st_mtime_ns != master_stat.st_mtime_ns:
         raise ValueError('Master changed during hashing')
     source = probe(master)
+    def backend_plan():
+        result = json.loads(subprocess.check_output([str(backend), '--plan', str(master)], text=True))
+        if type(result.get('additional_peak_bytes')) is not int or result['additional_peak_bytes'] <= 0 or not result.get('backend_fingerprint'):
+            raise ValueError('Backend must provide positive measured/bounded disk plan and fingerprint')
+        return result
     if enhanced.exists():
         if not checkpoint.is_file():
             raise ValueError('Existing enhanced file has no verified checkpoint; retained')
         record = json.loads(checkpoint.read_text())
         if record.get('master_sha256') != master_hash or record.get('sha256') != sha256(enhanced):
             raise ValueError('Enhanced checkpoint hash differs; existing assets retained')
+        if record.get('backend_fingerprint') != backend_plan()['backend_fingerprint']:
+            raise ValueError('Backend/model fingerprint changed; prior enhancement retained, no automatic rerun')
         validate_video(source, probe(enhanced))
         return record
     if checkpoint.exists():
         raise ValueError('Orphan checkpoint retained; inspect before retry')
-    plan = json.loads(subprocess.check_output([str(backend), '--plan', str(master)], text=True))
-    required = plan.get('additional_peak_bytes')
-    if type(required) is not int or required <= 0 or not plan.get('backend_fingerprint'):
-        raise ValueError('Backend must provide positive measured/bounded disk plan and fingerprint')
+    plan = backend_plan()
+    required = plan['additional_peak_bytes']
     # Every declared filesystem is checked separately; never add free space across mounts.
     check_space(enhanced.parent, required, reserve_gib)
     scratch = plan.get('scratch_path')

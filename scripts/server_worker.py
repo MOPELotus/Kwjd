@@ -11,6 +11,7 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -21,11 +22,17 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from kwjd import read_srt, PROJECT, EPISODE_RE
 from enhance_stage import ensure_enhanced, WaitDisk, check_space, sha256
+from master_policy import reject_retired
+from font_preflight import preflight as font_preflight
+from episode_lifecycle import register_artifact
+from linux_stage_handoff import (preserve_source, validate_bundle, release_master_copy,
+                                 release_enhancement_inputs, decoded_pcm_hash, decoded_video_frames)
 
 ROOT = Path.home() / "qingqingwu"
 POST = ROOT / "post"
 BACKEND = POST / "backend" / "enhance.sh"
 STAGE = "all"
+WORKER_LOCK_HELD = False
 
 
 def now():
@@ -89,6 +96,99 @@ def update(job_path, job, status, reason=""):
     print(f"{job['episode']} => {status}: {reason}", flush=True)
 
 
+def verified_master_hash(master, job):
+    marker = master.with_name(master.name + ".verified.json")
+    verification = json.loads(marker.read_text()) if marker.is_file() else {}
+    expected = job.get("master_sha256") or (verification.get("sha256") if verification.get("transfer_verified") is True else None)
+    if not isinstance(expected, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", expected):
+        return None
+    actual = sha256(master)
+    policy = POST / "backend" / "master-policy.json"
+    reject_retired(actual, policy)
+    if actual != expected.lower():
+        raise ValueError("Master differs from confirmed transfer hash")
+    return actual
+
+
+def validate_final_binding(report, final, episode, master_hash, receipt, srt_hash, style_hash, fonts=None):
+    expected = {"episode": episode, "master_sha256": master_hash,
+                "enhanced_sha256": receipt["sha256"], "srt_sha256": srt_hash,
+                "style_sha256": style_hash, "sha256": sha256(final)}
+    if fonts is not None:expected['fonts'] = fonts
+    if any(report.get(key) != value for key, value in expected.items()):
+        raise ValueError("Existing final does not match current master/enhancement/SRT/style hashes; retained")
+
+
+def approved_fonts(approval):
+    fonts=approval.get('fonts')
+    if not isinstance(fonts,dict) or not fonts:
+        raise ValueError('Style approval must bind all packaged font hashes')
+    directory=POST/'styles/fonts'
+    packaged={p.name for p in directory.iterdir() if p.is_file() and p.suffix.lower() in ('.ttf','.otf','.ttc')}
+    if packaged != set(fonts):
+        raise ValueError('Packaged font set differs from approved fonts')
+    for name,digest in fonts.items():
+        font=directory/name
+        if Path(name).name != name or font.is_symlink() or sha256(font) != digest:
+            raise ValueError('Packaged font differs from style approval: '+name)
+    return fonts
+
+
+def approved_inputs(job_path, job, srt, style, master_hash=None):
+    if not ready(srt):
+        update(job_path, job, 'WAIT_SUBTITLE', 'Reviewed SRT missing or still being written');return None
+    marker = srt.with_name(srt.name+'.ready.json')
+    seal = json.loads(marker.read_text(encoding='utf-8-sig')) if marker.is_file() else {}
+    srt_hash = sha256(srt)
+    if seal.get('reviewed') is not True or seal.get('sha256') != srt_hash:
+        update(job_path, job, 'WAIT_SUBTITLE', 'Waiting for matching reviewed SRT seal');return None
+    if not style.is_file():
+        update(job_path, job, 'WAIT_STYLE', 'Approved template missing');return None
+    approval_path = style.with_name(style.name+'.ready.json')
+    approval = json.loads(approval_path.read_text()) if approval_path.is_file() else {}
+    style_hash = sha256(style)
+    if approval.get('approved') is not True or approval.get('sha256') != style_hash:
+        update(job_path, job, 'WAIT_STYLE_APPROVAL', 'Matching template approval missing/obsolete');return None
+    if master_hash is not None and approval.get('master_sha256') != master_hash:
+        update(job_path,job,'WAIT_STYLE_APPROVAL','Style approval belongs to another master');return None
+    try:fonts=approved_fonts(approval)
+    except (ValueError,FileNotFoundError) as exc:
+        update(job_path,job,'WAIT_STYLE_APPROVAL',str(exc));return None
+    read_srt(srt)
+    return srt_hash, style_hash, marker, approval_path, fonts
+
+
+def register_completed_assets(ep, master_hash, final, directory):
+    """Freeze compact evidence outside the eventual cache cleanup target."""
+    archive=POST/'reports/stages'/ep/master_hash
+    archive.mkdir(parents=True,exist_ok=True)
+    for source in directory.rglob('*'):
+        if source.is_file() and (source.suffix == '.json' or source.name == ep+'.ass'):
+            target=archive/source.relative_to(directory)
+            target.parent.mkdir(parents=True,exist_ok=True)
+            if target.exists():
+                if sha256(target) != sha256(source):
+                    raise ValueError('Archived evidence differs; retain both and inspect')
+            else:
+                with source.open('rb') as inp,target.open('xb') as out:shutil.copyfileobj(inp,out)
+    register_artifact(ROOT,ep,'linux','cache/'+ep)
+    register_artifact(ROOT,ep,'linux','final/'+final.name)
+
+
+def backend_technically_ready(master, master_hash):
+    """Machine-local measured readiness; this is not a human sample approval."""
+    path=POST/'backend/production-ready.json'
+    if not path.is_file():return False
+    record=json.loads(path.read_text())
+    if (record.get('master_sha256') != master_hash or record.get('technical_checked') is not True
+            or record.get('performance_acceptable') is not True
+            or not isinstance(record.get('measured_source_fps'),(int,float))
+            or record['measured_source_fps'] <= 0):
+        return False
+    plan=json.loads(subprocess.check_output([str(BACKEND),'--plan',str(master)],text=True))
+    return record.get('backend_fingerprint') == plan['backend_fingerprint']
+
+
 def do_job(job_path):
     job = json.loads(job_path.read_text(encoding="utf-8-sig"))
     ep = job["episode"]
@@ -105,53 +205,88 @@ def do_job(job_path):
     srt = ROOT / "output" / f"{ep}.zh.srt"  # Existing OCR output is read-only.
     ass = POST / "cache" / ep / f"{ep}.ass"
     enhanced = POST / "cache" / ep / f"{ep}.enhanced.mkv"
+    source_bundle = enhanced.with_name(ep + '.source.ready.json')
     log = POST / "logs" / f"{ep}.log"
-    if final.is_file() and STAGE == "all":
-        receipt = POST / "reports" / f"{ep}.json"
-        if not receipt.is_file() or json.loads(receipt.read_text()).get("sha256") != sha256(final):
-            raise ValueError("Existing final lacks matching validated report; retained")
-        update(job_path, job, "READY", "Existing final hash verified against report")
+    report_path = POST/'reports'/f'{ep}.json'
+    pending_report = report_path.with_name(ep+'.pending.json')
+    final_partial = final.with_name(final.stem+'.partial'+final.suffix)
+    if (final.is_file() or pending_report.is_file()) and STAGE == 'all':
+        expected = verified_master_hash(master, job) if master.exists() else job.get('master_sha256')
+        inputs = approved_inputs(job_path, job, srt, style,expected)
+        if inputs is None:return
+        current_hash, style_hash, _, _, font_hashes = inputs
+        if not expected:raise ValueError('No confirmed master identity for existing final')
+        reject_retired(expected,POST/'backend/master-policy.json')
+        report = json.loads((report_path if report_path.is_file() else pending_report).read_text())
+        source_record = json.loads(source_bundle.read_text())
+        if (report.get('source_bundle_sha256') != sha256(source_bundle)
+                or source_record.get('master_sha256') != expected):
+            raise ValueError('Existing final lacks current source handoff binding')
+        receipt = source_record['enhanced_checkpoint']
+        candidate = final if final.is_file() else final_partial
+        validate_final_binding(report,candidate,ep,expected,receipt,current_hash,style_hash,font_hashes)
+        if report.get('final_decode_checked') is not True or report.get('final_pcm_equivalent') is not True:
+            raise ValueError('Incomplete final acceptance report; assets retained')
+        if not final.exists():
+            os.link(final_partial,final);final_partial.unlink()
+        if not report_path.exists():write_json(report_path,report)
+        release_enhancement_inputs(POST,ep,enhanced,source_bundle.with_name(ep+'.mixed.flac'),
+                                  final,report,worker_lock_held=WORKER_LOCK_HELD)
+        register_completed_assets(ep,expected,final,enhanced.parent)
+        update(job_path,job,'READY','Verified final retained; previous-stage inputs released')
         return
-    if not ready(master):
+    released = not master.exists() and source_bundle.is_file()
+    if not released and not ready(master):
         update(job_path, job, "WAIT_MASTER", "Master not uploaded/stable")
         return
+    master_hash = job.get('master_sha256') if released else verified_master_hash(master, job)
+    if master_hash is None:
+        update(job_path, job, "WAIT_MASTER_VERIFICATION", "Waiting for confirmed transfer SHA256, not file presence")
+        return
+    reject_retired(master_hash, POST/'backend/master-policy.json')
+    job['master_sha256'] = master_hash
+    if not released:register_artifact(ROOT,ep,'linux',master_rel.as_posix())
     if (not BACKEND.is_file() or not os.access(BACKEND, os.X_OK)) and not enhanced.exists():
         update(job_path, job, "WAIT_BACKEND", "Validated enhancement backend not installed")
         return
+    if not enhanced.exists() and not backend_technically_ready(master,master_hash):
+        update(job_path,job,'WAIT_BACKEND_TECHNICAL',
+               'Actual-master technical/performance validation pending; no AI job launched')
+        return
     update(job_path, job, "ENHANCING", "Independent of ASS, fonts and OCR SRT")
     try:
-        receipt = ensure_enhanced(master, enhanced, BACKEND, ep, log, PROJECT["minimum_free_gib"])
+        if released:
+            source_record, mixed_audio = validate_bundle(source_bundle, enhanced, master_hash)
+            release_audit = source_bundle.with_name(ep+'.master-released.json')
+            if (not release_audit.is_file()
+                    or json.loads(release_audit.read_text()).get('master_sha256') != master_hash):
+                raise ValueError('Missing transferred master without matching release audit')
+            receipt = source_record['enhanced_checkpoint']
+        else:
+            receipt = ensure_enhanced(master, enhanced, BACKEND, ep, log, PROJECT["minimum_free_gib"])
+            source_record, mixed_audio = preserve_source(master, enhanced, receipt, source_bundle, ep, log)
     except WaitDisk as exc:
         update(job_path, job, "WAIT_DISK", str(exc))
         return
+    if receipt.get("master_sha256") != master_hash:
+        raise ValueError("Enhanced checkpoint does not bind the confirmed master")
+    # Explicit Windows completion confirmation is separate from upload/file presence.
+    upload_receipt = POST/'receipts'/f'{ep}.upload.json'
+    upload = json.loads(upload_receipt.read_text()) if upload_receipt.is_file() else {}
+    may_release = (upload.get('episode') == ep and upload.get('sha256') == master_hash
+                   and upload.get('verified') is True and upload.get('local_master_deleted') is True)
+    if released or may_release:
+        release_master_copy(POST, master, source_bundle, enhanced, master_hash,
+                            worker_lock_held=WORKER_LOCK_HELD)
     job["enhanced_sha256"] = receipt["sha256"]
     update(job_path, job, "ENHANCED_READY", "Hash-bound1080p60 checkpoint retained")
     if STAGE == "enhance":
         return
-    if not ready(srt):
-        update(job_path, job, "WAIT_SUBTITLE", "Existing OCR SRT still missing or being written")
-        return
-    # OCR/Codex explicitly seals a reviewed SRT. A stable-sized file alone is not completion.
-    marker = srt.with_name(srt.name + ".ready.json")
-    if not marker.is_file():
-        update(job_path, job, "WAIT_SUBTITLE", "Waiting for explicit reviewed SRT seal")
-        return
-    seal = json.loads(marker.read_text(encoding="utf-8-sig"))
-    current_hash = hashlib.sha256(srt.read_bytes()).hexdigest()
-    if not seal.get("reviewed") or seal.get("sha256") != current_hash:
-        update(job_path, job, "WAIT_SUBTITLE", "SRT seal absent/obsolete; OCR review may still be running")
-        return
-    if not style.is_file():
-        update(job_path, job, "WAIT_STYLE", "Aegisub template missing")
-        return
-    style_seal = style.with_name(style.name + ".ready.json")
-    approval = json.loads(style_seal.read_text()) if style_seal.is_file() else {}
-    if approval.get("approved") is not True or approval.get("sha256") != sha256(style):
-        update(job_path, job, "WAIT_STYLE_APPROVAL", "Template present but human approval missing/obsolete")
-        return
-    read_srt(srt)
+    inputs = approved_inputs(job_path,job,srt,style,master_hash)
+    if inputs is None:return
+    current_hash, style_hash, marker, style_seal, font_hashes = inputs
     # Encoded output has a bounded50Mbps video budget plus lossless audio margin.
-    seconds = duration(probe(master))
+    seconds = duration(source_record['source_probe'])
     need = int(seconds * 60_000_000 / 8 + 1024**3)
     try:
         check_space(final.parent, need, PROJECT["minimum_free_gib"])
@@ -163,36 +298,52 @@ def do_job(job_path):
     from kwjd import cmd_make_ass
     from argparse import Namespace
     cmd_make_ass(Namespace(srt=str(srt), template=str(style), output=str(ass)))
-    src = probe(master)
+    font_evidence = font_preflight(style,POST/'styles/fonts',ass.parent,log)
+    src = source_record['source_probe']
     audio_streams = [item for item in src["streams"] if item["codec_type"] == "audio"]
     if not audio_streams:
         raise ValueError("Bilibili Hi-Res final requires a mixed audio track in the master")
     audio_cfg = PROJECT["audio"]
-    # Never fabricate new frequency detail: stay at 48 kHz unless source >= 96 kHz.
+    # Preserve the native mixed PCM clock, including64k/88.2k sources.
     original_rate = int(audio_streams[0].get("sample_rate", 0) or 0)
-    final_rate = (original_rate if original_rate >= audio_cfg["preserve_native_rate_if_at_least"]
-                  else audio_cfg["minimum_sample_rate"])
+    final_rate = original_rate
+    if final_rate < audio_cfg['minimum_sample_rate']:
+        raise ValueError('Native audio rate below required minimum; no implicit resampling')
     final.parent.mkdir(parents=True, exist_ok=True)
     temp = final.with_name(final.stem + ".partial" + final.suffix)
+    if temp.exists():
+        raise ValueError("Unverified final partial exists; retained, do not overwrite")
     fonts = POST / "styles" / "fonts"
     # filenames are built from the episode ID; escape FFmpeg filter metacharacters.
     ass_str = str(ass).replace("\\", "/").replace(":", r"\:")
     font_str = str(fonts).replace("\\", "/").replace(":", r"\:")
     vf = f"ass=filename='{ass_str}':fontsdir='{font_str}'"
-    code = command(["ffmpeg", "-hide_banner", "-y", "-nostdin", "-v", "warning",
-                    "-i", str(enhanced), "-i", str(master),
+    runtime=json.loads((POST/'backend/runtime.json').read_text())
+    encoder_gpu=runtime.get('encoder_gpu')
+    if type(encoder_gpu) is not int or encoder_gpu < 0:
+        raise ValueError('Explicit physical NVENC GPU required')
+    gpu_name=subprocess.check_output(['nvidia-smi','--id='+str(encoder_gpu),
+        '--query-gpu=name','--format=csv,noheader'],text=True).strip()
+    if gpu_name != runtime.get('gpu_name'):
+        raise ValueError('NVENC physical device identity differs from tested runtime')
+    code = command(["ffmpeg", "-hide_banner", "-n", "-nostdin", "-v", "warning",
+                    "-i", str(enhanced), "-itsoffset", str(source_record['audio_offset_seconds']), "-i", str(mixed_audio),
                     "-map", "0:v:0", "-map", "1:a:0?",
-                    "-vf", vf, "-c:v", "hevc_nvenc", "-preset", "p6",
+                    "-vf", vf, "-c:v", "hevc_nvenc", "-gpu",str(encoder_gpu),"-preset", "p6",
                     "-rc", "vbr", "-cq", "18", "-b:v", "0", "-maxrate", "50M", "-bufsize", "100M", "-pix_fmt", "p010le",
                     "-c:a", "flac", "-sample_fmt", "s32",
                     "-bits_per_raw_sample", "24", "-ar", str(final_rate),
-                    "-shortest", str(temp)], log)
+                    str(temp)], log)
     if code:
         raise RuntimeError(f"ASS burn-in/encode failed ({code}); see {log}")
     out = probe(temp)
     v = video_stream(out)
     if v["codec_name"] != "hevc" or v["width"] != 1920 or v["height"] != 1080:
         raise ValueError("Final does not match codec/resolution requirements")
+    from fractions import Fraction
+    if (Fraction(v['avg_frame_rate']) != 60 or Fraction(v['r_frame_rate']) != 60
+            or v.get('pix_fmt') not in ('yuv420p10le','p010le')):
+        raise ValueError('Final must be actual1080p60 HEVC10bit')
     if abs(duration(src) - duration(out)) > 1.0:
         raise ValueError("Final duration is inconsistent with master")
     audio_out = [item for item in out["streams"] if item["codec_type"] == "audio"]
@@ -204,13 +355,36 @@ def do_job(job_path):
         raise ValueError("Audio sampling rate below 48 kHz")
     if int(audio_out[0].get("bits_per_raw_sample", 0)) < 24:
         raise ValueError("FLAC stream is not verified 24-bit")
+    if decoded_pcm_hash(temp) != source_record['decoded_pcm_sha256']:
+        raise ValueError('Final decoded PCM differs from original mixed master; previous inputs retained')
+    if decoded_video_frames(temp,log) != source_record['enhanced_frame_count']:
+        raise ValueError('Final video lost/added frames; previous inputs retained')
     digest = hashlib.sha256()
     with temp.open("rb") as f:
         for block in iter(lambda: f.read(1024 * 1024), b""):
             digest.update(block)
-    os.replace(temp, final)
+    # Approval may be revoked or replaced while a long encode is running.
+    current_seal = json.loads(marker.read_text(encoding="utf-8-sig"))
+    current_approval = json.loads(style_seal.read_text())
+    if (sha256(mixed_audio) != source_record['audio_sha256'] or sha256(enhanced) != receipt["sha256"]
+            or sha256(srt) != current_hash or sha256(style) != style_hash
+            or current_seal.get("reviewed") is not True or current_seal.get("sha256") != current_hash
+            or current_approval.get("approved") is not True or current_approval.get("sha256") != style_hash
+            or current_approval.get('master_sha256') != master_hash
+            or approved_fonts(current_approval) != font_hashes):
+        raise ValueError("Source asset or approval changed during final encoding; partial retained")
     report = {
         "episode": ep, "completed_at": now(), "sha256": digest.hexdigest(),
+        "master_sha256": receipt["master_sha256"],
+        "enhanced_sha256": receipt["sha256"], "srt_sha256": current_hash,
+        "style_sha256": style_hash,
+        "fonts": font_hashes,
+        "font_selection": font_evidence,
+        "decoded_pcm_sha256": source_record['decoded_pcm_sha256'],
+        "preserved_audio_sha256": source_record['audio_sha256'],
+        "source_bundle_sha256": sha256(source_bundle),
+        "final_decode_checked": True, "final_pcm_equivalent": True,
+        "final_video_frame_count": source_record['enhanced_frame_count'],
         "master_duration": duration(src), "output_duration": duration(out),
         "final_path": str(final), "ai_backend": str(BACKEND),
         "audio_preset": "bilibili_hires", "audio_codec": "flac",
@@ -219,7 +393,14 @@ def do_job(job_path):
         "audio_note": "High-spec lossless output cannot recover source details; Bilibili Hi-Res visibility depends on platform submission eligibility.",
         "note": "Technical checks only; user must approve video edge quality and audio.",
     }
-    write_json(POST / "reports" / f"{ep}.json", report)
+    # Persist acceptance before publication, allowing recovery across link/report crashes.
+    write_json(pending_report,report)
+    os.link(temp, final)  # Refuse to replace a final that appeared during encoding.
+    temp.unlink()
+    write_json(report_path, report)
+    release_enhancement_inputs(POST,ep,enhanced,mixed_audio,final,report,
+                              worker_lock_held=WORKER_LOCK_HELD)
+    register_completed_assets(ep,master_hash,final,enhanced.parent)
     update(job_path, job, "READY", "Final passed structural checks; download with SHA-256 validation")
     # Keep the verified intermediate while styles/delivery are pending; no automatic deletion.
 
@@ -232,7 +413,7 @@ def main():
     parser.add_argument("--episode", help="Process only this episode identifier")
     parser.add_argument("--stage", choices=("enhance", "all"), default="all")
     args = parser.parse_args()
-    global STAGE
+    global STAGE, WORKER_LOCK_HELD
     STAGE = args.stage
     if args.episode and not EPISODE_RE.fullmatch(args.episode):
         parser.error("Invalid episode identifier")
@@ -245,14 +426,15 @@ def main():
             fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise SystemExit("Another Kwjd worker owns this queue")
+        WORKER_LOCK_HELD = True
         while True:
             jobs = sorted(path for path in (POST / "jobs").glob(f"{PROJECT['season']}E*.json")
                           if EPISODE_RE.fullmatch(path.stem) and (not args.episode or path.stem == args.episode))
             for file in jobs:
                 try:
                     job = json.loads(file.read_text(encoding="utf-8-sig"))
-                    if job.get("state") in ("QUEUED", "WAIT_MASTER", "WAIT_SUBTITLE",
-                                            "WAIT_STYLE", "WAIT_STYLE_APPROVAL", "WAIT_BACKEND", "WAIT_DISK", "ENHANCED_READY"):
+                    if job.get("state") in ("QUEUED", "ENHANCING", "PROCESSING", "WAIT_MASTER", "WAIT_MASTER_VERIFICATION", "WAIT_SUBTITLE",
+                                            "WAIT_STYLE", "WAIT_STYLE_APPROVAL", "WAIT_BACKEND", "WAIT_BACKEND_TECHNICAL", "WAIT_DISK", "ENHANCED_READY"):
                         if STAGE == "enhance" and job.get("state") == "ENHANCED_READY":
                             continue
                         do_job(file)

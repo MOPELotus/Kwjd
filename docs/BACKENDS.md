@@ -1,5 +1,185 @@
 # Linux enhancement backend contract (implementation handoff)
 
+## Current authorization and independent stage (2026-10-26)
+
+The user now accepts residual hard subtitles and explicitly waived the manual
+sample-approval gate for enhancement. Technical validation is still required.
+The superseded E49 DNxHR master must not be uploaded or processed: its SHA256 is
+`bc33db2cff031025a76c18e2ebfc4f95a6c7fdb0c2d6183ae13f238a257a10ed`.
+The replacement reuses `S01E49.clean-master.mov`; identify it by a newly
+confirmed transfer hash, never its filename. Windows reports8,631,619,470 bytes,
+SHA256 `07bd52ab2a3a7c540c4edb3c53aba63dfdf61f1d9db628cf6f03162946600e9d`;
+the Linux upload receipt must still confirm those actual received bytes.
+Windows prepares the new Magic Mask
+export directly as high-quality HEVC10bit + PCM24bit/48kHz stereo. No transcode of
+the superseded DNxHR master is requested. The user approved the current MiSans84
+appearance and position. Windows supplies that exact template/static font and a
+matching approved SHA sidecar; no additional manual approval gate is needed.
+Older52/72-point templates must not be treated as approved.
+The user accepts existing table-hit audio peaks. Do not normalize, lower gain,
+apply a limiter, or block processing solely because those accepted peaks reach
+full scale. Decode integrity and audio/video synchronization checks still apply.
+
+Linux owns `scripts/server_worker.py`, `scripts/enhance_stage.py`,
+`scripts/enhance_backend.py`, `scripts/prepare_backend.py`, corresponding tests,
+and this backend document. Windows owns its transfer/style/export scripts.
+
+```bash
+python3 scripts/prepare_backend.py --configure-only  # existing verified local assets
+python3 scripts/server_worker.py --once --episode S01E49 --stage enhance
+```
+
+Do not execute the second command until Windows confirms the replacement upload
+and hash. Jobs require `master_sha256`, or a companion
+`S01E49.clean-master.mov.verified.json` containing `transfer_verified: true` and
+the confirmed `sha256`. Linux checks the full hash, rejects retired hashes via
+local `post/backend/master-policy.json`, and otherwise waits in
+`WAIT_MASTER_VERIFICATION`. This is separate from reviewed SRT seals.
+
+Enhancement has no SRT, ASS or font dependency. `ENHANCED_READY` is a distinct
+stage with a source/output hash-bound `.enhanced.mkv.ready.json`; orphan or
+mismatched files are retained for investigation, never overwritten or trusted.
+Enhanced video and preserved audio remain while the final stage is incomplete.
+Later `--stage all` reuses the verified intermediate, then checks the SRT seal and
+style. A synced template alone is not approval: its `.ass.ready.json` must have
+`approved: true` and a matching `sha256`, otherwise `WAIT_STYLE_APPROVAL`; the
+current approved84 template is already authorized and only needs safe transfer.
+The approval's `fonts` dictionary binds every shipped font filename/SHA; the
+Worker checks the complete font set and the approval's master hash. Fontconfig
+and a real libass render must select the approved packaged font. E49 actually
+selected `MiSansSubtitle-Demibold`. Future episodes may reuse this delegated84
+design after Codex checks their actual picture/readability and seals the matching
+new master approval; do not repeatedly request human approval for the same style.
+Final reports bind the actual enhancement checkpoint's `master_sha256`, enhanced
+video, reviewed SRT and approved style hashes. Existing finals must pass those
+same bindings and current approval checks before reuse; changed/revoked approvals
+block reuse, and orphan final partials are retained. This is not complete
+production readiness: the measured restoration performance below remains a
+production blocker. Shared artifact registration is now wired at source admission
+and after all final-stage writes/releases. Compact ASS/hash evidence is archived
+outside the registered cache target before registration. Retired
+master rejection now also includes a built-in known-retired hash for direct
+backend calls and missing local policy files. A persistent Worker waits in
+`WAIT_BACKEND_TECHNICAL` until machine-local `backend/production-ready.json`
+binds this master and backend fingerprint to actual technical checks, measured
+source fps and `performance_acceptable: true`. This is autonomous technical
+validation evidence, not a restored human sample-signoff requirement.
+
+### Prepared portable GPU backend
+
+The current implementation uses official
+[RIFE NCNN Vulkan](https://github.com/nihui/rife-ncnn-vulkan) and
+[Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN) portable models, with pinned
+archive and installed-file SHA256s. It changes no system package, driver, CUDA,
+or OCR venv. Its isolated venv uses NumPy/Pillow; FFmpeg streams decode and encode.
+The Vulkan loader is restricted to the NVIDIA ICD, GPU index/name are checked,
+and CPU/software fallback is rejected. Installed runtime configuration chooses
+the mostly free Tesla T10, preserving A4000 service workloads.
+
+Real-ESRGAN general x4plus restores source frames, reduces to1080p, and uses an
+explicit35% blend to limit oversmoothing; this is a starting policy, not proof
+of visual improvement on the replacement master. RIFE v4.6 creates60fps frames.
+NCNN portable models consume8bitRGB: encoding HEVC10bit afterward does not
+recover discarded source precision. Evaluate banding, faces and residual text
+on the actual master before production; do not market this as full10bit AI.
+
+Actual input packet PTS must be continuous25fps. Rational25→60 frame mapping
+avoids cumulative time drift, including block overlap/end padding. The detector
+holds the earlier frame across detected scene cuts, instead of blending shots;
+threshold-based detection can still miss subtle cuts and requires real footage
+inspection. There is no ordinary FFmpeg fps filter presented as AI.
+
+The bounded batch holds at most55 source frames, with two-second payload and
+five-frame overlap. Only one block's PNGs exists, never a whole episode frame
+dump. A selected-binary initialization per output frame was measured too slow;
+the batch path amortizes that overhead. Synthetic tests establish execution and
+frame/codec contracts, not whole-episode throughput or picture quality.
+Actual Tesla T10 synthetic execution produced60 frames from25 native1080p/25fps
+frames in531.5 seconds, including6.3 seconds in the RIFE invocation. This was a
+cold-start synthetic test, not the replacement episode or a visual-quality
+approval. Restoration dominates this measurement; the present configuration is
+not yet demonstrated practical for an hour-long episode. Record actual-master
+quality and throughput before selecting the production restoration policy; do
+not silently disable restoration or substitute animation models for live action.
+Current recovery is at the validated whole-enhancement checkpoint, not durable
+compressed checkpoints for every inference block.
+Increasing the restore tile to512 was separately measured at28.2 seconds for one
+native1080p synthetic frame; that experiment did not remove the bottleneck.
+
+### Storage and retention
+
+The logical root remains `~/qingqingwu/post`. On this server it points to the
+user-owned `/var/tmp/kwjd-lotus/post` on the root filesystem; `incoming` and `final`
+point to user-owned `~/qingqingwu/post-home/{incoming,final}` on `/home`. This
+placement is local configuration, not a reason to hard-code it in Windows.
+`/var/tmp` is temporary working storage, not an archival copy. Preserve original
+source footage/DaVinci projects and fetch/hash verified finals. The latest user
+authorization permits Windows to delete its generated master and only
+`D:/ResolveWork/CacheClip` after confirmed upload and matching hashes at both ends;
+it does not permit deleting all of `D:/ResolveWork`. No system cleanup policy changes.
+
+Every filesystem must retain25GiB independently. Do not add the two free-space
+values to claim one large file fits. Enhancement plans cap video40Mbps and budget
+45Mbps plus8GiB for bounded scratch/logs. Final encoding caps video50Mbps and
+reserves a separate output budget. No raw full-video intermediate is generated.
+Budgets must be refreshed after the actual upload and before processing.
+Scratch selection searches actual user-owned writable disk mounts, tests write
+access and reserves the full8GiB independently. RAM/virtual mounts are excluded.
+It automatically switches eligible scratch placement if the preferred disk is
+too full. Output volumes are still independently checked; if no safe placement
+is available the job waits for disk rather than starting an unbounded task.
+
+Linux stages are unattended after confirmed transfer; do not repeatedly ask
+Windows for ordinary technical choices. `linux_stage_handoff.py` preserves the
+mixed track as24bit FLAC at its native sample rate/channels, compares decoded
+s32 PCM SHA256s against the master, fully decodes the enhanced picture and saves
+the source probe/timing/hash evidence. Only then, while holding the Worker lock,
+may the exact matching `incoming/<ep>.clean-master.ext` copy be released. An
+unmatched same-name re-export is never deleted. A failed next stage retains the
+verified enhancement, lossless audio and recovery metadata.
+The latest Windows restriction also requires `post/receipts/<ep>.upload.json`
+with matching `episode`/`sha256`, `verified: true` and `local_master_deleted: true`
+before the Linux master release. Otherwise processing retains that incoming copy.
+Release isolates a file with an atomic same-filesystem rename, hashes the private
+object and only then deletes it; a racing new upload is preserved. Private release
+journals recover interrupted isolation without losing track of large artifacts.
+
+Final encoding uses the preserved mixed track, retaining its source timing
+offset and native sample rate. It does not use `-shortest`: enhanced/final full
+decoded frame counts must match, including the tail. After full final-video
+decode, HEVC10bit1080p60/FLAC checks, decoded PCM
+equivalence and immutable publication/reporting, the matching enhanced video
+and separate audio may be released with a stage journal. Compact source probes,
+hash receipts, ASS and human evidence remain. The unique final is never removed
+by stage cleanup; it awaits the verified Windows final-delivery receipt.
+
+At3517.56s, enhancement allowance is approximately26.43GiB additional on root;
+the current conservative final allowance is25.57GiB on `/home`. A transfer master
+of at most20GiB plus final25.57GiB plus25GiB reserve fits the measured76.49GiB
+home free space, with about5.9GiB headroom. The retired76.09GiB DNxHR does not fit
+on either filesystem while respecting the reserve. These are bounded planning
+figures, not promises of final file size or inference speed.
+
+Process episodes serially through final Windows delivery. Windows owns the shared
+`scripts/episode_lifecycle.py` receipt/cleanup contract and `qqw fetch-final`;
+Linux must reuse that module rather than invent a second receipt schema. Before
+advancing to the next episode, require a receipt proving Windows saved and
+SHA256-verified and quality-checked the final bytes, then finish cleanup of only
+explicitly inventoried remaining workflow artifacts. This final delivery gate
+is separate from the earlier technically verified stage releases. File presence alone
+does not authorize cleanup or advancement. Deleting the server final copy also
+requires that matching verified Windows receipt. Preserve original source video,
+DaVinci projects, sealed SRTs, ASS templates/fonts, human review evidence and the
+Windows final. Both supported local storage configuration formats must agree:
+`post/backend/storage.json` uses `zones`, `.kwjd/storage.json` uses `areas`, with
+schema_version1 and exact absolute zone targets. Only those configured top-level
+links are admitted; links inside an artifact remain forbidden. No actual episode
+or stage cleanup has been run on E49 during implementation or tests.
+
+Keep internal IDs such as `S01E49`. Windows delivery names derive the story's
+ordinal and title from `InputName`, not the season episode number: for example
+`第一回 家门遭横祸，俊才跌凡尘.mkv`. Linux must follow the shared naming contract.
+
 The orchestration and ASS stages exist. GPU inference must be **measured and implemented on the actual Linux machine**, not guessed by ChatGPT or faked via FFmpeg fps interpolation.
 
 ## Interface
@@ -7,18 +187,18 @@ Create an executable file on the remote machine:
 
 `~/qingqingwu/post/backend/enhance.sh INPUT_MASTER OUTPUT_ENHANCED EPISODE`
 
-- INPUT_MASTER: already clean DaVinci output, containing mixed audio.
-- OUTPUT_ENHANCED: intermediate MKV, **video 1920x1080, constant 60 fps, same presentation duration (tolerance 0.5 seconds), no embedded ASS, no original hard subs**.
+- INPUT_MASTER: direct DaVinci HEVC10bit master with PCM24bit/48kHz stereo mixed audio; user-accepted hard-subtitle remnants need no further removal.
+- OUTPUT_ENHANCED: intermediate MKV, **video 1920x1080, constant 60 fps, same presentation duration (tolerance 0.5 seconds), no new subtitle burn-in; user-accepted original fragments retained**.
 - EPISODE: any matching first-season ID (`S01E01`, `S01E49`, ...), dynamically discovered from queued jobs.
 - Exit nonzero on failure. Never replace an already validated final video.
-- Worker uses enhanced video for picture, mixed audio comes directly from master; it then burns approved ASS after all AI processing.
+- Worker uses enhanced video for picture and the sample-identical preserved master mix for audio; it burns approved ASS after all AI processing.
 
 ## Model selection to validate
 - Decode with FFmpeg/VapourSynth, stream frames. No whole-episode PNG dumps.
 - For interpolation prefer RIFE via vs-mlrt/CUDA/TensorRT (if actually compatible), preserving exact timebase. Detect scene cuts to prevent ghosting at audience/stage switches.
 - For real-life upscaling compare appropriate Real-ESRGAN/general restoration with **no upscale** baseline on a 30–60s representative sample. If the mastered content is already good 1080p, bypass harmful upscale. Explicitly test Magic Mask edges and BGM background motion.
 - Target order to benchmark: AI repair / upscale first → RIFE second vs RIFE first → upscale second. Choose the faster/better measured path, not a hard-coded dogma.
-- NVIDIA RTX A4000 primary GPU; identify Tesla T10 through nvidia-smi, test CUDA backend compatibility. Do not mandate a dual-GPU pipeline if slower than one.
+- Check actual hardware, memory, driver and backend compatibility. The prepared portable backend uses the physically tested Tesla T10 via NVIDIA Vulkan and NVENC, protecting existing A4000 service workloads. CUDA is not required by these NCNN binaries. Do not mandate a dual-GPU pipeline if slower than one.
 - Keep audio sync. No audio re-encoding during AI video inference.
 - Final encode: libass + correct font files **after AI** → HEVC NVENC. **Audio from DaVinci mixed master must become lossless 24-bit FLAC at >=48 kHz** (preserve native 96 kHz+ when present), not AAC or an ordinary `-c:a copy` passthrough. Output MKV and verify codec/sample-rate/bits-per-raw-sample with ffprobe. See docs/HIRES.md.
 
@@ -27,12 +207,12 @@ Create an executable file on the remote machine:
 - Do not touch or disrupt existing OCR process/environment.
 - Store intermediate under post/cache/S01Exx, logs under post/logs.
 - Compare visuals to DaVinci's previous in-editor interpolation, check faces, hands and scene cuts. Measure speed, VRAM and disk.
-- Before processing full E49: get explicit sample signoff for at least one 30–60s clip and fonts.
+- Current user waiver removes the enhancement sample-signoff gate. Technical checks remain; final ASS/font approval is independent.
 - Reserve >=25 GiB **after estimated peak usage**. Refresh df; previous /home usage was 85.4% of 737.16GB.
 - A possible two-pass intermediate+sub burn exists in current Worker to make recovery simpler. If implementing fused one-pass vs-mlrt→libass→NVENC, preserve same interface or adjust Worker with tests.
 
 ## Important honesty
-The included `scripts/server_worker.py` cannot perform AI enhancement until the real `enhance.sh` is implemented and made executable. It will report WAIT_BACKEND. Do NOT replace it with a simple FFmpeg fps filter and call that AI enhancement. Backend quality and throughput are unknown until measured.
+On a fresh machine the Worker reports WAIT_BACKEND until the real backend is installed. The prepared NCNN implementation has synthetic execution evidence, but actual-master quality and throughput remain to be measured. Never replace model inference with a simple FFmpeg fps filter and call it AI enhancement.
 
 ## Season profile
 
