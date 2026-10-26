@@ -68,5 +68,20 @@ class StageTests(unittest.TestCase):
                 self.assertEqual(json.loads(job.read_text())['state'],'WAIT_STYLE')
                 enhance.assert_called_once()
 
+    def test_template_presence_does_not_authorize_burn_in(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);post=root/'post';(post/'styles').mkdir(parents=True)
+            (root/'output').mkdir();srt=root/'output/S01E49.zh.srt';srt.write_text('reviewed')
+            srt.with_name(srt.name+'.ready.json').write_text(json.dumps({'reviewed':True,'sha256':stage.sha256(srt)}))
+            (post/'styles/template.ass').write_text('not approved')
+            backend=post/'backend';backend.touch();backend.chmod(0o700)
+            job=post/'job.json';job.write_text(json.dumps({'schema_version':1,'episode':'S01E49','master':'incoming/master.mkv','style':'styles/template.ass','output':'final/out.mkv'}))
+            with patch.multiple(worker,ROOT=root,POST=post,BACKEND=backend,STAGE='all'), \
+                 patch.object(worker,'ready',return_value=True),patch.object(worker,'ensure_enhanced',return_value={'sha256':'validated'}), \
+                 patch.object(worker,'command') as command:
+                worker.do_job(job)
+                self.assertEqual(json.loads(job.read_text())['state'],'WAIT_STYLE_APPROVAL')
+                command.assert_not_called()
+
 
 if __name__=='__main__':unittest.main()
