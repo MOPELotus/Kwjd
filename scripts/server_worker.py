@@ -21,10 +21,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from kwjd import read_srt, PROJECT, EPISODE_RE
-from enhance_stage import ensure_enhanced, WaitDisk, check_space, sha256
+from enhance_stage import ensure_enhanced, WaitDisk, WaitGPU, check_space, sha256
 from master_policy import reject_retired
 from font_preflight import preflight as font_preflight
 from episode_lifecycle import register_artifact
+from subtitle_timing import read_mapping,apply_offset
 from linux_stage_handoff import (preserve_source, validate_bundle, release_master_copy,
                                  release_enhancement_inputs, decoded_pcm_hash, decoded_video_frames)
 
@@ -94,6 +95,22 @@ def update(job_path, job, status, reason=""):
     job["detail"] = reason
     write_json(job_path, job)
     print(f"{job['episode']} => {status}: {reason}", flush=True)
+
+
+def queue_completion_notice(ep,report,final):
+    """Durable offline notification; does not claim a cross-thread message sent."""
+    path=POST/'reports/notifications'/f"{ep}.final.{report['sha256']}.json"
+    if path.exists():
+        previous=json.loads(path.read_text())
+        if previous.get('sha256')!=report['sha256'] or previous.get('episode')!=ep:
+            raise ValueError('Existing completion notice differs; retained')
+        return
+    write_json(path,{'schema_version':1,'episode':ep,'sha256':report['sha256'],
+        'master_sha256':report['master_sha256'],'final_path':str(final),
+        'report_path':str(POST/'reports'/f'{ep}.json'),'created_at':now(),
+        'state':'PENDING_NOTIFICATION','delivered':False,
+        'recipient_role':'windows',
+        'message':'Final passed full decode/frame/PCM/hash checks and is retained for Windows download; server final needs verified delivery receipt before deletion.'})
 
 
 def verified_master_hash(master, job):
@@ -227,6 +244,9 @@ def do_job(job_path):
         receipt = source_record['enhanced_checkpoint']
         candidate = final if final.is_file() else final_partial
         validate_final_binding(report,candidate,ep,expected,receipt,current_hash,style_hash,font_hashes)
+        timing_mapping=read_mapping(POST,ep,expected,current_hash)
+        if report.get('subtitle_timing',{'offset_ms':0,'receipt_sha256':None})!=timing_mapping:
+            raise ValueError('Existing final subtitle clock mapping differs; retain for review')
         if report.get('final_decode_checked') is not True or report.get('final_pcm_equivalent') is not True:
             raise ValueError('Incomplete final acceptance report; assets retained')
         if not final.exists():
@@ -236,6 +256,7 @@ def do_job(job_path):
                                   final,report,worker_lock_held=WORKER_LOCK_HELD)
         register_completed_assets(ep,expected,final,enhanced.parent)
         update(job_path,job,'READY','Verified final retained; previous-stage inputs released')
+        queue_completion_notice(ep,report,final)
         return
     released = not master.exists() and source_bundle.is_file()
     if not released and not ready(master):
@@ -264,11 +285,17 @@ def do_job(job_path):
                     or json.loads(release_audit.read_text()).get('master_sha256') != master_hash):
                 raise ValueError('Missing transferred master without matching release audit')
             receipt = source_record['enhanced_checkpoint']
+            current_backend=json.loads(subprocess.check_output([str(BACKEND),'--fingerprint'],text=True))
+            if receipt.get('backend_fingerprint') != current_backend.get('backend_fingerprint'):
+                raise ValueError('Backend profile changed after source release; prior checkpoint retained for review')
         else:
             receipt = ensure_enhanced(master, enhanced, BACKEND, ep, log, PROJECT["minimum_free_gib"])
             source_record, mixed_audio = preserve_source(master, enhanced, receipt, source_bundle, ep, log)
     except WaitDisk as exc:
         update(job_path, job, "WAIT_DISK", str(exc))
+        return
+    except WaitGPU as exc:
+        update(job_path,job,'WAIT_GPU',str(exc))
         return
     if receipt.get("master_sha256") != master_hash:
         raise ValueError("Enhanced checkpoint does not bind the confirmed master")
@@ -300,6 +327,10 @@ def do_job(job_path):
     from kwjd import cmd_make_ass
     from argparse import Namespace
     cmd_make_ass(Namespace(srt=str(srt), template=str(style), output=str(ass)))
+    timing_mapping=read_mapping(POST,ep,master_hash,current_hash)
+    timing_audit=apply_offset(ass,timing_mapping['offset_ms'])
+    write_json(ass.with_name(ep+'.subtitle-timing.applied.json'),
+               {'mapping':timing_mapping,'master_sha256':master_hash,'srt_sha256':current_hash,**timing_audit})
     font_evidence = font_preflight(style,POST/'styles/fonts',ass.parent,log)
     src = source_record['source_probe']
     audio_streams = [item for item in src["streams"] if item["codec_type"] == "audio"]
@@ -373,6 +404,7 @@ def do_job(job_path):
             or current_seal.get("reviewed") is not True or current_seal.get("sha256") != current_hash
             or current_approval.get("approved") is not True or current_approval.get("sha256") != style_hash
             or current_approval.get('master_sha256') != master_hash
+            or read_mapping(POST,ep,master_hash,current_hash) != timing_mapping
             or approved_fonts(current_approval) != font_hashes):
         raise ValueError("Source asset or approval changed during final encoding; partial retained")
     report = {
@@ -380,6 +412,7 @@ def do_job(job_path):
         "master_sha256": receipt["master_sha256"],
         "enhanced_sha256": receipt["sha256"], "srt_sha256": current_hash,
         "style_sha256": style_hash,
+        "subtitle_timing": timing_mapping,
         "fonts": font_hashes,
         "font_selection": font_evidence,
         "decoded_pcm_sha256": source_record['decoded_pcm_sha256'],
@@ -406,6 +439,7 @@ def do_job(job_path):
                               worker_lock_held=WORKER_LOCK_HELD)
     register_completed_assets(ep,master_hash,final,enhanced.parent)
     update(job_path, job, "READY", "Final passed structural checks; download with SHA-256 validation")
+    queue_completion_notice(ep,report,final)
     # The unique final remains until receipt-gated Windows delivery cleanup.
 
 
@@ -442,7 +476,7 @@ def main():
                         try:
                             job = json.loads(file.read_text(encoding="utf-8-sig"))
                             if job.get("state") in ("QUEUED", "ENHANCING", "PROCESSING", "WAIT_MASTER", "WAIT_MASTER_VERIFICATION", "WAIT_SUBTITLE",
-                                                    "WAIT_STYLE", "WAIT_STYLE_APPROVAL", "WAIT_BACKEND", "WAIT_BACKEND_TECHNICAL", "WAIT_DISK", "ENHANCED_READY"):
+                                                    "WAIT_STYLE", "WAIT_STYLE_APPROVAL", "WAIT_BACKEND", "WAIT_BACKEND_TECHNICAL", "WAIT_DISK", "WAIT_GPU", "ENHANCED_READY"):
                                 if STAGE == "enhance" and job.get("state") == "ENHANCED_READY":
                                     continue
                                 do_job(file)

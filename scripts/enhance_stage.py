@@ -17,6 +17,10 @@ class WaitDisk(RuntimeError):
     pass
 
 
+class WaitGPU(RuntimeError):
+    pass
+
+
 def sha256(path):
     digest = hashlib.sha256()
     with Path(path).open('rb') as stream:
@@ -89,6 +93,8 @@ def ensure_enhanced(master, enhanced, backend, episode, log, reserve_gib=25):
         except subprocess.CalledProcessError as exc:
             if exc.returncode == 75:
                 raise WaitDisk('Backend paused for temporary disk pressure; verified checkpoints retained') from exc
+            if exc.returncode == 76:
+                raise WaitGPU('Backend paused to preserve shared GPU memory headroom; verified segments retained') from exc
             raise
     def backend_plan():
         result = json.loads(backend_call(subprocess.check_output,
@@ -127,6 +133,10 @@ def ensure_enhanced(master, enhanced, backend, episode, log, reserve_gib=25):
     required = plan['additional_peak_bytes']
     # Every declared filesystem is checked separately; never add free space across mounts.
     check_space(enhanced.parent, required, reserve_gib)
+    for volume in plan.get('extra_volumes',[]):
+        if type(volume.get('additional_peak_bytes')) is not int or volume['additional_peak_bytes']<0:
+            raise ValueError('Invalid independent-volume enhancement budget')
+        check_space(volume['path'],volume['additional_peak_bytes'],reserve_gib)
     scratch = plan.get('scratch_path')
     if scratch:
         if type(plan.get('scratch_peak_bytes')) is not int or plan['scratch_peak_bytes'] < 0:

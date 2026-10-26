@@ -22,7 +22,8 @@ class StageTests(unittest.TestCase):
     def setUp(self):
         # Stage ordering tests isolate the separately integration-tested audio handoff.
         for name, result in [('preserve_source', ({'source_probe':media()},Path('/unused/audio.flac'))),
-                             ('release_master_copy',None),('register_artifact',None),('backend_technically_ready',True)]:
+                             ('release_master_copy',None),('register_artifact',None),('backend_technically_ready',True),
+                             ('read_mapping',{'offset_ms':0,'receipt_sha256':None})]:
             mock=patch.object(worker,name,return_value=result)
             mock.start();self.addCleanup(mock.stop)
 
@@ -97,7 +98,7 @@ class StageTests(unittest.TestCase):
             self.assertEqual(partial.read_bytes(),b'unverified replacement')
 
     def test_backend_disk_pause_maps_to_waitdisk_and_preserves_checkpoints(self):
-        for returncode in (75,1):
+        for returncode in (75,76,1):
             with self.subTest(returncode=returncode),tempfile.TemporaryDirectory() as tmp:
                 root=Path(tmp);master=root/'master';master.write_bytes(b'original');out=root/'enhanced.mkv'
                 def pause(args,**kw):
@@ -106,7 +107,7 @@ class StageTests(unittest.TestCase):
                 with patch.object(stage,'probe',return_value=media()),patch.object(stage,'check_space'), \
                      patch.object(stage.subprocess,'check_output',return_value=json.dumps({'additional_peak_bytes':10,'backend_fingerprint':'model'})), \
                      patch.object(stage.subprocess,'run',side_effect=pause), \
-                     self.assertRaises(stage.WaitDisk if returncode==75 else subprocess.CalledProcessError):
+                     self.assertRaises({75:stage.WaitDisk,76:stage.WaitGPU}.get(returncode,subprocess.CalledProcessError)):
                     stage.ensure_enhanced(master,out,root/'backend','S01E49',root/'log')
                 self.assertTrue((root/'saved-segment.ready.json').exists())
                 self.assertFalse(out.exists());self.assertFalse(out.with_name(out.name+'.ready.json').exists())
