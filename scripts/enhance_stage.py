@@ -76,28 +76,53 @@ def ensure_enhanced(master, enhanced, backend, episode, log, reserve_gib=25):
     master, enhanced, backend, log = map(Path, (master, enhanced, backend, log))
     enhanced.parent.mkdir(parents=True, exist_ok=True)
     checkpoint = enhanced.with_name(enhanced.name + '.ready.json')
+    pending_checkpoint = enhanced.with_name(enhanced.name+'.ready.pending.json')
+    partial = enhanced.with_name(enhanced.stem + '.partial' + enhanced.suffix)
     master_stat = master.stat()
     master_hash = sha256(master)
     if master.stat().st_mtime_ns != master_stat.st_mtime_ns:
         raise ValueError('Master changed during hashing')
     source = probe(master)
+    def backend_call(call, *args, **kwargs):
+        try:
+            return call(*args, **kwargs)
+        except subprocess.CalledProcessError as exc:
+            if exc.returncode == 75:
+                raise WaitDisk('Backend paused for temporary disk pressure; verified checkpoints retained') from exc
+            raise
     def backend_plan():
-        result = json.loads(subprocess.check_output([str(backend), '--plan', str(master)], text=True))
+        result = json.loads(backend_call(subprocess.check_output,
+                            [str(backend), '--plan', str(master), str(partial)], text=True))
         if type(result.get('additional_peak_bytes')) is not int or result['additional_peak_bytes'] <= 0 or not result.get('backend_fingerprint'):
             raise ValueError('Backend must provide positive measured/bounded disk plan and fingerprint')
         return result
     if enhanced.exists():
         if not checkpoint.is_file():
-            raise ValueError('Existing enhanced file has no verified checkpoint; retained')
-        record = json.loads(checkpoint.read_text())
-        if record.get('master_sha256') != master_hash or record.get('sha256') != sha256(enhanced):
+            if not pending_checkpoint.is_file():
+                raise ValueError('Existing enhanced file has no verified checkpoint; retained')
+            record=json.loads(pending_checkpoint.read_text())
+        else:
+            record = json.loads(checkpoint.read_text())
+        if (record.get('episode') != episode or record.get('master_sha256') != master_hash
+                or record.get('sha256') != sha256(enhanced)):
             raise ValueError('Enhanced checkpoint hash differs; existing assets retained')
         if record.get('backend_fingerprint') != backend_plan()['backend_fingerprint']:
             raise ValueError('Backend/model fingerprint changed; prior enhancement retained, no automatic rerun')
         validate_video(source, probe(enhanced))
+        if not checkpoint.exists():atomic_json(checkpoint,record)
+        if partial.exists() and os.path.samefile(partial,enhanced):partial.unlink()
         return record
     if checkpoint.exists():
         raise ValueError('Orphan checkpoint retained; inspect before retry')
+    if pending_checkpoint.is_file() and partial.is_file():
+        record=json.loads(pending_checkpoint.read_text())
+        if (record.get('episode') != episode or record.get('master_sha256') != master_hash
+                or record.get('sha256') != sha256(partial)
+                or record.get('backend_fingerprint') != backend_plan()['backend_fingerprint']):
+            raise ValueError('Pending enhancement publication differs; retained')
+        validate_video(source,probe(partial))
+        os.link(partial,enhanced);partial.unlink();atomic_json(checkpoint,record)
+        return record
     plan = backend_plan()
     required = plan['additional_peak_bytes']
     # Every declared filesystem is checked separately; never add free space across mounts.
@@ -111,13 +136,15 @@ def ensure_enhanced(master, enhanced, backend, episode, log, reserve_gib=25):
             ancestor = ancestor.parent
         if ancestor.stat().st_dev != enhanced.parent.stat().st_dev:
             check_space(ancestor, plan['scratch_peak_bytes'], reserve_gib)
-    partial = enhanced.with_name(enhanced.stem + '.partial' + enhanced.suffix)
     if partial.exists():
-        raise ValueError('Unverified partial exists; retained, do not overwrite')
+        allowed=json.loads(backend_call(subprocess.check_output,
+                           [str(backend),'--resume-check',str(master),str(partial)],text=True))
+        if allowed.get('resume_allowed') is not True:
+            raise ValueError('Unverified partial exists; retained, do not overwrite')
     log.parent.mkdir(parents=True, exist_ok=True)
     with log.open('a') as out:
-        subprocess.run([str(backend), str(master), str(partial), episode],
-                       stdout=out, stderr=subprocess.STDOUT, check=True)
+        backend_call(subprocess.run, [str(backend), str(master), str(partial), episode],
+                     stdout=out, stderr=subprocess.STDOUT, check=True)
     if master.stat().st_mtime_ns != master_stat.st_mtime_ns or sha256(master) != master_hash:
         raise ValueError('Master changed during enhancement')
     checks = validate_video(source, probe(partial))
@@ -128,6 +155,7 @@ def ensure_enhanced(master, enhanced, backend, episode, log, reserve_gib=25):
               'audio_policy':'Final audio must come from untouched mixed master',
               'residual_hardsubs':'Retained per user authorization; no new subtitles burned'}
     # link() refuses overwrite even if another file appeared during processing.
+    atomic_json(pending_checkpoint,record)
     os.link(partial, enhanced)
     partial.unlink()
     atomic_json(checkpoint, record)
