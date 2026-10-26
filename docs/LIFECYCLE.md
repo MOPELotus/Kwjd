@@ -21,6 +21,7 @@
 5. 服务器最终片保留到Windows按回目命名回传、SHA/媒体/实际质量验收并给出收据，再清其最终副本和剩余已登记产物。最终ASS、审校报告和小型审计证据保留。
 
 跨文件系统存储：`post`本身可以是配置好的链接。`post/incoming`、`post/cache`、`post/final`区域根也可链接到其他存储，但须在本机`.kwjd/storage.json`声明`{"schema_version":1,"areas":{"incoming":"绝对目录","final":"绝对目录"}}`，解析后必须精确匹配。区域内部的符号链接/目录联接一律拒绝登记和清理。真实路径只留本地，不提交Git。
+现有后端使用的`post/backend/storage.json`（同schema_version，字段为`zones`）也可直接作为声明，无需复制一份。两份并存时必须一致；不得用备用配置绕过不匹配的现有声明。
 
 - 可清：已登记的本集masters导出、Exx-background切片、post/incoming母片副本、post/cache/S01Exx增强/临时块、post/final服务器副本、本集work/S01Exx临时输出。未登记、其他集、活跃任务、路径越界或哈希不符均拒绝。
 - 必留：Windows最终成片及收据、原始节目/长背景、DaVinci工程和PowerGrade、封存SRT/ready、最终ASS/模板/字体、人工审校决定和报告、源代码/Git、仍在用的环境。旧cut视频及OCR input不在默认清理清单，需先证明另一份来源完好并明确登记，不能删整个input/output/work。

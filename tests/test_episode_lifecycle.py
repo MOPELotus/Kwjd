@@ -143,6 +143,15 @@ class LifecycleTests(unittest.TestCase):
                       {'schema_version': 1, 'areas': {'incoming': str(area)}})
             target = life.artifact_path(root, 'S01E49', 'linux', relative)
             self.assertEqual(target.resolve(), area / 'S01E49.clean-master.mov')
+            life.save(root / 'post/backend/storage.json',
+                      {'schema_version': 1, 'zones': {'incoming': str(root)}})
+            with self.assertRaises(ValueError):
+                life.artifact_path(root, 'S01E49', 'linux', relative)
+            life.save(root / 'post/backend/storage.json',
+                      {'schema_version': 1, 'zones': {'incoming': str(area)}})
+            self.assertEqual(life.artifact_path(root, 'S01E49', 'linux', relative), target)
+            (root / '.kwjd/storage.json').unlink()
+            self.assertEqual(life.artifact_path(root, 'S01E49', 'linux', relative), target)
             target.symlink_to(root / 'protected.mov')
             with self.assertRaises(ValueError):
                 life.artifact_path(root, 'S01E49', 'linux', relative)

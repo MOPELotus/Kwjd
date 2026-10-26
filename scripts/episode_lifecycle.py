@@ -219,11 +219,19 @@ def artifact_path(root, ep, role, relative):
         boundary = area
         first_child = 2
         if area.is_symlink() or (hasattr(area, 'is_junction') and area.is_junction()):
-            storage = load(Path(root) / '.kwjd/storage.json')
-            configured = storage.get('areas', {}).get(rel.parts[0])
-            if (storage.get('schema_version') != 1 or not configured
-                    or not Path(configured).is_absolute()
-                    or area.resolve(strict=True) != Path(configured).resolve(strict=True)):
+            configs = [(base / 'backend/storage.json', 'zones'),
+                       (Path(root) / '.kwjd/storage.json', 'areas')]
+            declared = []
+            for config, field in configs:
+                if config.exists():
+                    storage = load(config)
+                    configured = storage.get(field, {}).get(rel.parts[0])
+                    if storage.get('schema_version') != 1 or not configured or not Path(configured).is_absolute():
+                        raise ValueError('Storage area lacks a valid absolute local declaration')
+                    declared.append(Path(configured).resolve(strict=True))
+            if not declared:
+                raise FileNotFoundError('Need backend/storage.json zones or .kwjd/storage.json areas')
+            if any(area.resolve(strict=True) != configured for configured in declared):
                 raise ValueError('Storage area link lacks an exact local configuration')
     if not target.resolve().is_relative_to(boundary.resolve()):
         raise ValueError('Artifact escapes the intended workspace')
