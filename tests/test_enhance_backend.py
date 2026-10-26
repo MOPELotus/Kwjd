@@ -39,6 +39,18 @@ class BackendTests(unittest.TestCase):
             p=Path(tmp)/'config.json';p.write_text(json.dumps({'gpu':-1}))
             with self.assertRaisesRegex(ValueError,'no CPU fallback'):backend.config(p)
 
+    def test_unknown_restore_backend_is_not_an_implicit_ncnn_fallback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'config.json';path.write_text(json.dumps({'gpu':1,'gpu_name':'Tesla T10',
+                'restore':True,'restoration_backend':'typo','file_sha256':{}}))
+            with self.assertRaisesRegex(ValueError,'Unknown restoration backend'):backend.config(path)
+
+    def test_nonzero_video_start_is_rejected_before_frame_index_seek(self):
+        info={'format':{'start_time':'0','duration':'2'},'streams':[{'codec_type':'video','width':1920,
+            'height':1080,'avg_frame_rate':'25/1','r_frame_rate':'25/1','start_time':'0.04'}]}
+        with patch.object(backend,'probe',return_value=info),self.assertRaisesRegex(ValueError,'start offset'):
+            backend.source_info('master')
+
     def test_scratch_and_output_budget_is_bounded(self):
         d=backend.disk_plan({'format':{'duration':'3517.56'}},{'scratch':'/tmp/private','fingerprint':'modelhash'})
         self.assertGreater(d['additional_peak_bytes'],3517.56*40_000_000/8)

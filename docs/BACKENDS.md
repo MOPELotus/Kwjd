@@ -53,9 +53,9 @@ new master approval; do not repeatedly request human approval for the same style
 Final reports bind the actual enhancement checkpoint's `master_sha256`, enhanced
 video, reviewed SRT and approved style hashes. Existing finals must pass those
 same bindings and current approval checks before reuse; changed/revoked approvals
-block reuse, and orphan final partials are retained. This is not complete
-production readiness: the measured restoration performance below remains a
-production blocker. Shared artifact registration is now wired at source admission
+block reuse, and orphan final partials are retained. Production readiness still requires the actual-master end-to-end
+technical and sustained-performance record; the historical portable figures
+below alone are insufficient. Shared artifact registration is now wired at source admission
 and after all final-stage writes/releases. Compact ASS/hash evidence is archived
 outside the registered cache target before registration, with per-file SHA checks,
 under `post/reports/stages/<episode>/<master_sha256>/`. Final reports expose this
@@ -69,9 +69,86 @@ binds this master and backend fingerprint to actual technical checks, measured
 source fps and `performance_acceptable: true`. This is autonomous technical
 validation evidence, not a restored human sample-signoff requirement.
 
-### Prepared portable GPU backend
+### CUDA candidate and durable segment recovery
 
-The current implementation uses official
+The new production candidate keeps official general Real-ESRGAN SRVGG restoration
+and official vs-mlrt RIFE v4.6 ONNX in one persistent CUDA process. FP16/channels-last
+SRVGG uses the general/WDN official models with DNI0.35, antialiased4x-to-native
+reduction and35% blend. The original FP32 ONNX RIFE is faster than the tested
+FP16 conversion on this T10; GPU tensor I/O avoids per-frame PNG exchanges and
+CPU model input round trips. Neural Conv/GridSample/Resize operators must be
+proved CUDA by the first real ORT profile; only tiny shape/scalar metadata may
+remain on CPU. There is no CPU neural fallback. Physical GPU1 is checked as Tesla
+T10 for RIFE. A bounded shared-restoration candidate uses GPU0 with a0.75GiB
+PyTorch allocator cap,40-pixel tile overlap and a4GiB global reserve plus
+remaining allocation allowance and128MiB buffer. This cap is not total process
+VRAM: CUDA context/library overhead also consumes physical memory. Other users'
+processes are never stopped or reconfigured. Memory pressure or CUDA OOM pauses
+with exit76/WAIT_GPU and keeps completed segments. Sharing cannot promise zero
+compute-latency impact. The all-on-A4000 candidate was rejected when its shared-memory gate could not be maintained.
+
+`prepare_cuda_backend.py --configure-only --revise-candidate` creates a local
+candidate launcher/profile; `--activate` selects it only after actual-master
+technical tests. Pinned source/model hashes, exact isolated runtime versions and
+restoration/RIFE/pipeline source hashes bind the backend fingerprint. Installation
+does not manufacture production readiness. Standalone warm measurements are
+approximately0.27s/restored source frame and0.046s/generated RIFE frame, but these
+are **not** whole-pipeline or episode ETA. Record a longer continuous actual-master
+fullchain test, including startup, frame I/O, encode and complete decode validation,
+before publishing an ETA or admitting the full episode.
+
+`segmented_backend.py` stores compressed10-second payloads (250 native frames;
+last payload may be shorter). The exact25-to60 clock and real next-source-frame
+lookahead preserve segment boundaries; scene cuts hold the preceding restored
+frame instead of interpolating across shots. Completed segments bind the master,
+backend fingerprint, frame range/count and compressed SHA. Retries reuse only
+matching segments, fully decode owned interrupted segments, and retain unknown
+or changed assets. Pending publication receipts recover crashes before/after the
+exclusive hard-link publish without rerunning completed AI. Exit75 pauses for
+transient disk pressure and keeps checkpoints. Full concatenations are decoded
+and counted before replacing the segments. Source assets remain until the later
+lossless-audio/verified-picture handoff. No full raw-frame dump is generated.
+
+The CUDA path still decodes RGB8 for these models, so its10bit HEVC output must
+not be claimed as an end-to-end10bit AI process. This is a documented precision
+limit; evaluate gradients and edges on the actual master.
+
+The actual source clock also needs validation after DaVinci export. E49 source
+video originally begins at PTS0.099 while the new master normalizes picture
+content to zero; six visually confirmed cuts from59s to2813s show an exact
+-99ms picture mapping, whereas dialogue cross-correlation remains within2ms.
+`subtitle_timing.py` requires a reviewed master/SRT/evidence-SHA-bound receipt
+before shifting ONLY the derived ASS; the sealed original-input SRT and all
+master video/audio samples remain unchanged. Final reports and reuse checks
+bind that mapping, and approval/mapping changes during encoding block publication.
+No unproved master audio/video retiming is applied.
+
+Cross-filesystem concatenation avoids retaining two full picture copies on root.
+Each original segment remains until the home concat has passed full decode/count,
+source hash and compressed SHA checks; segments are then released, the concat is
+copied bit-exact back to root, fsynced and hashed, and only then is the home copy
+released. Hash-bound transfer receipts recover an interrupted copy without AI
+reruns. Plans and ongoing checks reserve25GiB separately on each filesystem and
+credit only current matching verified segment bytes. Unknown or replaced files
+are retained. The conservative fallback budgets two same-volume full copies.
+
+The audio handoff similarly journals the source/enhancement and exact owned
+partial inode before encoding. Completed audio/publication interruptions recover
+only after renewed probe, PCM equality and enhanced full-frame checks. A damaged
+or decodable-but-short owned unverified partial is SHA-audited and isolated before
+an audio-only retry. Verified/public/different-inode assets are never discarded.
+No successful source handoff depends on a fresh full AI run.
+
+The read-only `post_monitor.py` user service records30-second job/disk/physical
+GPU telemetry to `reports/live_status.json` and `logs/telemetry.jsonl`. Worker READY
+publication writes a persistent deduplicated PENDING_NOTIFICATION record. This
+record does not claim that an unavailable cross-thread tool sent a message.
+Finals remain until receipt-gated Windows acceptance.
+
+### Retained portable GPU backend (fallback profile)
+
+
+The retained earlier implementation uses official
 [RIFE NCNN Vulkan](https://github.com/nihui/rife-ncnn-vulkan) and
 [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN) portable models, with pinned
 archive and installed-file SHA256s. It changes no system package, driver, CUDA,
@@ -105,8 +182,8 @@ approval. Restoration dominates this measurement; the present configuration is
 not yet demonstrated practical for an hour-long episode. Record actual-master
 quality and throughput before selecting the production restoration policy; do
 not silently disable restoration or substitute animation models for live action.
-Current recovery is at the validated whole-enhancement checkpoint, not durable
-compressed checkpoints for every inference block.
+The retained portable launcher by itself does not provide durable per-block recovery;
+the segmented facade adds that recovery to either implementation.
 Increasing the restore tile to512 was separately measured at28.2 seconds for one
 native1080p synthetic frame; that experiment did not remove the bottleneck.
 
@@ -157,12 +234,14 @@ and separate audio may be released with a stage journal. Compact source probes,
 hash receipts, ASS and human evidence remain. The unique final is never removed
 by stage cleanup; it awaits the verified Windows final-delivery receipt.
 
-At3517.56s, enhancement allowance is approximately26.43GiB additional on root;
-the current conservative final allowance is25.57GiB on `/home`. A transfer master
-of at most20GiB plus final25.57GiB plus25GiB reserve fits the measured76.49GiB
-home free space, with about5.9GiB headroom. The retired76.09GiB DNxHR does not fit
-on either filesystem while respecting the reserve. These are bounded planning
-figures, not promises of final file size or inference speed.
+At3517.56s, a one-copy enhancement allowance is approximately26.43GiB on
+root; the external concat separately reserves approximately18.43GiB plus metadata
+on home, and is removed before the final's25.57GiB allowance is needed. The
+same-volume fallback reserves approximately44.86GiB for both copies plus scratch.
+The received8.04GiB HEVC master already occupies home and must not be counted
+as available space. Refresh actual per-filesystem free bytes before every stage
+and while writing; the retired76.09GiB DNxHR does not fit with the reserve. These
+are upper planning allowances, not expected file sizes or throughput promises.
 
 Process episodes serially through final Windows delivery. Windows owns the shared
 `scripts/episode_lifecycle.py` receipt/cleanup contract and `qqw fetch-final`;
