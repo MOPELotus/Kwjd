@@ -126,10 +126,11 @@ def validate_bundle(bundle_path, enhanced, expected_hash):
 
 
 def preserve_source(master, enhanced, checkpoint, bundle_path, episode, log):
-    """Verify enhanced decode and sample-identical FLAC, then publish a receipt.
+    """Recover a hash-bound audio handoff without repeating AI or deleting source.
 
-    No source is deleted here. Every output is immutable or explicitly rejected;
-    incomplete partial files stay available for investigation.
+    An intent identifies the exact source/enhancement and the private audio inode.
+    Completed audio is fully rechecked before publication; only an owned partial
+    which cannot decode may be isolated and released for an audio-only retry.
     """
     master, enhanced, bundle_path = map(Path, (master, enhanced, bundle_path))
     expected = checkpoint['master_sha256']
@@ -141,37 +142,133 @@ def preserve_source(master, enhanced, checkpoint, bundle_path, episode, log):
     validate_video(src, probe(enhanced))
     audio = bundle_path.with_name(episode + '.mixed.flac')
     partial = audio.with_name(audio.stem + '.partial.flac')
-    if audio.exists() or partial.exists():
-        raise ValueError('Orphan preserved audio/partial retained; explicit recovery required')
+    intent_path = bundle_path.with_name(episode + '.source.pending.json')
+    binding = {'schema_version':1, 'episode':episode, 'master_sha256':expected,
+               'enhanced_sha256':checkpoint['sha256'], 'enhanced_checkpoint':checkpoint,
+               'audio_path':str(audio), 'partial_path':str(partial)}
+    intent = None
+    if intent_path.exists() or intent_path.is_symlink():
+        if intent_path.is_symlink():
+            raise ValueError('Audio handoff intent is a symlink; retained')
+        intent = json.loads(intent_path.read_text())
+        if any(intent.get(k) != v for k,v in binding.items()):
+            raise ValueError('Audio handoff intent differs from source/enhancement; retained')
+    for path in (audio,partial):
+        if path.is_symlink():
+            raise ValueError('Orphan preserved audio/partial symlink retained')
+    if (audio.exists() or partial.exists()) and intent is None:
+        raise ValueError('Orphan preserved audio/partial retained; matching intent required')
+    if audio.exists() and partial.exists() and not os.path.samefile(audio,partial):
+        raise ValueError('Different preserved audio and partial both exist; retained')
     seconds = float(src['format']['duration'])
     stream = next(s for s in src['streams'] if s['codec_type'] == 'audio')
     rate = int(stream['sample_rate']);channels = int(stream['channels'])
     if rate < 48000 or int(stream.get('bits_per_raw_sample', stream.get('bits_per_sample', 0))) != 24:
         raise ValueError('Expected native24bit >=48kHz mixed master; no silent precision conversion')
-    check_space(bundle_path.parent, int(seconds * rate * channels * 4 + 16*1024**2), 25)
-    with Path(log).open('a') as output:
-        subprocess.run(['ffmpeg', '-nostdin', '-v', 'error', '-xerror', '-n',
-            '-i', str(master), '-map', '0:a:0', '-vn', '-c:a', 'flac',
-            '-sample_fmt', 's32', '-bits_per_raw_sample', '24', str(partial)],
-            stdout=output, stderr=subprocess.STDOUT, check=True)
+
+    def owned_partial():
+        if not partial.is_file() or partial.is_symlink() or not intent:
+            return False
+        stat = partial.stat()
+        return intent.get('partial_inode') == [stat.st_dev,stat.st_ino]
+
+    # An interrupted isolated release must be completed before opening a new inode.
+    if intent and intent.get('status') == 'partial_release_intent':
+        digest = intent.get('released_partial_sha256')
+        if not isinstance(digest,str) or len(digest) != 64:
+            raise ValueError('Invalid partial release intent; retained')
+        resume_verified_release(partial,digest)
+        if partial.exists():
+            if not owned_partial() or sha256(partial) != digest:
+                raise ValueError('Partial changed during release recovery; retained')
+            release_verified_file(partial,digest)
+        intent['status']='partial_released';atomic_json(intent_path,intent)
+    candidate = audio if audio.exists() else partial if partial.exists() else None
+    recovered_encoding_partial = bool(candidate == partial and intent
+                                      and intent.get('status') == 'encoding' and owned_partial())
+    if candidate:
+        if intent.get('status') == 'audio_verified':
+            if intent.get('audio_sha256') != sha256(candidate):
+                raise ValueError('Pending preserved audio hash differs; retained')
+        elif candidate == audio or not owned_partial() or intent.get('status') != 'encoding':
+            raise ValueError('Orphan audio does not match a recoverable handoff intent; retained')
+        try:
+            audio_probe = probe(candidate)
+            offset = validate_audio(src,audio_probe)
+            saved_pcm = decoded_pcm_hash(candidate)
+        except (subprocess.CalledProcessError,ValueError,KeyError,StopIteration):
+            # A previously hash-verified asset or public audio is never discarded.
+            if candidate != partial or intent.get('status') != 'encoding' or not owned_partial():
+                raise
+            digest = sha256(partial)
+            intent.update(status='partial_release_intent',released_partial_sha256=digest)
+            atomic_json(intent_path,intent)
+            journal=release_verified_file(partial,digest)
+            intent.update(status='partial_released',partial_release_receipt=journal)
+            atomic_json(intent_path,intent)
+            candidate=None
+    if candidate is None:
+        recovered_encoding_partial = False
+        if intent and intent.get('status') == 'audio_verified':
+            raise ValueError('Verified pending audio is missing; retained for inspection')
+        check_space(bundle_path.parent, int(seconds * rate * channels * 4 + 16*1024**2), 25)
+        # Exclusive creation and inode binding allow recovery without trusting a
+        # same-name file created by a different process. FFmpeg writes this fd.
+        with partial.open('xb') as audio_out:
+            os.chmod(partial,0o600)
+            stat=os.fstat(audio_out.fileno())
+            intent={**binding,'status':'encoding','partial_inode':[stat.st_dev,stat.st_ino],
+                    'previous_release':intent if intent else None}
+            atomic_json(intent_path,intent)
+            with Path(log).open('a') as output:
+                subprocess.run(['ffmpeg', '-nostdin', '-v', 'error', '-xerror',
+                    '-i', str(master), '-map', '0:a:0', '-vn', '-c:a', 'flac',
+                    '-sample_fmt', 's32', '-bits_per_raw_sample', '24', '-f','flac','pipe:1'],
+                    stdout=audio_out, stderr=output, check=True)
+            audio_out.flush();os.fsync(audio_out.fileno())
+        candidate=partial
+        offset = validate_audio(src, probe(candidate))
+        saved_pcm = decoded_pcm_hash(candidate)
     frames = decoded_video_frames(enhanced,log)
     packet_count = int(subprocess.check_output(['ffprobe','-v','error','-select_streams','v:0',
         '-count_packets','-show_entries','stream=nb_read_packets','-of','csv=p=0',str(master)],text=True).strip())
     if frames != (packet_count*12+4)//5:
         raise ValueError('Enhanced frame count does not preserve the entire25fps master')
-    offset = validate_audio(src, probe(partial))
     pcm = decoded_pcm_hash(master)
-    if pcm != decoded_pcm_hash(partial):
+    if pcm != saved_pcm:
+        # FLAC truncated exactly at a complete block can probe and decode cleanly
+        # while containing fewer samples. Only the interrupted, inode-owned
+        # encoding partial may be released; newly encoded or already hash-verified
+        # files remain evidence of a genuine encoder/source mismatch.
+        if recovered_encoding_partial and candidate == partial and owned_partial():
+            if sha256(master) != expected or sha256(enhanced) != checkpoint['sha256']:
+                raise ValueError('Source/enhancement changed during handoff; source retained')
+            digest = sha256(partial)
+            intent.update(status='partial_release_intent',released_partial_sha256=digest,
+                          partial_release_reason='decoded PCM differs from complete source',
+                          incomplete_decoded_pcm_sha256=saved_pcm,expected_decoded_pcm_sha256=pcm)
+            atomic_json(intent_path,intent)
+            journal=release_verified_file(partial,digest)
+            intent.update(status='partial_released',partial_release_receipt=journal)
+            atomic_json(intent_path,intent)
+            return preserve_source(master,enhanced,checkpoint,bundle_path,episode,log)
         raise ValueError('Decoded PCM is not sample-identical; source retained')
     if sha256(master) != expected or sha256(enhanced) != checkpoint['sha256']:
         raise ValueError('Source/enhancement changed during handoff; source retained')
     record = {'schema_version': 1, 'episode': episode, 'master_sha256': expected,
               'enhanced_sha256': checkpoint['sha256'], 'enhanced_checkpoint': checkpoint,
-              'audio_sha256': sha256(partial), 'decoded_pcm_sha256': pcm,
+              'audio_sha256': sha256(candidate), 'decoded_pcm_sha256': pcm,
               'audio_offset_seconds': offset, 'source_probe': src,
-              'enhanced_decode_checked': True, 'pcm_equivalent': True}
-    record['enhanced_frame_count'] = frames
-    os.link(partial, audio);partial.unlink()
+              'enhanced_decode_checked': True, 'pcm_equivalent': True,
+              'enhanced_frame_count':frames}
+    intent.update(status='audio_verified',audio_sha256=record['audio_sha256'])
+    atomic_json(intent_path,intent)
+    if not audio.exists():
+        os.link(partial,audio)
+    if partial.exists():
+        if not os.path.samefile(partial,audio):
+            raise ValueError('Partial replaced during audio publication; retained')
+        partial.unlink()
     atomic_json(bundle_path, record)
     return record, audio
 

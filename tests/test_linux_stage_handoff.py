@@ -61,6 +61,113 @@ class HandoffTests(unittest.TestCase):
             self.preserve()
         self.assertEqual(sha256(self.master),self.masterhash)
 
+    def test_completed_audio_recovers_after_receipt_failure_without_encoding_again(self):
+        atomic=handoff.atomic_json
+        def fail_receipt(path,data):
+            if Path(path)==self.bundle:
+                raise OSError('simulated receipt publication crash')
+            return atomic(path,data)
+        with patch.object(handoff,'atomic_json',side_effect=fail_receipt),self.assertRaises(OSError):
+            self.preserve()
+        audio=self.bundle.with_name('S01E49.mixed.flac')
+        self.assertTrue(audio.exists());self.assertFalse(self.bundle.exists())
+        original_run=subprocess.run
+        def reject_encoding(args,**kwargs):
+            if 'flac' in args and 'pipe:1' in args:
+                raise AssertionError('Previously finished audio must not be encoded again')
+            return original_run(args,**kwargs)
+        with patch.object(handoff.subprocess,'run',side_effect=reject_encoding):
+            record,recovered=self.preserve()
+        self.assertEqual(recovered,audio);self.assertTrue(record['pcm_equivalent'])
+        self.assertEqual(handoff.decoded_pcm_hash(audio),handoff.decoded_pcm_hash(self.master))
+        self.assertEqual(sha256(self.master),self.masterhash)
+
+    def test_verified_partial_recovers_before_audio_link(self):
+        with patch.object(handoff.os,'link',side_effect=OSError('simulated link crash')),self.assertRaises(OSError):
+            self.preserve()
+        partial=self.bundle.with_name('S01E49.mixed.partial.flac')
+        self.assertTrue(partial.exists())
+        original_run=subprocess.run
+        def reject_encoding(args,**kwargs):
+            if 'flac' in args and 'pipe:1' in args:raise AssertionError('No audio re-encode')
+            return original_run(args,**kwargs)
+        with patch.object(handoff.subprocess,'run',side_effect=reject_encoding):
+            _,audio=self.preserve()
+        self.assertTrue(audio.exists());self.assertFalse(partial.exists())
+
+    def test_complete_partial_recovers_before_validation_receipt(self):
+        with patch.object(handoff,'decoded_video_frames',side_effect=RuntimeError('decode audit interrupted')),self.assertRaises(RuntimeError):
+            self.preserve()
+        intent=json.loads(self.bundle.with_name('S01E49.source.pending.json').read_text())
+        self.assertEqual(intent['status'],'encoding')
+        original_run=subprocess.run
+        def reject_encoding(args,**kwargs):
+            if 'flac' in args and 'pipe:1' in args:raise AssertionError('Complete partial must be reused')
+            return original_run(args,**kwargs)
+        with patch.object(handoff.subprocess,'run',side_effect=reject_encoding):
+            record,audio=self.preserve()
+        self.assertTrue(record['pcm_equivalent']);self.assertTrue(audio.exists())
+
+    def test_different_audio_after_receipt_crash_is_retained(self):
+        atomic=handoff.atomic_json
+        def fail_receipt(path,data):
+            if Path(path)==self.bundle:raise OSError('receipt crash')
+            return atomic(path,data)
+        with patch.object(handoff,'atomic_json',side_effect=fail_receipt),self.assertRaises(OSError):self.preserve()
+        audio=self.bundle.with_name('S01E49.mixed.flac');audio.write_bytes(b'replacement')
+        with self.assertRaisesRegex(ValueError,'hash differs'):self.preserve()
+        self.assertEqual(audio.read_bytes(),b'replacement');self.assertTrue(self.master.exists())
+
+    def test_owned_incomplete_partial_is_audited_and_recreated_only_as_audio(self):
+        original_run=subprocess.run
+        def interrupt_encoding(args,**kwargs):
+            if 'flac' in args and 'pipe:1' in args:
+                kwargs['stdout'].write(b'incomplete FLAC')
+                raise subprocess.CalledProcessError(1,args)
+            return original_run(args,**kwargs)
+        with patch.object(handoff.subprocess,'run',side_effect=interrupt_encoding),self.assertRaises(subprocess.CalledProcessError):self.preserve()
+        partial=self.bundle.with_name('S01E49.mixed.partial.flac');digest=sha256(partial)
+        record,audio=self.preserve()
+        intent=json.loads(self.bundle.with_name('S01E49.source.pending.json').read_text())
+        self.assertEqual(intent['previous_release']['released_partial_sha256'],digest)
+        self.assertTrue(Path(intent['previous_release']['partial_release_receipt']).is_file())
+        self.assertTrue(record['pcm_equivalent']);self.assertTrue(audio.exists())
+        self.assertEqual(sha256(self.master),self.masterhash)
+
+    def test_different_partial_inode_does_not_gain_ownership_from_intent(self):
+        original_run=subprocess.run
+        def interrupt_encoding(args,**kwargs):
+            if 'flac' in args and 'pipe:1' in args:raise subprocess.CalledProcessError(1,args)
+            return original_run(args,**kwargs)
+        with patch.object(handoff.subprocess,'run',side_effect=interrupt_encoding),self.assertRaises(subprocess.CalledProcessError):self.preserve()
+        partial=self.bundle.with_name('S01E49.mixed.partial.flac')
+        replacement=partial.with_name('replacement');replacement.write_bytes(b'unknown owner');replacement.replace(partial)
+        with self.assertRaisesRegex(ValueError,'recoverable handoff intent'):self.preserve()
+        self.assertEqual(partial.read_bytes(),b'unknown owner')
+
+    def test_owned_decodable_short_flac_is_audited_and_recreated_only_as_audio(self):
+        original_run=subprocess.run
+        def short_complete_block_then_crash(args,**kwargs):
+            if 'flac' in args and 'pipe:1' in args:
+                original_run(args[:-1]+['-t','0.04',args[-1]],**kwargs)
+                raise RuntimeError('crash after short but decodable FLAC')
+            return original_run(args,**kwargs)
+        with patch.object(handoff.subprocess,'run',side_effect=short_complete_block_then_crash),self.assertRaises(RuntimeError):
+            self.preserve()
+        partial=self.bundle.with_name('S01E49.mixed.partial.flac');digest=sha256(partial)
+        # This is the precise gap: probe and full decode both succeed, but the
+        # sample-identical proof fails because the owned partial is too short.
+        handoff.validate_audio(handoff.probe(self.master),handoff.probe(partial))
+        self.assertNotEqual(handoff.decoded_pcm_hash(partial),handoff.decoded_pcm_hash(self.master))
+        record,audio=self.preserve()
+        previous=json.loads(self.bundle.with_name('S01E49.source.pending.json').read_text())['previous_release']
+        self.assertEqual(previous['released_partial_sha256'],digest)
+        self.assertEqual(previous['partial_release_reason'],'decoded PCM differs from complete source')
+        self.assertTrue(Path(previous['partial_release_receipt']).is_file())
+        self.assertTrue(record['pcm_equivalent'])
+        self.assertEqual(handoff.decoded_pcm_hash(audio),handoff.decoded_pcm_hash(self.master))
+        self.assertEqual(sha256(self.master),self.masterhash)
+
     def test_previous_stage_release_requires_verified_final_and_preserves_final(self):
         record,audio=self.preserve();(self.post/'final').mkdir()
         final=self.post/'final/S01E49.final-1080p60.mkv';final.write_bytes(b'accepted-final')
