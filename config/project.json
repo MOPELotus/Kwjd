@@ -91,6 +91,16 @@
     "release_cloud_master_after_verified_lossless_audio_handoff": true,
     "retain_server_final_until_windows_receipt": true
   },
+  "coordination": {
+    "report_measured_episode_eta_to_windows": true,
+    "persist_notifications_while_windows_offline": true,
+    "windows_offline_after_consecutive_failures": 3,
+    "require_no_recent_positive_online_evidence": true,
+    "timezone": "Asia/Shanghai",
+    "likely_windows_offline_hours": {"start": "23:00", "end": "07:00"},
+    "continue_cloud_processing_while_windows_offline": true,
+    "retain_final_until_verified_windows_receipt": true
+  },
   "subtitle_style": {
     "family": "MiSans Subtitle",
     "source_family": "MiSans VF",
