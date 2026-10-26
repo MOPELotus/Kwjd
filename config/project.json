@@ -92,6 +92,8 @@
     "retain_server_final_until_windows_receipt": true
   },
   "coordination": {
+    "user_requested_goal_host": "linux",
+    "windows_polling_is_not_goal_substitute": true,
     "report_measured_episode_eta_to_windows": true,
     "persist_notifications_while_windows_offline": true,
     "windows_offline_after_consecutive_failures": 3,
