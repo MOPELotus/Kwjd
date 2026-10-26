@@ -14,6 +14,8 @@ def main():
     args = p.parse_args()
     folder = args.root / 'styles' / 'preview'
     samples = json.loads((folder / 'samples.json').read_text(encoding='utf-8'))
+    folder = folder / 'playback-25fps'
+    folder.mkdir(exist_ok=True)
     selected = list(dict.fromkeys(round(s['time_seconds'] - 4, 3) for s in samples))
     clips = []
     for index, start in enumerate(selected, 1):
@@ -24,6 +26,7 @@ def main():
                         '-vf', f'ass=subtitles/{args.episode}.styled.ass:fontsdir=styles/fonts,setpts=PTS-STARTPTS',
                         '-af', 'asetpts=PTS-STARTPTS', '-c:v', 'h264_nvenc', '-preset', 'p6',
                         '-cq', '16', '-b:v', '0', '-pix_fmt', 'yuv420p',
+                        '-r', '25', '-fps_mode', 'cfr',
                         '-c:a', 'pcm_s24le', str(output)], cwd=args.root, check=True)
         clips.append(output)
     listing = folder / 'concat.txt'
