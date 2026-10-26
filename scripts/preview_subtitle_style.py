@@ -11,10 +11,13 @@ def main():
     p.add_argument('--root', required=True, type=Path)
     p.add_argument('--master', required=True, type=Path)
     p.add_argument('--episode', default='S01E49')
+    p.add_argument('--variant', default='playback-25fps', help='New preview subfolder; existing files are never overwritten')
     args = p.parse_args()
     folder = args.root / 'styles' / 'preview'
     samples = json.loads((folder / 'samples.json').read_text(encoding='utf-8'))
-    folder = folder / 'playback-25fps'
+    if not args.variant or Path(args.variant).name != args.variant or args.variant in {'.', '..'}:
+        raise ValueError('Variant must be a single folder name')
+    folder = folder / args.variant
     folder.mkdir(exist_ok=True)
     selected = list(dict.fromkeys(round(s['time_seconds'] - 4, 3) for s in samples))
     clips = []
