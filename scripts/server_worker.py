@@ -20,10 +20,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from kwjd import read_srt, PROJECT, EPISODE_RE
+from enhance_stage import ensure_enhanced, WaitDisk, check_space, sha256
 
 ROOT = Path.home() / "qingqingwu"
 POST = ROOT / "post"
 BACKEND = POST / "backend" / "enhance.sh"
+STAGE = "all"
 
 
 def now():
@@ -104,11 +106,27 @@ def do_job(job_path):
     ass = POST / "cache" / ep / f"{ep}.ass"
     enhanced = POST / "cache" / ep / f"{ep}.enhanced.mkv"
     log = POST / "logs" / f"{ep}.log"
-    if final.is_file() and final.stat().st_size > 1024:
-        update(job_path, job, "READY", "Existing final retained; inspect validation report")
+    if final.is_file() and STAGE == "all":
+        receipt = POST / "reports" / f"{ep}.json"
+        if not receipt.is_file() or json.loads(receipt.read_text()).get("sha256") != sha256(final):
+            raise ValueError("Existing final lacks matching validated report; retained")
+        update(job_path, job, "READY", "Existing final hash verified against report")
         return
     if not ready(master):
         update(job_path, job, "WAIT_MASTER", "Master not uploaded/stable")
+        return
+    if (not BACKEND.is_file() or not os.access(BACKEND, os.X_OK)) and not enhanced.exists():
+        update(job_path, job, "WAIT_BACKEND", "Validated enhancement backend not installed")
+        return
+    update(job_path, job, "ENHANCING", "Independent of ASS, fonts and OCR SRT")
+    try:
+        receipt = ensure_enhanced(master, enhanced, BACKEND, ep, log, PROJECT["minimum_free_gib"])
+    except WaitDisk as exc:
+        update(job_path, job, "WAIT_DISK", str(exc))
+        return
+    job["enhanced_sha256"] = receipt["sha256"]
+    update(job_path, job, "ENHANCED_READY", "Hash-bound1080p60 checkpoint retained")
+    if STAGE == "enhance":
         return
     if not ready(srt):
         update(job_path, job, "WAIT_SUBTITLE", "Existing OCR SRT still missing or being written")
@@ -126,16 +144,14 @@ def do_job(job_path):
     if not style.is_file():
         update(job_path, job, "WAIT_STYLE", "Aegisub template missing")
         return
-    if not BACKEND.is_file() or not os.access(BACKEND, os.X_OK):
-        update(job_path, job, "WAIT_BACKEND", "Codex must implement and validate post/backend/enhance.sh")
-        return
-    read_srt(srt)  # Refuse malformed transcripts, never rewrite OCR itself.
-    free = shutil.disk_usage(POST).free
-    reserve = PROJECT["minimum_free_gib"] * 1024 ** 3
-    need = max(10 * 1024**3, master.stat().st_size * 4)
-    if free - need < reserve:
-        update(job_path, job, "WAIT_DISK",
-               f"Require {(need+reserve)/1024**3:.1f} GiB free; have {free/1024**3:.1f} GiB")
+    read_srt(srt)
+    # Encoded output has a bounded50Mbps video budget plus lossless audio margin.
+    seconds = duration(probe(master))
+    need = int(seconds * 60_000_000 / 8 + 1024**3)
+    try:
+        check_space(final.parent, need, PROJECT["minimum_free_gib"])
+    except WaitDisk as exc:
+        update(job_path, job, "WAIT_DISK", str(exc))
         return
     update(job_path, job, "PROCESSING", "AI enhancement, then ASS burn-in")
     ass.parent.mkdir(parents=True, exist_ok=True)
@@ -151,19 +167,6 @@ def do_job(job_path):
     original_rate = int(audio_streams[0].get("sample_rate", 0) or 0)
     final_rate = (original_rate if original_rate >= audio_cfg["preserve_native_rate_if_at_least"]
                   else audio_cfg["minimum_sample_rate"])
-    # Contract: enhance.sh INPUT OUTPUT EPISODE; output must be 1080p60 and duration-preserving.
-    if not ready(enhanced):
-        code = command([str(BACKEND), str(master), str(enhanced), ep], log)
-        if code:
-            raise RuntimeError(f"AI backend failed ({code}); see {log}")
-    enh = probe(enhanced)
-    vs = video_stream(enh)
-    fps = vs["avg_frame_rate"].split("/")
-    actual_fps = float(fps[0]) / float(fps[1])
-    if vs.get("width") != 1920 or vs.get("height") != 1080 or abs(actual_fps - 60) > 0.05:
-        raise ValueError("AI backend output is not 1920x1080 at 60 FPS")
-    if abs(duration(src) - duration(enh)) > 0.5:
-        raise ValueError("AI backend changed the running time by more than 0.5 seconds")
     final.parent.mkdir(parents=True, exist_ok=True)
     temp = final.with_name(final.stem + ".partial" + final.suffix)
     fonts = POST / "styles" / "fonts"
@@ -175,7 +178,7 @@ def do_job(job_path):
                     "-i", str(enhanced), "-i", str(master),
                     "-map", "0:v:0", "-map", "1:a:0?",
                     "-vf", vf, "-c:v", "hevc_nvenc", "-preset", "p6",
-                    "-rc", "vbr", "-cq", "18", "-b:v", "0", "-pix_fmt", "yuv420p10le",
+                    "-rc", "vbr", "-cq", "18", "-b:v", "0", "-maxrate", "50M", "-bufsize", "100M", "-pix_fmt", "p010le",
                     "-c:a", "flac", "-sample_fmt", "s32",
                     "-bits_per_raw_sample", "24", "-ar", str(final_rate),
                     "-shortest", str(temp)], log)
@@ -213,8 +216,7 @@ def do_job(job_path):
     }
     write_json(POST / "reports" / f"{ep}.json", report)
     update(job_path, job, "READY", "Final passed structural checks; download with SHA-256 validation")
-    if not PROJECT.get("keep_enhanced", False):
-        enhanced.unlink(missing_ok=True)
+    # Keep the verified intermediate while styles/delivery are pending; no automatic deletion.
 
 
 def main():
@@ -222,7 +224,13 @@ def main():
     parser.add_argument("--once", action="store_true", help="Try one queued/waiting job then exit")
     parser.add_argument("--loop", action="store_true", help="Long-running queue poll")
     parser.add_argument("--poll", type=int, default=90)
+    parser.add_argument("--episode", help="Process only this episode identifier")
+    parser.add_argument("--stage", choices=("enhance", "all"), default="all")
     args = parser.parse_args()
+    global STAGE
+    STAGE = args.stage
+    if args.episode and not EPISODE_RE.fullmatch(args.episode):
+        parser.error("Invalid episode identifier")
     if not args.once and not args.loop:
         parser.error("Choose --once or --loop")
     (POST / "jobs").mkdir(parents=True, exist_ok=True)
@@ -234,12 +242,12 @@ def main():
             raise SystemExit("Another Kwjd worker owns this queue")
         while True:
             jobs = sorted(path for path in (POST / "jobs").glob(f"{PROJECT['season']}E*.json")
-                          if EPISODE_RE.fullmatch(path.stem))
+                          if EPISODE_RE.fullmatch(path.stem) and (not args.episode or path.stem == args.episode))
             for file in jobs:
                 try:
                     job = json.loads(file.read_text(encoding="utf-8-sig"))
                     if job.get("state") in ("QUEUED", "WAIT_MASTER", "WAIT_SUBTITLE",
-                                            "WAIT_STYLE", "WAIT_BACKEND", "WAIT_DISK"):
+                                            "WAIT_STYLE", "WAIT_BACKEND", "WAIT_DISK", "ENHANCED_READY"):
                         do_job(file)
                         if args.once:
                             return
