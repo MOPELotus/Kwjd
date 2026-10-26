@@ -3,6 +3,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+import fcntl
 from unittest.mock import patch, Mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
@@ -150,6 +151,32 @@ class StageTests(unittest.TestCase):
             self.assertEqual((post/'final/out.mkv').read_bytes(),b'verified-final')
             self.assertFalse(partial.exists());self.assertEqual(json.loads(job.read_text())['state'],'READY')
             self.assertEqual(json.loads((post/'reports/S01E49.json').read_text()),report)
+
+    def test_idle_worker_releases_real_flock_for_receipt_cleanup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            post=Path(tmp)
+            def idle(_):
+                self.assertFalse(worker.WORKER_LOCK_HELD)
+                with (post/'jobs/.worker.lock').open('a+') as other:
+                    fcntl.flock(other.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
+                raise KeyboardInterrupt('stop empty polling loop')
+            with patch.object(worker,'POST',post),patch.object(worker.sys,'argv',['worker','--loop']), \
+                 patch.object(worker.time,'sleep',side_effect=idle):
+                with self.assertRaises(KeyboardInterrupt):worker.main()
+
+    def test_final_ass_and_nested_stage_receipts_survive_cache_cleanup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);post=root/'post';directory=post/'cache/S01E49';directory.mkdir(parents=True)
+            (directory/'S01E49.ass').write_text('final ASS')
+            (directory/'S01E49.source.ready.json').write_text('{"source":"verified"}')
+            (directory/'.release').mkdir();(directory/'.release/receipt.json').write_text('{"released":true}')
+            with patch.multiple(worker,ROOT=root,POST=post):
+                worker.register_completed_assets('S01E49','masterhash',post/'final/S01E49.final-1080p60.mkv',directory)
+            import shutil
+            shutil.rmtree(directory)
+            archive=post/'reports/stages/S01E49/masterhash'
+            self.assertEqual((archive/'S01E49.ass').read_text(),'final ASS')
+            self.assertEqual((archive/'.release/receipt.json').read_text(),'{"released":true}')
 
 
 if __name__=='__main__':unittest.main()

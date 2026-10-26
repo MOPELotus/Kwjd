@@ -57,7 +57,11 @@ block reuse, and orphan final partials are retained. This is not complete
 production readiness: the measured restoration performance below remains a
 production blocker. Shared artifact registration is now wired at source admission
 and after all final-stage writes/releases. Compact ASS/hash evidence is archived
-outside the registered cache target before registration. Retired
+outside the registered cache target before registration, with per-file SHA checks,
+under `post/reports/stages/<episode>/<master_sha256>/`. Final reports expose this
+retained directory and final ASS path. Idle persistent polling releases the real
+Worker flock so verified delivery cleanup can acquire it; active processing holds
+it throughout its stage. Retired
 master rejection now also includes a built-in known-retired hash for direct
 backend calls and missing local policy files. A persistent Worker waits in
 `WAIT_BACKEND_TECHNICAL` until machine-local `backend/production-ready.json`

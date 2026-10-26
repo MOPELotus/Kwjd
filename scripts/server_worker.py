@@ -171,6 +171,8 @@ def register_completed_assets(ep, master_hash, final, directory):
                     raise ValueError('Archived evidence differs; retain both and inspect')
             else:
                 with source.open('rb') as inp,target.open('xb') as out:shutil.copyfileobj(inp,out)
+            if sha256(target) != sha256(source):
+                raise ValueError('Retained evidence copy SHA differs; cache cannot be registered for cleanup')
     register_artifact(ROOT,ep,'linux','cache/'+ep)
     register_artifact(ROOT,ep,'linux','final/'+final.name)
 
@@ -383,6 +385,8 @@ def do_job(job_path):
         "decoded_pcm_sha256": source_record['decoded_pcm_sha256'],
         "preserved_audio_sha256": source_record['audio_sha256'],
         "source_bundle_sha256": sha256(source_bundle),
+        "retained_evidence_dir":str(POST/'reports/stages'/ep/master_hash),
+        "final_ass":str(POST/'reports/stages'/ep/master_hash/(ep+'.ass')),
         "final_decode_checked": True, "final_pcm_equivalent": True,
         "final_video_frame_count": source_record['enhanced_frame_count'],
         "master_duration": duration(src), "output_duration": duration(out),
@@ -402,7 +406,7 @@ def do_job(job_path):
                               worker_lock_held=WORKER_LOCK_HELD)
     register_completed_assets(ep,master_hash,final,enhanced.parent)
     update(job_path, job, "READY", "Final passed structural checks; download with SHA-256 validation")
-    # Keep the verified intermediate while styles/delivery are pending; no automatic deletion.
+    # The unique final remains until receipt-gated Windows delivery cleanup.
 
 
 def main():
@@ -421,35 +425,41 @@ def main():
         parser.error("Choose --once or --loop")
     (POST / "jobs").mkdir(parents=True, exist_ok=True)
     lockfile = POST / "jobs" / ".worker.lock"
-    with lockfile.open("a+") as lock:
-        try:
-            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise SystemExit("Another Kwjd worker owns this queue")
-        WORKER_LOCK_HELD = True
-        while True:
-            jobs = sorted(path for path in (POST / "jobs").glob(f"{PROJECT['season']}E*.json")
-                          if EPISODE_RE.fullmatch(path.stem) and (not args.episode or path.stem == args.episode))
-            for file in jobs:
+    print(f"Worker started: stage={STAGE}; idle polling releases cleanup lock", flush=True)
+    while True:
+        with lockfile.open("a+") as lock:
+            try:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                if args.once:
+                    raise SystemExit("Another Kwjd task owns this queue")
+            else:
+                WORKER_LOCK_HELD = True
                 try:
-                    job = json.loads(file.read_text(encoding="utf-8-sig"))
-                    if job.get("state") in ("QUEUED", "ENHANCING", "PROCESSING", "WAIT_MASTER", "WAIT_MASTER_VERIFICATION", "WAIT_SUBTITLE",
-                                            "WAIT_STYLE", "WAIT_STYLE_APPROVAL", "WAIT_BACKEND", "WAIT_BACKEND_TECHNICAL", "WAIT_DISK", "ENHANCED_READY"):
-                        if STAGE == "enhance" and job.get("state") == "ENHANCED_READY":
-                            continue
-                        do_job(file)
-                        if args.once:
-                            return
-                except Exception as e:
-                    job = json.loads(file.read_text(encoding="utf-8-sig"))
-                    update(file, job, "FAILED", str(e))
-                    print(f"ERROR {file.name}: {e}", file=sys.stderr)
+                    jobs = sorted(path for path in (POST / "jobs").glob(f"{PROJECT['season']}E*.json")
+                                  if EPISODE_RE.fullmatch(path.stem) and (not args.episode or path.stem == args.episode))
+                    for file in jobs:
+                        try:
+                            job = json.loads(file.read_text(encoding="utf-8-sig"))
+                            if job.get("state") in ("QUEUED", "ENHANCING", "PROCESSING", "WAIT_MASTER", "WAIT_MASTER_VERIFICATION", "WAIT_SUBTITLE",
+                                                    "WAIT_STYLE", "WAIT_STYLE_APPROVAL", "WAIT_BACKEND", "WAIT_BACKEND_TECHNICAL", "WAIT_DISK", "ENHANCED_READY"):
+                                if STAGE == "enhance" and job.get("state") == "ENHANCED_READY":
+                                    continue
+                                do_job(file)
+                                if args.once:
+                                    return
+                        except Exception as e:
+                            job = json.loads(file.read_text(encoding="utf-8-sig"))
+                            update(file, job, "FAILED", str(e))
+                            print(f"ERROR {file.name}: {e}", file=sys.stderr)
+                            if args.once:
+                                raise
                     if args.once:
-                        raise
-            if args.once:
-                print("No pending jobs")
-                return
-            time.sleep(max(30, args.poll))
+                        print("No pending jobs")
+                        return
+                finally:
+                    WORKER_LOCK_HELD = False
+        time.sleep(max(30, args.poll))
 
 
 if __name__ == "__main__":
