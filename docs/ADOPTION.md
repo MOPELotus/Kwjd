@@ -14,7 +14,7 @@ python kwjd.py status --role windows
 - Source is `D:\K坑王驾到S1` and contains the entire S01. The existing v2 white-frame cutter now dynamically selects every matching **S01** file, while `-OnlyEpisode 49` explicitly limits a run. This does not select any other season.
 - If a previous successful cut exists, use it. Launching `cut` yourself runs existing v2 logic which skips video + manifest unless forced. No automated recuts on startup.
 - After E49 OCR finished, `fetch-srt` downloads the remote file. Since its existence is not proof that Codex review is done, **ask remote Codex to mark review complete before fetching**.
-- Once you export `D:\qingqingwu\masters\S01E49.clean-master.mp4`, use `send-master`, then `submit`.
+- Once you export `D:\qingqingwu\masters\S01E49.clean-master.mov`, use `send-master`, then `submit`.
 
 ### Linux
 ```bash
@@ -57,3 +57,7 @@ Repeat for E50–E55 only as each one actually finishes. Do not seal incomplete 
 - The controller finds `S01E##` (or 3-digit extension) from existing files under `videos/`, `masters/`, `subtitles/`, etc.; the Linux worker scans matching `post/jobs/S01E*.json` and will not assume E49–55 is the complete season.
 - Examples: `pwsh ./scripts/qqw.ps1 -Command cut -Episode 8`; `pwsh ./scripts/qqw.ps1 -Command send-master -Episode 8` when E08 has a clean master.
 - The original E49–55 videos and already-running SRTs are untouched; `adopt` remains non-destructive. Never bulk-create reviewed-SRT seals from file presence alone.
+
+## 现行约定优先
+
+E49–55已在2026-10-26封存取回，后续复用校验，不重跑。直接HEVC10bit+PCM导母片，同名重导以新SHA区分；残留字幕/拍桌峰值用户接受，E49免样片人工审批；Codex做MiSans样式，增强先行最后烧录；第X回 回目标题命名、回传验收再清上集、每步Git同步，详见[工作流](WORKFLOW.md)、[决策](DECISIONS.md)、[回传清理](LIFECYCLE.md)。

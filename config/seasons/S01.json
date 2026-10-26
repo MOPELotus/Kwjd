@@ -37,7 +37,9 @@
       "background": -14,
       "show": 10
     },
-    "check_peak_and_clipping": true
+    "check_peak_and_clipping": true,
+    "peak_policy": "diagnostic_only_user_accepts_rare_table_hit_clipping",
+    "residual_hardsubs": "accepted"
   },
   "post": {
     "quality_target": "1080p60",

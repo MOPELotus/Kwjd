@@ -6,9 +6,9 @@ Windows DaVinci Resolve + Linux GPU + Codex CLI 的双端协作工程。当前�
 
 ## 分工
 
-- **Windows**：从原片检测白帧并无损裁切（已经完成的文件直接接管）；DaVinci Studio Magic Mask、风景+BGM 合成、Fairlight 混音；Aegisub 设计 ASS 样式；上传合成母版、取回成品。
+- **Windows**：从原片检测白帧并无损裁切（已经完成的文件直接接管）；DaVinci Studio Magic Mask、风景+BGM 合成、Fairlight 混音；Codex 制作 MiSans ASS 并用 PotPlayer 实测（Aegisub 可选）；上传合成母版、取回成品。
 - **Linux**：保留现有 VideOCR/Codex OCR 任务；直接复用 `~/qingqingwu/input/S01E49.mp4` ～ `S01E55.mp4` 和已生成的 `output/*.zh.srt`；负责后续字幕审校、超分、补帧、ASS 渲染、HEVC/FLAC Hi-Res 规格最终编码。
-- **交接**：GitHub 存放共享代码，SSH/SCP 传输素材，磁盘上的 JSON 清单是持久化状态；**两个 Codex 不需要长期互相聊天**。
+- **交接**：GitHub 存放共享代码，SSH/SCP 传输素材，磁盘上的 JSON 清单是持久化状态；用户已授权双端 Codex 直接对话，规则变更即时写回仓库并 push/pull 同步。
 
 ## 快速开始
 
@@ -43,7 +43,7 @@ python3 kwjd.py status --role linux
 2. OCR 基于已经裁剪的视频，不再次扣除 30 秒；横向尽量全宽，只收紧纵向，兼容长、短及双行字幕。
 3. 保持原字幕：不自动添加标点；恢复原有空格；观众衣服 Logo 不算字幕。
 4. 完成达芬奇合成后再补帧/超分；**ASS 字幕最后渲染**，避免 AI 改坏字幕。
-5. 不重新跑现有任务；不覆盖原片、OCR 结果、母版；不在 GitHub 提交视频、字幕素材、字体文件、密钥或缓存。
+5. 不重新跑现有任务；不覆盖原片或封存 OCR；用户重新导出的同名母片以新哈希区分，不复用旧检查点；不在 GitHub 提交视频、字幕素材、字体文件、密钥或缓存。
 6. 下载校验前绝不删除远程唯一成品；磁盘预留默认至少 25 GiB，并按单集控制并发。
 
 ## 仓库结构
@@ -73,3 +73,7 @@ tests/                    不依赖 GPU 的回归测试
 - **真实性**：从普通 AAC 或 16-bit 重新量化为 24-bit 并不会恢复原本不存在的高频/动态细节；只是保证最终混音采用无损编码并满足已公开的上传音频参数。
 
 详情：[第一季配置](config/seasons/S01.json) · [音频导出与 B 站投稿](docs/HIRES.md) · [动态命名与迁移](docs/ADOPTION.md)。
+
+## 当前工作约定
+
+以 [决策记录](docs/DECISIONS.md)、[工作流](docs/WORKFLOW.md)、[回传与单集清理](docs/LIFECYCLE.md) 为准。默认直接从 DaVinci 导出高质量 HEVC Main10 + PCM 的 MOV；保留已接受的字幕残片和混音，不设置 AI 样片人工审批门槛。增强先跑，样式确认后再烧录。最终以 `第X回 回目标题.mkv` 回传，校验和质量验收完成后清理本集已登记临时产物，再开始下一集。

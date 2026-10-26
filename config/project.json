@@ -36,5 +36,64 @@
   },
   "minimum_free_gib": 25,
   "keep_enhanced": false,
-  "note": "First season profile shared by all discovered S01 episodes; existing E49–E55 bootstrap without restricting later episodes."
+  "note": "First season profile shared by all discovered S01 episodes; existing E49–E55 bootstrap without restricting later episodes.",
+  "master_export": {
+    "container": "mov",
+    "video_codec": "hevc",
+    "profile": "main10",
+    "encoder": "nvidia",
+    "bitrate_kbps": 25000,
+    "fps_policy": "native",
+    "current_native_fps": 25,
+    "audio_codec": "pcm_s24le",
+    "sample_rate": 48000,
+    "channels": 2,
+    "audio_normalization": false,
+    "huge_intermediate_default": false,
+    "same_name_new_content_requires_new_hash": true
+  },
+  "workflow_policy": {
+    "residual_hardsubs": "accepted",
+    "human_ai_sample_gate": false,
+    "technical_backend_validation_required": true,
+    "enhance_before_style_ready": true,
+    "style_approval_required_before_burn": true,
+    "accepted_mix_peaks_are_nonblocking": true,
+    "max_active_episodes": 1,
+    "sync_each_development_step": true
+  },
+  "delivery": {
+    "filename_pattern": "第{story_part_chinese}回 {chapter_title}.mkv",
+    "numbering": "story_relative_not_season_episode",
+    "internal_ids_unchanged": true,
+    "receipt_requires_sha256_media_and_quality_checks": true
+  },
+  "lifecycle": {
+    "cleanup_after_windows_receipt": true,
+    "next_episode_requires_previous_cleanup": true,
+    "cleanup_only_registered_generated_artifacts": true,
+    "preserve": [
+      "original_sources",
+      "davinci_projects",
+      "final_deliverables",
+      "sealed_srts",
+      "human_review_evidence",
+      "templates_fonts",
+      "reusable_source",
+      "active_environments"
+    ]
+  },
+  "subtitle_style": {
+    "family": "MiSans Subtitle",
+    "source_family": "MiSans VF",
+    "named_weight": "Demibold",
+    "variation_weight": 450,
+    "size": 84,
+    "outline": 3.5,
+    "shadow": 1,
+    "margin_v": 54,
+    "position_status": "review_after_new_E49_master",
+    "font_size_status": "latest_user_requested_increase",
+    "approval_required_before_burn": true
+  }
 }

@@ -1,63 +1,30 @@
-# End-to-end workflow / 双端生产线
+# 双端单集工作流
 
-## Stages
-1. **Original → trimmed** (Windows, FFmpeg stream copy only): first 30s removed, optionally a little more to land on a valid keyframe; tail ends BEFORE first white-frame cue (extra early cut permitted, no tail residue). Confirmed cutter is in scripts/cut/qqw-local-cut-upload-v2.ps1. Assets/manifests remain D:\qingqingwu\videos and manifests. Already completed stages **must not be rerun**.
-2. **Trimmed → OCR SRT** (Linux): the current E49–E55 videos are already uploaded to ~/qingqingwu/input/; existing remote Codex is processing the SRTs in ~/qingqingwu/output/. Do not restart. VideOCR crop is nearly full **horizontal** width, vertical band detected from diverse clips; keep short/long/two-line subtitles. No invented punctuation, preserve visible spaces, reject audience T-shirt logos via geometry/image review.
-3. **Trimmed → clean master** (Windows, human): DaVinci Studio Magic Mask with selected foreground person, scenic+BGM background below, Fairlight background -14dB and show +10dB **as existing project track gain choices** (inspect main bus for clipping; these are not LUFS standards). Remove any hard-sub fragments attached to the table. Export at native frame rate/resolution, no built-in AI upscale, optical flow, or new subtitles. Name S01E49.clean-master.mp4 (or MKV/MOV). Keep original mixed audio.
-4. **Design ASS once** (Windows, human): fetch E49 .zh.srt after OCR complete; use Aegisub to create D:\qingqingwu\styles\template.ass; preview representative longest/two-line subtitles at 1920x1080. Put exact approved font files in styles\fonts (do NOT add to Git). Copy styles to remote post/styles; verify fontconfig resolution on remote. SRT→ASS conversion uses kwjd.py make-ass, preserving content/timing.
-5. **Send master** (Windows automation): verify DaVinci exported and file is stable. scripts/qqw.ps1 send-master -Episode 49 uploads to ~/qingqingwu/post/incoming with SHA-256 and atomic publish. Don't transmit original video again.
-6. **Queue remote**: Windows scripts/qqw.ps1 submit -Episode 49 creates post/jobs/S01E49.json. Worker checks master, OCR SRT, template, backend and disk. Missing dependencies become WAIT_*; no regeneration.
-7. **Enhance** (Linux, independent tested backend): VapourSynth/vs-mlrt + appropriate live-action upscaling if source benefits, plus scene-cut-aware RIFE to exactly 60fps with unchanged playback duration. Never feed subtitles to AI. User must approve a 30-60s sample before full E49.
-8. **Burn + final encode** (Linux): convert SRT to ASS from approved template; FFmpeg libass with explicit fontsdir AFTER AI. HEVC NVENC target 1080p60; take the mixed audio from DaVinci master and encode as **24-bit lossless FLAC / at least 48kHz** (not AAC), in MKV for Bilibili Hi-Res-eligible audio format. Do not change the existing Fairlight mix levels. Worker verifies real codec, bit depth and sample rate (see docs/HIRES.md). GPU enhancement may use an intermediate file and final encode; production Codex may optimize to fused streaming if validated.
-9. **Fetch + validate** (Windows): scripts/qqw.ps1 fetch-final -Episode 49; SHA-256 verify. User checks frame edges, ghosting, typography, lip-sync and audio peaks. Mark completed only after approval.
+本文件、[决策记录](DECISIONS.md)与[回传清理](LIFECYCLE.md)是当前规则。旧聊天/旧样例不覆盖新用户指令；新决策立即更新配置/代码/文档，每独立步骤验证后commit/push并让另一端pull确认。
 
-## Progress & current facts
-- Project profile: **all available S01 episodes**, discovered from file names; **S01E49–S01E55** are the currently adopted seven episodes, previously measured at 5.10 GiB. Other stories in S01 can be processed later without changing the season rules.
-- Windows confirmed cutter v2 selecting first of two white-frame groups 4.84s apart. It has been used successfully. Do not recut without evidence.
-- Remote subtitles are in progress, NOT yet presumed complete. A SRT file's presence does not guarantee OCR/Codex review is done.
-- SSH uses Windows alias TodayEatUbuntu-7K62, no FRP transit. SCP -O test ≈4.73 MiB/s up, 1.07 MiB/s down for an 8 MiB sample. Measure bulk transfer again if necessary.
-- /home most recent reported usage 85.4% of 737.16 GB. Recalculate free disk at runtime; 25 GiB minimum reserve. One big episode at a time; never cache PNG image sequences for the whole episode.
+## 阶段
 
-## Commands
-Windows:
-- python kwjd.py adopt --role windows
-- pwsh ./scripts/qqw.ps1 -Command status
-- pwsh ./scripts/qqw.ps1 -Command cut -Episode 49  **only if not yet cut**
-- pwsh ./scripts/qqw.ps1 -Command upload-cut -Episode 49  **only if not yet uploaded**
-- pwsh ./scripts/qqw.ps1 -Command fetch-srt -Episode 49
-- pwsh ./scripts/qqw.ps1 -Command sync-style
-- pwsh ./scripts/qqw.ps1 -Command send-master -Episode 49
-- pwsh ./scripts/qqw.ps1 -Command submit -Episode 49
-- pwsh ./scripts/qqw.ps1 -Command fetch-final -Episode 49
+1. **接管与裁剪**：源视频和DaVinci工程保留；原片仅去片头片尾时stream copy。S01去前30秒、首个白帧为尾部线索，沿用已验证cutter，不重裁已有成果。动态发现集号，不限E49–55。
+2. **字幕**：以已裁剪视频为时间基准，不再扣30秒；画面内容、原空格、不造标点。逐集真正审校完成后seal-srt，取回时验证SHA及ready sidecar。E49–55已于2026-10-26封存并取回，无需再跑OCR。
+3. **背景**：split_background.py按各集裁剪视频实际时长，从长背景连续取段，E49-background.mp4等；保留背景源。无损切分略长时在时间线对齐节目尾部。
+4. **抠像合成**：用户Magic Mask选人跟踪、风景+BGM合成；无法消除的硬字幕残片用户接受，不阻挡增强。Logo误留可在同节点加反向Power Window排除，避免误切人物/桌子，必要时仅问题时间段生效。共享PowerGrade同时保存Mask与窗口；重新抓静帧才保存新修改，新片重选点跟踪并检查窗口，不复用旧跟踪。
+5. **混音**：沿用用户Fairlight混音。背景-14/节目+10dB只是该工程参考，不是普遍规范。用户接受偶发拍桌触顶、听感优先；峰值仅诊断，不擅自归一化/压缩/限幅/改增益或据此强制重导。
+6. **直接导母片**：QuickTime MOV，HEVC/H.265 NVIDIA Main10，当前原生1920x1080/25fps，质量优先25000Kb/s起点、慢速/高质量；音频Linear PCM24bit/48kHz、Bus1 Stereo、归一化关闭。不烧新字幕、不做DaVinci超分/补帧/光流。不默认导巨大DNxHR；需重导则回DaVinci工程，不将错误DNxHR转码补救。
+7. **版本与上传**：沿用masters/S01E49.clean-master.mov，不强制v2。新内容新SHA；旧哈希退役/删除授权存在本地.kwjd。远端同名异哈希不能直接覆盖，先协调退役并使旧增强检查点失效。确认渲染完成、稳定、媒体/解码/时长检查通过再原子上传。
+8. **独立增强**：真实backend技术验证、母片双端SHA验证、各文件系统峰值预算通过后，运行server_worker.py --once --episode S01E49 --stage enhance。用户已明确豁免E49的样片人工审批，可整集；保留技术短测和镜头切换处理，不以fps滤镜冒充AI。1080p60、时长不变。检查点绑定母片/后端/输出哈希；缺ASS也先增强，改样式不重跑增强。
+9. **样式后烧录**：Codex做MiSans ASS并PotPlayer实画面预览，Aegisub可选；字体真实文件不进Git。样式/位置最终确认后生成绑定模板SHA的approved sidecar，再--stage all；模板存在不代表批准。ASS在AI之后烧录，原SRT不改写。
+10. **最终编码**：HEVC NVENC1080p60+FLAC24bit/至少48kHz MKV，音频取原母片混音，不自动增益，原生96kHz以上保留实际率。不能声称编码恢复源音质，不能保证平台出现Hi-Res开关。
+11. **回传清理下一集**：内部仍S01E49.final-1080p60.mkv；Windows按故事内回数命名“第一回 家门遭横祸，俊才跌凡尘.mkv”。远端报告SHA与本地一致、HEVC/60fps/FLAC/时长/首中尾解码检查、画面/字幕/同步质量检查完成，写接收收据；之后按已登记产物清单清理本集生成中间物及服务器成片副本，保留Windows最终片/来源/工程/封存字幕/人工证据/共用字体样式。清理完成才下一集；增强完成或文件存在不能触发清理。
 
-Linux:
-- python3 kwjd.py adopt --role linux
-- python3 kwjd.py status --role linux
-- python3 kwjd.py doctor --role linux
-- python3 kwjd.py validate-srt ~/qingqingwu/output/S01E49.zh.srt
-- python3 kwjd.py make-ass --srt ~/qingqingwu/output/S01E49.zh.srt --template ~/qingqingwu/post/styles/template.ass --output ~/qingqingwu/post/cache/S01E49/S01E49.ass
-- python3 scripts/server_worker.py --once  (only when backend ready)
-- python3 scripts/server_worker.py --loop --poll 90 (run under tmux/systemd-user after test)
+## 运行约定
 
-## What can be automated?
-A local Codex watches for finished DaVinci output; do not upload until the file is stable and validated. The scripted uploader/worker can continue independently without a live Codex chat. Windows can shut down during server processing. On next Windows boot, fetch verified final and then start the next DaVinci master. Both ends can concurrently work on DIFFERENT stages/episodes.
+- 用户授权双端Codex直接通过聊天或既有SSH alias TodayEatUbuntu-7K62协调，用户无需传话。
+- df实时检查；不同挂载余量不可当作同一单文件空间，母片/模型/依赖/临时块/输出全部计峰值后仍留25GiB。post可映射用户可写存储，真实路径/余量/作业记录留本地。
+- 线程定时监控只读进度与CPU/GPU/显存/温度/内存/磁盘，常态静默、完成/异常提醒；用户停止则暂停。忙碌/未响应时不点击、不自动停止重启或改工程。
+- 失败保留证据；status之外检查post/jobs和检查点。代码存在不是backend可用、性能合格或已启动的证据。
 
-## Avoiding rework
-Never rerun OCR to process a clean-master: OCR timecodes belong to the already trimmed source and are retained. Do not apply another 30s offset. Do not recode just to cut source. All later image composition, AI enhancement and subtitle burn-in are inherently pixel transforms and require encoding.
+## 命令
 
-## Mandatory OCR completion seal
-After the existing Linux Codex finishes visual/text review and validates each subtitle, run:
+Windows：qqw.ps1的fetch-srt、sync-style、send-master、submit、fetch-final均可传-Episode 49。接收/清理见LIFECYCLE.md。
 
-```bash
-python3 ~/qingqingwu/repo/kwjd.py validate-srt ~/qingqingwu/output/S01E49.zh.srt
-python3 ~/qingqingwu/repo/kwjd.py seal-srt --file ~/qingqingwu/output/S01E49.zh.srt --approve
-```
-
-This writes `S01E49.zh.srt.ready.json` with SHA-256 and count. Only do this **after** Codex confirms OCR is complete. Worker and Windows fetch will refuse unsealed or changed SRT. Run once per finished episode, never during OCR generation.
-
-## Season-wide reusable profile & final audio
-
-- `config/project.json`: season is `S01`; no fixed end episode, only `bootstrap_episodes` to display existing E49–E55. The actual episode list is dynamically discovered from filenames and job files. See `config/seasons/S01.json` for the shared cutter/OCR rules.
-- The verified original cutter was generalized to **all S01 files** in the source folder. For targeted runs, always pass `-Episode 8` etc.; do not blindly cut/upload the entire season unless intended. New seasons require their own tested profile.
-- Final audio targets the Bilibili Hi-Res **upload specification**: lossless FLAC, 24-bit, minimum 48 kHz, default MKV+HEVC video. If the original DaVinci master is already >=96 kHz, the Worker retains its actual rate. These settings cannot restore lost audio detail or guarantee a platform Hi-Res toggle. See `docs/HIRES.md`.
-- For uploading to Bilibili, check that the current account/upload UI offers `Hi-Res 无损音质`, choose it when available, and verify after publishing. If MKV acceptance changes, test a short sample or implement ALAC/MOV compatibility; **do not fall back to AAC and claim Hi-Res**.
+Linux：`python3 scripts/server_worker.py --once --episode S01E49 --stage enhance`先增强，样式批准后`--stage all`。SRT审校完成才`python3 kwjd.py seal-srt --file ~/qingqingwu/output/S01E49.zh.srt --approve`，不要批量制造封存。
