@@ -209,11 +209,25 @@ def artifact_path(root, ep, role, relative):
     allowed_dirs = {f'work/{ep}'} if role == 'windows' else {f'cache/{ep}'}
     if rel.as_posix() not in allowed_files | allowed_dirs:
         raise ValueError('Not an allowed generated episode artifact; preserve it')
-    # post/ itself may be a deliberately configured storage symlink; children may not escape it.
+    # post/ may be a storage link. Explicitly configured top-level areas may
+    # live on other filesystems too; links inside those areas remain forbidden.
     target = base / rel
-    if not target.resolve().is_relative_to(base.resolve()):
+    boundary = base
+    first_child = 1
+    if role == 'linux':
+        area = base / rel.parts[0]
+        boundary = area
+        first_child = 2
+        if area.is_symlink() or (hasattr(area, 'is_junction') and area.is_junction()):
+            storage = load(Path(root) / '.kwjd/storage.json')
+            configured = storage.get('areas', {}).get(rel.parts[0])
+            if (storage.get('schema_version') != 1 or not configured
+                    or not Path(configured).is_absolute()
+                    or area.resolve(strict=True) != Path(configured).resolve(strict=True)):
+                raise ValueError('Storage area link lacks an exact local configuration')
+    if not target.resolve().is_relative_to(boundary.resolve()):
         raise ValueError('Artifact escapes the intended workspace')
-    parents = [base.joinpath(*rel.parts[:i]) for i in range(1, len(rel.parts))]
+    parents = [base.joinpath(*rel.parts[:i]) for i in range(first_child, len(rel.parts))]
     for path in parents + ([target, *list(target.rglob('*'))] if target.is_dir() else [target]):
         if path.is_symlink() or (hasattr(path, 'is_junction') and path.is_junction()):
             raise ValueError('Symlink/junction artifacts are never deleted')

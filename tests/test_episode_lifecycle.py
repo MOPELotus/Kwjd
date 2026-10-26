@@ -126,6 +126,27 @@ class LifecycleTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 life.artifact_path(root, 'S01E49', 'linux', 'cache/S01E49')
 
+    def test_explicit_area_root_link_is_allowed_but_nested_link_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'post').mkdir()
+            area = root / 'alternate-incoming'
+            area.mkdir()
+            try:
+                (root / 'post/incoming').symlink_to(area, target_is_directory=True)
+            except OSError:
+                self.skipTest('Symlink creation is not permitted')
+            relative = 'incoming/S01E49.clean-master.mov'
+            with self.assertRaises(FileNotFoundError):
+                life.artifact_path(root, 'S01E49', 'linux', relative)
+            life.save(root / '.kwjd/storage.json',
+                      {'schema_version': 1, 'areas': {'incoming': str(area)}})
+            target = life.artifact_path(root, 'S01E49', 'linux', relative)
+            self.assertEqual(target.resolve(), area / 'S01E49.clean-master.mov')
+            target.symlink_to(root / 'protected.mov')
+            with self.assertRaises(ValueError):
+                life.artifact_path(root, 'S01E49', 'linux', relative)
+
     def test_gate_next_requires_local_release_but_not_windows_final_return(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
