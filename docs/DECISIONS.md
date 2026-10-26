@@ -16,6 +16,7 @@
 |字体|Codex提取已安装MiSans VF的Demibold命名实例wght450成静态MiSans Subtitle，真实字体不进Git|
 |大小位置|52被明确否定、72仍小；84/描边3.5/阴影1/底54，已在新E49实画面播放并获用户批准，可增强后烧录|
 |预览|实际母片libass渲染、PotPlayer实际播放；Aegisub可选；不动封存SRT|
+|后续样式验收|复用已认可84模板；Codex受托实查新画面并封存新母片匹配批准，避免Windows离线时反复等待人工|
 |Logo/PowerGrade|同Mask节点反向Power Window排除；新抓共享静帧保存整个节点，新片重选点跟踪并检查窗口|
 |背景|按裁剪集时长连续取长背景，Exx-background.mp4，保留长背景源|
 |监控与UI|授权时只读定时监测、常态静默，用户停止即暂停，忙碌/未响应不点击|

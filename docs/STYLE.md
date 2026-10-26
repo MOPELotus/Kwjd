@@ -11,3 +11,4 @@
 - 最终样式/位置确认后生成template.ass.ready.json，approved=true且sha256匹配；模板改动旧批准失效。Worker等匹配批准再烧录，独立增强不受影响。
 - 已有实际播放批准后用`python scripts/seal_subtitle_style.py --styles D:/qingqingwu/styles --master-sha256 <实际审看母片SHA> --note "实际批准依据" --approve`生成模板和所有字体SHA绑定收据，再`qqw.ps1 -Command sync-style`原子替换当前样式。模板或字体更改均需重新审看并封存。
 - 残留硬字幕已接受，不为遮盖残片加黑条或改对白；ASS在增强后烧录。
+- 后续集可复用已认可的84样式。用户已委托Codex处理样式，云端需实际检查新画面的字体、排版、位置和同步，再封存匹配该母片的批准收据；不用仅因新集母片SHA不同就等待Windows人工再次批准。不能伪称已看过未生成的实画面。
