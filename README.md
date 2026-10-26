@@ -76,4 +76,4 @@ tests/                    不依赖 GPU 的回归测试
 
 ## 当前工作约定
 
-以 [决策记录](docs/DECISIONS.md)、[工作流](docs/WORKFLOW.md)、[回传与单集清理](docs/LIFECYCLE.md) 为准。默认直接从 DaVinci 导出高质量 HEVC Main10 + PCM 的 MOV；保留已接受的字幕残片和混音，不设置 AI 样片人工审批门槛。增强先跑，样式确认后再烧录。最终以 `第X回 回目标题.mkv` 回传，校验和质量验收完成后清理本集已登记临时产物，再开始下一集。
+以 [决策记录](docs/DECISIONS.md)、[工作流](docs/WORKFLOW.md)、[回传与单集清理](docs/LIFECYCLE.md) 为准。默认直接从 DaVinci 导出高质量 HEVC Main10 + PCM 的 MOV；保留已接受的字幕残片和混音，不设置 AI 样片人工审批门槛。增强先跑，样式确认后再烧录。最终以 `第X回 回目标题.mkv` 回传，按阶段校验交接后清理不再需要的已登记中间物；母片上传SHA校验后即释放本地母片和CacheClip，Windows可准备下一集。云端后处理全托管，服务器最终片仍等Windows回传验收收据才删。

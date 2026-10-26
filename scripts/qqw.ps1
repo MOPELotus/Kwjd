@@ -1,17 +1,18 @@
 #requires -Version 7.0
 <#
-Windows controller. No destructive operation or remote job start occurs automatically.
+Windows controller. Verified upload includes explicitly authorized local cleanup.
 Run from repository: pwsh ./scripts/qqw.ps1 -Command status
 #>
 [CmdletBinding()]
 param(
- [ValidateSet('adopt','status','doctor','cut','upload-cut','fetch-srt','send-master','sync-style','submit','fetch-final','remote-status')]
+ [ValidateSet('adopt','status','doctor','cut','upload-cut','fetch-srt','send-master','sync-style','submit','fetch-final','remote-status','complete-episode','cleanup-cache')]
  [string]$Command='status',
  [int]$Episode=0,
  [string]$RootDir='D:\qingqingwu',
  [string]$SourceDir='D:\K坑王驾到S1',
  [string]$SshAlias='TodayEatUbuntu-7K62',
- [string]$MasterPath=''
+ [string]$MasterPath='',
+ [string]$QualityNote=''
 )
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
@@ -49,20 +50,28 @@ function RemoteHash([string]$p) {
  if($line.Count -eq 0){return ''}
  return ([regex]::Match($line[0],'^[0-9a-fA-F]{64}').Value.ToLowerInvariant())
 }
-function Upload([string]$from,[string]$to){
+function Upload([string]$from,[string]$to,[switch]$ReplaceStyle){
  if(-not(Test-Path -LiteralPath $from -PathType Leaf)){throw "Missing: $from"}
  $hash=(Get-FileHash -Algorithm SHA256 -LiteralPath $from).Hash.ToLowerInvariant()
  $old=RemoteHash $to
- if($old -eq $hash){Write-Host "Already uploaded $to";return}
- if($old){throw "Remote file differs, refusing overwrite: $to"}
+ if($old -eq $hash){Write-Host "Already uploaded $to";return $hash}
+ if($ReplaceStyle -and $to -notmatch '^qingqingwu/post/styles/(template[.]ass([.]ready[.]json)?|fonts/[A-Za-z0-9_.-]+[.](ttf|otf|ttc))$'){throw 'Replacement is limited to current style assets'}
+ if($old -and -not $ReplaceStyle){throw "Remote file differs, refusing overwrite: $to"}
  $parent=$to.Substring(0,$to.LastIndexOf('/'))
  & ssh.exe -o BatchMode=yes $SshAlias "mkdir -p '$parent'"; AssertExit 'mkdir'
  $partial="$to.uploading"
  $address=$SshAlias+':'+$partial
  & scp.exe -O -o Compression=no -- $from $address; AssertExit 'scp upload'
  if((RemoteHash $partial) -ne $hash){throw "Upload SHA mismatch: $to"}
- & ssh.exe -o BatchMode=yes $SshAlias "test ! -e '$to' && mv '$partial' '$to'"; AssertExit 'publish'
+ if($old -and $ReplaceStyle){
+  # Compare-and-replace: never replace a concurrently changed style asset.
+  & ssh.exe -o BatchMode=yes $SshAlias "test `"`$(sha256sum '$to' | cut -d ' ' -f 1)`" = '$old' && mv '$partial' '$to'"
+ }else{
+  & ssh.exe -o BatchMode=yes $SshAlias "test ! -e '$to' && mv '$partial' '$to'"
+ }
+ AssertExit 'publish'
  Write-Host "Verified upload $to" -ForegroundColor Green
+ return $hash
 }
 function Download([string]$from,[string]$to){
  $hash=RemoteHash $from
@@ -103,14 +112,23 @@ if($Command -eq 'remote-status'){
 if($Command -eq 'sync-style'){
  $folder=Join-Path $RootDir 'styles'
  if(-not(Test-Path (Join-Path $folder 'template.ass'))){throw 'Aegisub template missing'}
- & ssh.exe -o BatchMode=yes $SshAlias 'mkdir -p ~/qingqingwu/post'
+ & ssh.exe -o BatchMode=yes $SshAlias 'mkdir -p ~/qingqingwu/post/styles/fonts'
  AssertExit 'style mkdir'
- & scp.exe -O -r -o Compression=no -- $folder ($SshAlias+':qingqingwu/post/')
- AssertExit 'style sync'
+ Upload (Join-Path $folder 'template.ass') 'qingqingwu/post/styles/template.ass' -ReplaceStyle | Out-Null
+ foreach($font in (Get-ChildItem -LiteralPath (Join-Path $folder 'fonts') -File)){
+  if($font.Name -notmatch '^[A-Za-z0-9_.-]+[.](ttf|otf|ttc)$'){throw 'Font filename must be a safe ASCII transfer name'}
+  Upload $font.FullName ('qingqingwu/post/styles/fonts/'+$font.Name) -ReplaceStyle | Out-Null
+ }
+ $styleSeal=Join-Path $folder 'template.ass.ready.json'
+ if(Test-Path -LiteralPath $styleSeal){
+  $approval=Get-Content -LiteralPath $styleSeal -Raw -Encoding utf8|ConvertFrom-Json
+  if(-not $approval.approved -or $approval.sha256 -ne (Get-FileHash -LiteralPath (Join-Path $folder 'template.ass') -Algorithm SHA256).Hash.ToLowerInvariant()){throw 'Style approval is stale'}
+  Upload $styleSeal 'qingqingwu/post/styles/template.ass.ready.json' -ReplaceStyle | Out-Null
+ }
  Write-Host 'Style copied. Verify libass selected expected font before production.'
  return
 }
-$numbers=if($Episode){@($Episode)}else{@(DiscoverEpisodes)}
+$numbers=@(if($Episode){$Episode}else{DiscoverEpisodes})
 if($numbers.Count -eq 0){throw "No $season episodes discovered under $RootDir"}
 foreach($n in $numbers){
  $id=Ep $n
@@ -133,6 +151,8 @@ foreach($n in $numbers){
    Write-Host "$id reviewed SRT verified" -ForegroundColor Green
   }
   'send-master' {
+   & python -X utf8 (Join-Path $PSScriptRoot 'episode_lifecycle.py') gate-next --root $RootDir --episode $id
+   AssertExit 'previous local upload cleanup gate'
    if($MasterPath){
     if($numbers.Count -ne 1){throw 'MasterPath requires Episode'}
     $master=$MasterPath
@@ -148,28 +168,99 @@ foreach($n in $numbers){
    Start-Sleep -Seconds 4
    $b=(Get-Item -LiteralPath $master).Length
    if($a -ne $b -or $a -lt 1MB){throw "Master not finalized: $master"}
-   Upload $master "qingqingwu/post/incoming/$name"
+   $manifest=Join-Path $RootDir "manifests\$id.json"
+   if(-not(Test-Path -LiteralPath $manifest)){throw 'Need the cut manifest to validate master duration'}
+   $cut=Get-Content -LiteralPath $manifest -Raw -Encoding utf8|ConvertFrom-Json
+   $validation=Join-Path $RootDir ".kwjd\master-validation\$id.json"
+   & python -X utf8 (Join-Path $PSScriptRoot 'validate_master.py') --file $master --receipt $validation --expected-duration $cut.OutputDurationSeconds
+   AssertExit 'master technical validation'
+   $validated=Get-Content -LiteralPath $validation -Raw -Encoding utf8|ConvertFrom-Json
+   $discarded=Join-Path $RootDir ('.kwjd\'+$id.ToLowerInvariant().Replace('s01','')+'-discarded-master.json')
+   if(Test-Path -LiteralPath $discarded){
+    $retired=Get-Content -LiteralPath $discarded -Raw -Encoding utf8|ConvertFrom-Json
+    if($retired.sha256 -eq $validated.sha256){throw 'This is the retired master; wait for the new export'}
+   }
+   & python -X utf8 (Join-Path $PSScriptRoot 'resolve_cache.py') snapshot --root $RootDir --episode $id
+   AssertExit 'CacheClip upload-start snapshot'
+   $remote="qingqingwu/post/incoming/$name"
+   $hash=Upload $master $remote
+   if($hash -ne $validated.sha256){throw 'Master changed after validation'}
+   $upload=Get-Content -LiteralPath (Join-Path $RootDir ".kwjd\cache-snapshots\$id.json") -Raw -Encoding utf8|ConvertFrom-Json
+   $upload|Add-Member -NotePropertyName verified -NotePropertyValue $true -Force
+   $upload|Add-Member -NotePropertyName sha256 -NotePropertyValue $hash -Force
+   $upload|Add-Member -NotePropertyName local_path -NotePropertyValue $master -Force
+   $upload|Add-Member -NotePropertyName remote_path -NotePropertyValue $remote -Force
+   $upload|Add-Member -NotePropertyName ssh_alias -NotePropertyValue $SshAlias -Force
+   $receiptDir=Join-Path $RootDir '.kwjd\uploads'
+   New-Item -ItemType Directory -Force $receiptDir|Out-Null
+   $receiptPath=Join-Path $receiptDir "$id.json"
+   $upload|ConvertTo-Json -Depth 10|Set-Content -LiteralPath "$receiptPath.tmp" -Encoding utf8
+   Move-Item -LiteralPath "$receiptPath.tmp" -Destination $receiptPath -Force
+   & python -X utf8 (Join-Path $PSScriptRoot 'episode_lifecycle.py') register --root $RootDir --episode $id --artifact "masters/$name"
+   AssertExit 'register uploaded master'
+   & python -X utf8 (Join-Path $PSScriptRoot 'resolve_cache.py') cleanup --root $RootDir --episode $id --execute
+   if($LASTEXITCODE -ne 0){Write-Warning 'Upload verified; CacheClip was retained. Inspect cache state before cleanup.'}
+   & python -X utf8 (Join-Path $PSScriptRoot 'resolve_cache.py') delete-uploaded-master --root $RootDir --episode $id --execute
+   AssertExit 'delete only the SHA-verified uploaded local master'
+  }
+  'cleanup-cache' {
+   & python -X utf8 (Join-Path $PSScriptRoot 'resolve_cache.py') cleanup --root $RootDir --episode $id --execute
+   AssertExit 'verified upload CacheClip cleanup'
   }
   'fetch-final' {
-   Download "qingqingwu/post/final/$id.final-1080p60.mkv" (Join-Path $RootDir "final\$id.final-1080p60.mkv")
+   $finalName=& python -X utf8 (Join-Path $PSScriptRoot 'episode_lifecycle.py') final-name --root $RootDir --episode $id
+   AssertExit 'story chapter metadata'
+   $report=Join-Path $RootDir ".kwjd\remote-reports\$id.json"
+   Download "qingqingwu/post/reports/$id.json" $report
+   if(-not(Test-Path -LiteralPath $report)){throw 'No remote validated final report'}
+   $finalLocal=Join-Path $RootDir "final\$finalName"
+   Download "qingqingwu/post/final/$id.final-1080p60.mkv" $finalLocal
+   & python -X utf8 (Join-Path $PSScriptRoot 'episode_lifecycle.py') record-final --root $RootDir --episode $id --file $finalLocal --remote-report $report
+   AssertExit 'final receipt validation'
+  }
+  'complete-episode' {
+   if(-not $Episode -or -not $QualityNote){throw 'Complete one explicit Episode with actual QualityNote describing picture/subtitles/sync/audio checks'}
+   $lifecycle=Join-Path $PSScriptRoot 'episode_lifecycle.py'
+   & python -X utf8 $lifecycle quality-checked --root $RootDir --episode $id --note $QualityNote
+   AssertExit 'final quality check receipt'
+   $receipt=Join-Path $RootDir ".kwjd\receipts\$id.json"
+   Upload $receipt "qingqingwu/post/receipts/$id.json" | Out-Null
+   & ssh.exe -o BatchMode=yes $SshAlias "python3 ~/qingqingwu/repo/scripts/episode_lifecycle.py cleanup --root ~/qingqingwu --episode $id --role linux --receipt ~/qingqingwu/post/receipts/$id.json --execute"
+   AssertExit 'Linux receipt-gated episode cleanup'
+   & python -X utf8 $lifecycle cleanup --root $RootDir --episode $id --role windows --execute
+   AssertExit 'Windows receipt-gated episode cleanup'
+   Download "qingqingwu/.kwjd/cleanup/$id.linux.json" (Join-Path $RootDir ".kwjd\cleanup\$id.linux.json")
   }
   'submit' {
+   & python -X utf8 (Join-Path $PSScriptRoot 'episode_lifecycle.py') gate-next --root $RootDir --episode $id
+   AssertExit 'previous local upload cleanup gate'
    $files=@(Get-ChildItem -LiteralPath (Join-Path $RootDir 'masters') -File -ErrorAction SilentlyContinue |
        Where-Object {$_.Name -match ("^$id[.]clean-master[.](mp4|mkv|mov)$")})
-   if($files.Count -ne 1){throw "Master not found: $id"}
-   $name=$files[0].Name
-   if(-not(RemoteHash "qingqingwu/post/incoming/$name")){throw "Upload master first: $id"}
+   if($files.Count -eq 1){
+    $name=$files[0].Name
+    $localHash=(Get-FileHash -LiteralPath $files[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+   }else{
+    $uploaded=Get-Content -LiteralPath (Join-Path $RootDir ".kwjd\uploads\$id.json") -Raw -Encoding utf8|ConvertFrom-Json
+    if(-not $uploaded.verified -or -not $uploaded.local_master_deleted){throw "No verified uploaded master receipt: $id"}
+    $name=[IO.Path]::GetFileName($uploaded.local_path)
+    $localHash=$uploaded.sha256
+   }
+   if((RemoteHash "qingqingwu/post/incoming/$name") -ne $localHash){throw "Upload and verify current master first: $id"}
    $job=[ordered]@{
     schema_version=1;episode=$id;state='QUEUED'
     created_at=(Get-Date).ToUniversalTime().ToString('o')
     master="incoming/$name";srt="../output/$id.zh.srt"
+    master_sha256=$localHash
     style='styles/template.ass';output="final/$id.final-1080p60.mkv"
     spec=@{width=1920;height=1080;fps=60;subtitle='burn-in-last'}
    }
    $tmp=Join-Path $env:TEMP "$id.kwjd-job.json"
    try {
     $job|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $tmp -Encoding utf8
-    Upload $tmp "qingqingwu/post/jobs/$id.json"
+    Upload $tmp "qingqingwu/post/jobs/$id.json" | Out-Null
+    $submissions=Join-Path $RootDir '.kwjd\submissions'
+    New-Item -ItemType Directory -Force $submissions|Out-Null
+    Copy-Item -LiteralPath $tmp -Destination (Join-Path $submissions "$id.json")
    }finally{Remove-Item -LiteralPath $tmp -ErrorAction SilentlyContinue}
   }
  }

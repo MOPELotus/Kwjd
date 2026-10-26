@@ -60,7 +60,10 @@
     "style_approval_required_before_burn": true,
     "accepted_mix_peaks_are_nonblocking": true,
     "max_active_episodes": 1,
-    "sync_each_development_step": true
+    "sync_each_development_step": true,
+    "max_active_episodes_scope": "cloud_worker_only",
+    "cloud_post_fully_managed": true,
+    "windows_may_prepare_next_after_verified_upload_cleanup": true
   },
   "delivery": {
     "filename_pattern": "第{story_part_chinese}回 {chapter_title}.mkv",
@@ -69,8 +72,8 @@
     "receipt_requires_sha256_media_and_quality_checks": true
   },
   "lifecycle": {
-    "cleanup_after_windows_receipt": true,
-    "next_episode_requires_previous_cleanup": true,
+    "cleanup_after_windows_receipt": "server_final_and_remaining_artifacts_only",
+    "next_episode_requires_previous_cleanup": false,
     "cleanup_only_registered_generated_artifacts": true,
     "preserve": [
       "original_sources",
@@ -81,7 +84,12 @@
       "templates_fonts",
       "reusable_source",
       "active_environments"
-    ]
+    ],
+    "stagewise_cleanup": true,
+    "delete_local_master_after_verified_upload": true,
+    "resolve_cache_cleanup": "CacheClip_contents_only_after_verified_upload_and_unchanged_snapshot",
+    "release_cloud_master_after_verified_lossless_audio_handoff": true,
+    "retain_server_final_until_windows_receipt": true
   },
   "subtitle_style": {
     "family": "MiSans Subtitle",
@@ -92,8 +100,9 @@
     "outline": 3.5,
     "shadow": 1,
     "margin_v": 54,
-    "position_status": "review_after_new_E49_master",
-    "font_size_status": "latest_user_requested_increase",
-    "approval_required_before_burn": true
+    "position_status": "approved_on_new_E49_master",
+    "font_size_status": "approved_84",
+    "approval_required_before_burn": true,
+    "approved": true
   }
 }

@@ -60,4 +60,4 @@ Repeat for E50–E55 only as each one actually finishes. Do not seal incomplete 
 
 ## 现行约定优先
 
-E49–55已在2026-10-26封存取回，后续复用校验，不重跑。直接HEVC10bit+PCM导母片，同名重导以新SHA区分；残留字幕/拍桌峰值用户接受，E49免样片人工审批；Codex做MiSans样式，增强先行最后烧录；第X回 回目标题命名、回传验收再清上集、每步Git同步，详见[工作流](WORKFLOW.md)、[决策](DECISIONS.md)、[回传清理](LIFECYCLE.md)。
+E49–55已在2026-10-26封存取回，后续复用校验，不重跑。直接HEVC10bit+PCM导母片，同名重导以新SHA区分；残留字幕/拍桌峰值用户接受，E49免样片人工审批；Codex做MiSans样式，增强先行最后烧录；第X回 回目标题命名、阶段交接即清前步中间物（服务器最终片等回传验收）、每步Git同步，详见[工作流](WORKFLOW.md)、[决策](DECISIONS.md)、[回传清理](LIFECYCLE.md)。

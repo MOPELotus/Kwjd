@@ -80,6 +80,10 @@ def main():
                         "-t", "2", "-map", "0:v:0", "-map", "0:a:0",
                         "-f", "null", "-"], check=True)
         partial.rename(output)
+        if args.output.name == 'background' and args.videos.resolve() == (args.output.parent / 'videos').resolve():
+            from episode_lifecycle import register_artifact
+            register_artifact(args.output.parent, item['episode'], 'windows',
+                              f'background/{output.name}')
         print(f"{item['episode']}: {item['actual_seconds']:.3f}s "
               f"(delta {item['duration_delta_seconds']:+.3f}s)", flush=True)
     report = {"source": str(source), "mode": "stream-copy", "clips": plan}
