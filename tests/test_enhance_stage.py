@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 import fcntl
+import subprocess
 from unittest.mock import patch, Mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
@@ -41,12 +42,83 @@ class StageTests(unittest.TestCase):
                     stage.ensure_enhanced(master,out,root/'backend','S01E49',root/'log')
                 self.assertEqual(out.read_bytes(),b'enhanced-video')
 
+    def test_outer_enhancement_publication_recovers_from_missing_ready(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);master=root/'master';master.write_bytes(b'original');out=root/'enhanced.mkv'
+            real_atomic=stage.atomic_json
+            def crash(path,data):
+                if Path(path).name=='enhanced.mkv.ready.json':raise OSError('simulated receipt crash')
+                real_atomic(path,data)
+            def encode(args,**kw):Path(args[2]).write_bytes(b'accepted-video');return Mock(returncode=0)
+            with patch.object(stage,'probe',return_value=media()),patch.object(stage,'check_space'), \
+                 patch.object(stage.subprocess,'check_output',return_value=json.dumps({'additional_peak_bytes':10,'backend_fingerprint':'model'})), \
+                 patch.object(stage.subprocess,'run',side_effect=encode) as run:
+                with patch.object(stage,'atomic_json',side_effect=crash),self.assertRaises(OSError):
+                    stage.ensure_enhanced(master,out,root/'backend','S01E49',root/'log')
+                self.assertTrue(out.exists());self.assertFalse(out.with_name(out.name+'.ready.json').exists())
+                stage.ensure_enhanced(master,out,root/'backend','S01E49',root/'log')
+                self.assertEqual(run.call_count,1)
+                self.assertTrue(out.with_name(out.name+'.ready.json').exists())
+
     def test_orphan_output_never_trusted_or_overwritten(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);master=root/'master';out=root/'out';master.write_bytes(b'x');out.write_bytes(b'orphan')
             with patch.object(stage,'probe',return_value=media()),self.assertRaisesRegex(ValueError,'no verified checkpoint'):
                 stage.ensure_enhanced(master,out,root/'backend','S01E49',root/'log')
             self.assertEqual(out.read_bytes(),b'orphan')
+
+    def test_outer_publication_recovers_before_link_without_running_backend(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);master=root/'master';master.write_bytes(b'original');out=root/'enhanced.mkv'
+            partial=root/'enhanced.partial.mkv';partial.write_bytes(b'accepted-video')
+            record={'episode':'S01E49','master_sha256':stage.sha256(master),
+                    'sha256':stage.sha256(partial),'backend_fingerprint':'model'}
+            stage.atomic_json(out.with_name(out.name+'.ready.pending.json'),record)
+            with patch.object(stage,'probe',return_value=media()), \
+                 patch.object(stage.subprocess,'check_output',return_value=json.dumps({'additional_peak_bytes':10,'backend_fingerprint':'model'})), \
+                 patch.object(stage.subprocess,'run') as run,patch.object(stage,'check_space') as space:
+                self.assertEqual(stage.ensure_enhanced(master,out,root/'backend','S01E49',root/'log'),record)
+                run.assert_not_called();space.assert_not_called()
+            self.assertFalse(partial.exists());self.assertEqual(out.read_bytes(),b'accepted-video')
+            self.assertEqual(json.loads(out.with_name(out.name+'.ready.json').read_text()),record)
+
+    def test_modified_pending_partial_is_retained_and_never_published(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);master=root/'master';master.write_bytes(b'original');out=root/'enhanced.mkv'
+            partial=root/'enhanced.partial.mkv';partial.write_bytes(b'accepted-video')
+            record={'episode':'S01E49','master_sha256':stage.sha256(master),
+                    'sha256':stage.sha256(partial),'backend_fingerprint':'model'}
+            stage.atomic_json(out.with_name(out.name+'.ready.pending.json'),record)
+            partial.write_bytes(b'unverified replacement')
+            with patch.object(stage,'probe',return_value=media()), \
+                 patch.object(stage.subprocess,'run') as run,self.assertRaisesRegex(ValueError,'Pending enhancement'):
+                stage.ensure_enhanced(master,out,root/'backend','S01E49',root/'log')
+            run.assert_not_called();self.assertFalse(out.exists())
+            self.assertEqual(partial.read_bytes(),b'unverified replacement')
+
+    def test_backend_disk_pause_maps_to_waitdisk_and_preserves_checkpoints(self):
+        for returncode in (75,1):
+            with self.subTest(returncode=returncode),tempfile.TemporaryDirectory() as tmp:
+                root=Path(tmp);master=root/'master';master.write_bytes(b'original');out=root/'enhanced.mkv'
+                def pause(args,**kw):
+                    (root/'saved-segment.ready.json').write_text('{"verified": true}')
+                    raise subprocess.CalledProcessError(returncode,args)
+                with patch.object(stage,'probe',return_value=media()),patch.object(stage,'check_space'), \
+                     patch.object(stage.subprocess,'check_output',return_value=json.dumps({'additional_peak_bytes':10,'backend_fingerprint':'model'})), \
+                     patch.object(stage.subprocess,'run',side_effect=pause), \
+                     self.assertRaises(stage.WaitDisk if returncode==75 else subprocess.CalledProcessError):
+                    stage.ensure_enhanced(master,out,root/'backend','S01E49',root/'log')
+                self.assertTrue((root/'saved-segment.ready.json').exists())
+                self.assertFalse(out.exists());self.assertFalse(out.with_name(out.name+'.ready.json').exists())
+
+    def test_backend_disk_pause_during_plan_maps_to_waitdisk(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);master=root/'master';master.write_bytes(b'original')
+            with patch.object(stage,'probe',return_value=media()), \
+                 patch.object(stage.subprocess,'check_output',side_effect=subprocess.CalledProcessError(75,['backend','--plan'])), \
+                 patch.object(stage.subprocess,'run') as run,self.assertRaises(stage.WaitDisk):
+                stage.ensure_enhanced(master,root/'out',root/'backend','S01E49',root/'log')
+            run.assert_not_called()
 
     def test_reserve_and_wrong_fps(self):
         with patch.object(stage.shutil,'disk_usage',return_value=Mock(free=30*stage.GIB)):
