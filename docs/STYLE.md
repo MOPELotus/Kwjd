@@ -9,4 +9,5 @@
 - kwjd.py make-ass保留SRT内容/空格/时间（四舍五入到ASS10ms），样式修改不改封存SRT。
 - sync-style只同步当前模板、字体、可选批准sidecar，不上传预览媒体/旧样式；双端SHA及Linux fc-match/libass实际fontselect均检查。
 - 最终样式/位置确认后生成template.ass.ready.json，approved=true且sha256匹配；模板改动旧批准失效。Worker等匹配批准再烧录，独立增强不受影响。
+- 已有实际播放批准后用`python scripts/seal_subtitle_style.py --styles D:/qingqingwu/styles --master-sha256 <实际审看母片SHA> --note "实际批准依据" --approve`生成模板和所有字体SHA绑定收据，再`qqw.ps1 -Command sync-style`原子替换当前样式。模板或字体更改均需重新审看并封存。
 - 残留硬字幕已接受，不为遮盖残片加黑条或改对白；ASS在增强后烧录。

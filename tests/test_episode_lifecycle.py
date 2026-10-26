@@ -31,6 +31,20 @@ class LifecycleTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             life.metadata_from_name('S01E49.mp4', 'S01E49')
 
+    def test_returned_final_cannot_belong_to_retired_master(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            final = root / 'final/第一回 测试.mkv'
+            final.parent.mkdir()
+            final.write_bytes(b'old-final')
+            report = root / 'report.json'
+            life.save(report, {'episode': 'S01E49', 'sha256': life.sha256(final),
+                               'master_sha256': 'a' * 64})
+            life.save(root / '.kwjd/uploads/S01E49.json',
+                      {'verified': True, 'sha256': 'b' * 64})
+            with self.assertRaisesRegex(ValueError, 'different master'):
+                life.record_final(root, 'S01E49', final, report)
+
     def test_receipt_quality_and_final_hash_gate_deletion(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

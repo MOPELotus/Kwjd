@@ -151,6 +151,10 @@ def record_final(root, ep, file, remote_report):
         raise ValueError('Remote report and returned final SHA/episode differ')
     if not re.fullmatch(r'[0-9a-f]{64}', report.get('master_sha256', '')):
         raise ValueError('Remote final report must bind the actual master SHA')
+    uploaded = root / '.kwjd/uploads' / f'{ep}.json'
+    upload = load(uploaded)
+    if upload.get('verified') is not True or upload.get('sha256') != report['master_sha256']:
+        raise ValueError('Returned final used a different master than the verified current upload')
     info = json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-show_format',
                                               '-show_streams', '-of', 'json', str(file)]))
     check_final_media(info)

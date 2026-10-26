@@ -123,6 +123,11 @@ if($Command -eq 'sync-style'){
  if(Test-Path -LiteralPath $styleSeal){
   $approval=Get-Content -LiteralPath $styleSeal -Raw -Encoding utf8|ConvertFrom-Json
   if(-not $approval.approved -or $approval.sha256 -ne (Get-FileHash -LiteralPath (Join-Path $folder 'template.ass') -Algorithm SHA256).Hash.ToLowerInvariant()){throw 'Style approval is stale'}
+  if(-not $approval.PSObject.Properties['fonts']){throw 'Seal style with seal_subtitle_style.py to bind actual font hashes'}
+  foreach($fontEntry in $approval.fonts.PSObject.Properties){
+   if($fontEntry.Name -notmatch '^[A-Za-z0-9_.-]+[.](ttf|otf|ttc)$'){throw 'Unsafe sealed font name'}
+   if((Get-FileHash -LiteralPath (Join-Path $folder ('fonts/'+$fontEntry.Name)) -Algorithm SHA256).Hash.ToLowerInvariant() -ne $fontEntry.Value){throw 'Approved font has changed'}
+  }
   Upload $styleSeal 'qingqingwu/post/styles/template.ass.ready.json' -ReplaceStyle | Out-Null
  }
  Write-Host 'Style copied. Verify libass selected expected font before production.'
