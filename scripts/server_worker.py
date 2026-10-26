@@ -144,6 +144,11 @@ def do_job(job_path):
     if not style.is_file():
         update(job_path, job, "WAIT_STYLE", "Aegisub template missing")
         return
+    style_seal = style.with_name(style.name + ".ready.json")
+    approval = json.loads(style_seal.read_text()) if style_seal.is_file() else {}
+    if approval.get("approved") is not True or approval.get("sha256") != sha256(style):
+        update(job_path, job, "WAIT_STYLE_APPROVAL", "Template present but human approval missing/obsolete")
+        return
     read_srt(srt)
     # Encoded output has a bounded50Mbps video budget plus lossless audio margin.
     seconds = duration(probe(master))
@@ -247,7 +252,9 @@ def main():
                 try:
                     job = json.loads(file.read_text(encoding="utf-8-sig"))
                     if job.get("state") in ("QUEUED", "WAIT_MASTER", "WAIT_SUBTITLE",
-                                            "WAIT_STYLE", "WAIT_BACKEND", "WAIT_DISK", "ENHANCED_READY"):
+                                            "WAIT_STYLE", "WAIT_STYLE_APPROVAL", "WAIT_BACKEND", "WAIT_DISK", "ENHANCED_READY"):
+                        if STAGE == "enhance" and job.get("state") == "ENHANCED_READY":
+                            continue
                         do_job(file)
                         if args.once:
                             return
