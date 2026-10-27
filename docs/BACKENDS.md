@@ -376,11 +376,15 @@ it does not permit deleting all of `D:/ResolveWork`. No system cleanup policy ch
 
 Every filesystem must retain25GiB independently. Do not add the two free-space
 values to claim one large file fits. Enhancement plans cap video40Mbps and budget
-45Mbps plus8GiB for bounded scratch/logs. Final encoding caps video50Mbps and
+45Mbps plus512MiB for segmented CUDA rawvideo-pipe bookkeeping/logs;
+the portable PNG backend retains8GiB scratch. No model or frame-clock change is
+implied by this disk-only policy. Final encoding caps video50Mbps and
 reserves a separate output budget. No raw full-video intermediate is generated.
 Budgets must be refreshed after the actual upload and before processing.
 Scratch selection searches actual user-owned writable disk mounts, tests write
-access and reserves the full8GiB independently. RAM/virtual mounts are excluded.
+access and conservatively checks8GiB for placement eligibility. The segmented
+CUDA plan then reports512MiB working scratch; portable PNG plans retain8GiB.
+RAM/virtual mounts are excluded.
 It automatically switches eligible scratch placement if the preferred disk is
 too full. Output volumes are still independently checked; if no safe placement
 is available the job waits for disk rather than starting an unbounded task.
@@ -409,10 +413,11 @@ and separate audio may be released with a stage journal. Compact source probes,
 hash receipts, ASS and human evidence remain. The unique final is never removed
 by stage cleanup; it awaits the verified Windows final-delivery receipt.
 
-At3517.56s, a one-copy enhancement allowance is approximately26.43GiB on
+At3517.56s, a CUDA one-copy enhancement allowance is approximately18.93GiB on
 root; the external concat separately reserves approximately18.43GiB plus metadata
 on home, and is removed before the final's25.57GiB allowance is needed. The
-same-volume fallback reserves approximately44.86GiB for both copies plus scratch.
+CUDA same-volume fallback reserves approximately37.36GiB for both copies plus
+scratch; portable PNG fallback retains approximately44.86GiB.
 The received8.04GiB HEVC master already occupies home and must not be counted
 as available space. Refresh actual per-filesystem free bytes before every stage
 and while writing; the retired76.09GiB DNxHR does not fit with the reserve. These

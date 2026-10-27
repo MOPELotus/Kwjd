@@ -45,9 +45,15 @@ def verified_segment_bytes(directory,digest,fp):
 
 def plan(master,cfg,output=None,episode=None):
     result=engine.disk_plan(engine.source_info(master),cfg)
+    # CUDA uses rawvideo pipes: only compressed video, receipts and logs touch disk.
+    # Retain the portable PNG pipeline's8GiB bound and the25GiB filesystem floor.
+    streaming=cfg.get('rife_backend') in ('cuda_onnx','cuda_trt','cuda_trt_sm86')
+    working_bytes=512*1024**2 if streaming else 8*GIB
+    result['scratch_peak_bytes']=working_bytes
+    result['scratch_strategy']='rawvideo_pipe' if streaming else 'png_exchange'
     # Segments plus concatenated output coexist until complete decode acceptance.
     seconds=result['input_duration']
-    result['additional_peak_bytes']=int(seconds*90_000_000/8)+8*GIB
+    result['additional_peak_bytes']=int(seconds*90_000_000/8)+working_bytes
     result['backend_fingerprint']=fingerprint(cfg)
     result['resumable_segments']=True
     if output is not None:
@@ -78,7 +84,7 @@ def plan(master,cfg,output=None,episode=None):
             _,extra=concat_transfer.choose_concat(cfg['post_root'],output,directory,identity,video_budget,
                                                   releasable_bytes=occupied)
             if extra:
-                result['additional_peak_bytes']=max(16*1024**2,video_budget+8*GIB-occupied)
+                result['additional_peak_bytes']=max(16*1024**2,video_budget+working_bytes-occupied)
                 result['extra_volumes']=[{'path':str(Path(extra['concat_path']).parent),
                     'additional_peak_bytes':extra['concat_additional_peak_bytes']}]
                 result['concat_placement']=extra
