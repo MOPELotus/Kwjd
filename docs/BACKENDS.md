@@ -182,6 +182,31 @@ publication writes a persistent deduplicated PENDING_NOTIFICATION record. This
 record does not claim that an unavailable cross-thread tool sent a message.
 Finals remain until receipt-gated Windows acceptance.
 
+### Actual thermal limits and owned-process cooling
+
+The sustained E49 run exposed a material limit that the shorter comparison did
+not settle: Tesla T10 reached90°C, while its actual reported operating/slowdown/
+shutdown limits are87/89/92°C. The earlier11–14hour estimate is withdrawn pending
+thermal-duty measurement or a safely validated alternate placement. Do not keep
+running this profile at90°C or reuse cold-card throughput as a final ETA.
+
+`thermal_guard.py` supervises only an explicit same-uid backend child and worker,
+binding exact argv, source/profile and both `/proc` start times. Linux pidfds
+prevent signals to recycled PIDs. It changes no fan/clock/driver settings and
+never signals other workloads. The currently owned inference was stopped with
+its verified segment receipts retained, then automatically continued after
+cooling. Each card's real hardware limits derive a pause point at the lower of
+operating minus1°C or shutdown minus4°C, with4°C resume hysteresis: A4000
+97/93°C and T10 86/82°C on this host. State and ownership are journaled in
+`reports/thermal_pause.json`; missing/changed evidence cannot authorize resume.
+`--adopt` requires a matching owned-stop receipt for a stopped process, and may
+watch an already-running unowned process after service restart without sending
+CONT. A stopped process without ownership is never resumed. The separate user
+service monitors every5seconds; source/model fingerprints remain unchanged.
+The dashboard explicitly overlays cooling pauses and invalidates unsupported
+remaining-time estimates. An alternate GPU placement must preserve the4GiB
+shared-memory reserve and pass actual resource/quality checks before admission.
+
 ### Read-only tmux progress view
 
 `post_dashboard.py --post ~/qingqingwu/post --episode S01E49` renders a standalone

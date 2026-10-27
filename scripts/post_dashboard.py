@@ -126,10 +126,23 @@ def collect(post,episode,now=None):
                and eta.get('backend_fingerprint')==production.get('backend_fingerprint')
                and bool(production.get('backend_fingerprint')))
     if not eta_bound:eta={}
+    thermal=read_json(post/'reports/thermal_pause.json')
+    thermal_bound=(thermal.get('episode')==episode and thermal.get('master_sha256')==digest
+                   and thermal.get('backend_fingerprint')==fp)
+    paused=False
+    if thermal_bound and thermal.get('owned_stop') is True and type(thermal.get('backend_pid')) is int:
+        try:
+            process=Path('/proc')/str(thermal['backend_pid'])
+            fields=(process/'stat').read_text().rsplit(')',1)[1].split()
+            cmd=(process/'cmdline').read_bytes()
+            paused=(fields[0] in ('T','t') and b'/scripts/segmented_backend.py' in cmd
+                    and fields[19]==str(thermal.get('backend_starttime'))
+                    and fields[1]==str(thermal.get('worker_pid')))
+        except (OSError,IndexError):pass
     logs,mtime=tail_log(post/'logs'/f'{episode}.log')
     rate=recent_rate(logs,episode)
     updated=timestamp(job.get('updated_at'))
-    if (stale or job.get('state')!='ENHANCING' or mtime is None
+    if (stale or paused or job.get('state')!='ENHANCING' or mtime is None
             or now.timestamp()-mtime>300 or now.timestamp()-mtime < -5
             or (updated and mtime<updated.timestamp())
             or progress.get('status')!='known'):
@@ -144,7 +157,7 @@ def collect(post,episode,now=None):
     segments_total=((total+size-1)//size if type(total) is int and total>0
                     and type(size) is int and size>0 else 'unknown')
     return {'episode':episode,'snapshot':snap,'sampled_job':sampled,'job':job,'now':now,
-            'segments_total':segments_total,
+            'segments_total':segments_total,'thermal':thermal if thermal_bound else {},'thermal_paused':paused,
             'progress':progress,'stale':stale,'age':age,'eta':eta,'rate':rate,
             'logs':logs[-3:],'worker_pid':eta.get('worker_pid'),
             'monitor_pid':snap.get('monitor_pid')}
@@ -165,9 +178,11 @@ def clip(text,width):
 
 def render(view):
     snap=view['snapshot'];job=view['job'] or view['sampled_job'];state=job.get('state','unknown')
+    if view.get('thermal_paused'):state='THERMAL_PAUSE'
     age=view['age'];age_text=f'{max(0,age):.0f}秒前' if finite(age) else 'unknown'
     freshness='STALE 陈旧快照，以下遥测仅为上次记录' if view['stale'] else '快照有效（monitor 约30秒更新）'
-    lines=[f"{view['episode']} 后处理进度 | 只读面板",f'阶段：{PHASES.get(state,"等待或状态未知")} | 状态：{state}',
+    phase='温度保护降温，已完成分段保留' if state=='THERMAL_PAUSE' else PHASES.get(state,'等待或状态未知')
+    lines=[f"{view['episode']} 后处理进度 | 只读面板",f'阶段：{phase} | 状态：{state}',
            '任务最近更新：'+str(job.get('updated_at','unknown')),
            f'遥测：{freshness} | {age_text} | {snap.get("captured_at","unknown")}']
     p=view['progress'];done=p.get('source_frames_complete');total=p.get('source_frames_total');percent=p.get('percent')
@@ -179,6 +194,8 @@ def render(view):
                       f'已处理源视频：{hms(done/25)} / {hms(total/25)}（25fps 源时钟）'])
     else:lines.append('分段进度：unknown | '+str(p.get('reason','尚无匹配的已验证分段收据')))
     lines.append('进度仅为收据记录；未重读媒体哈希；百分比不代表最终成片验收')
+    if view.get('thermal_paused'):
+        lines.append('温度保护：'+str(view.get('thermal',{}).get('reason','等待全部 GPU 降到恢复阈值')))
     eta=view['eta'];hours=eta.get('estimated_hours_from_full_start_through_final_checks')
     if isinstance(hours,list) and len(hours)==2 and all(finite(x) and x>0 for x in hours):
         lines.append(f'全流程估计：从整回启动计 {hours[0]}–{hours[1]} 小时（非剩余时间）')
