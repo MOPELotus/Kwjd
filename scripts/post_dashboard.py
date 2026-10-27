@@ -94,6 +94,30 @@ def process_status(pid,expected):
     except OSError:return '未运行或不可读'
 
 
+def validation_status(post,episode):
+    record=read_json(post/'reports/active_validation.json')
+    if record.get('episode')!=episode:return None
+    pid=record.get('pid');name=record.get('log')
+    if type(pid) is not int or pid<=0 or not isinstance(name,str) or Path(name).name!=name:return None
+    try:
+        proc=Path('/proc')/str(pid)
+        fields=(proc/'stat').read_text().rsplit(')',1)[1].split()
+        if (fields[19]!=str(record.get('starttime')) or fields[0] in ('Z','X')
+                or b'/scripts/segmented_backend.py' not in (proc/'cmdline').read_bytes()):return None
+    except (OSError,IndexError):return None
+    lines,_=tail_log(post/'logs'/name);done=0
+    total=record.get('source_frames_total')
+    if type(total) is not int or total<=0:return None
+    for line in lines:
+        try:row=json.loads(line)
+        except ValueError:continue
+        if not isinstance(row,dict) or row.get('episode')!=episode:continue
+        value=row.get('source_frames_complete')
+        if type(value) is int and 0<=value<=total and row.get('source_frames_total')==total:done=value
+    return {'label':record.get('label','技术验证'),'pid':pid,'done':done,'total':total,
+            'rate':recent_rate(lines,episode)}
+
+
 def collect(post,episode,now=None):
     now=now or datetime.now(timezone.utc)
     snap=read_json(post/'reports/live_status.json')
@@ -158,6 +182,8 @@ def collect(post,episode,now=None):
                     and type(size) is int and size>0 else 'unknown')
     return {'episode':episode,'snapshot':snap,'sampled_job':sampled,'job':job,'now':now,
             'segments_total':segments_total,'thermal':thermal if thermal_bound else {},'thermal_paused':paused,
+            'placement_validation':bool(thermal_bound and thermal.get('state')=='VALIDATING_GPU_PLACEMENT'),
+            'validation':validation_status(post,episode),
             'progress':progress,'stale':stale,'age':age,'eta':eta,'rate':rate,
             'logs':logs[-3:],'worker_pid':eta.get('worker_pid'),
             'monitor_pid':snap.get('monitor_pid')}
@@ -179,26 +205,43 @@ def clip(text,width):
 def render(view):
     snap=view['snapshot'];job=view['job'] or view['sampled_job'];state=job.get('state','unknown')
     if view.get('thermal_paused'):state='THERMAL_PAUSE'
+    if view.get('placement_validation'):state='VALIDATING_GPU_PLACEMENT'
     age=view['age'];age_text=f'{max(0,age):.0f}秒前' if finite(age) else 'unknown'
     freshness='STALE 陈旧快照，以下遥测仅为上次记录' if view['stale'] else '快照有效（monitor 约30秒更新）'
-    phase='温度保护降温，已完成分段保留' if state=='THERMAL_PAUSE' else PHASES.get(state,'等待或状态未知')
+    phase=('温度保护降温，已完成分段保留' if state=='THERMAL_PAUSE' else
+           '同模型单卡方案技术验证，已完成分段保留' if state=='VALIDATING_GPU_PLACEMENT' else PHASES.get(state,'等待或状态未知'))
     lines=[f"{view['episode']} 后处理进度 | 只读面板",f'阶段：{phase} | 状态：{state}',
            '任务最近更新：'+str(job.get('updated_at','unknown')),
            f'遥测：{freshness} | {age_text} | {snap.get("captured_at","unknown")}']
+    validation=view.get('validation')
+    if validation:
+        lines.append(f'当前测试：{validation["label"]} | {validation["done"]:,}/{validation["total"]:,} 源帧 '
+                     f'({100*validation["done"]/validation["total"]:.1f}%) | PID {validation["pid"]}')
+        if validation['rate']:
+            lines.append(f'测试近期吞吐：{validation["rate"]["source_fps"]:.3f} 源帧/秒；测试进度不计入整回完成率')
     p=view['progress'];done=p.get('source_frames_complete');total=p.get('source_frames_total');percent=p.get('percent')
     known=(p.get('status')=='known' and type(done) is int and type(total) is int and total>0
            and 0<=done<=total and finite(percent) and 0<=percent<=100)
     if known:
         n=int(percent*24/100);bar='['+'#'*n+'-'*(24-n)+']'
-        lines.extend([f'分段 {bar} {percent:.3f}% | 源帧 {done:,}/{total:,} | 已完成段 {p.get("verified_segments","unknown")}/{view.get("segments_total","unknown")}',
+        label='整回保留分段' if view.get('placement_validation') else '分段'
+        lines.extend([f'{label} {bar} {percent:.3f}% | 源帧 {done:,}/{total:,} | 已完成段 {p.get("verified_segments","unknown")}/{view.get("segments_total","unknown")}',
                       f'已处理源视频：{hms(done/25)} / {hms(total/25)}（25fps 源时钟）'])
     else:lines.append('分段进度：unknown | '+str(p.get('reason','尚无匹配的已验证分段收据')))
     lines.append('进度仅为收据记录；未重读媒体哈希；百分比不代表最终成片验收')
     if view.get('thermal_paused'):
         lines.append('温度保护：'+str(view.get('thermal',{}).get('reason','等待全部 GPU 降到恢复阈值')))
+        thermal=view.get('thermal',{});temps=thermal.get('temperatures') or {}
+        details=[]
+        for index,item in temps.items():
+            if isinstance(item,dict):details.append(f'GPU{index} {item.get("current","?")}°C → 恢复≤{item.get("resume","?")}°C')
+        if details:lines.append('恢复门槛：'+' | '.join(details))
+        lines.append('累计温控暂停：'+hms(thermal.get('paused_seconds')))
     eta=view['eta'];hours=eta.get('estimated_hours_from_full_start_through_final_checks')
     if isinstance(hours,list) and len(hours)==2 and all(finite(x) and x>0 for x in hours):
         lines.append(f'全流程估计：从整回启动计 {hours[0]}–{hours[1]} 小时（非剩余时间）')
+    elif eta.get('state')=='THERMAL_POLICY_REVALIDATION':
+        lines.append('全流程 ETA：温控占空比与安全运行方案实测中；旧估计已撤回')
     else:lines.append('全流程 ETA：unknown（缺少当前母片/后端匹配估计）')
     completion=eta.get('expected_completion_beijing_range')
     if isinstance(completion,list) and len(completion)==2:

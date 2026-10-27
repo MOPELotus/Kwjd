@@ -116,5 +116,26 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(dashboard.clip('中文abc',1),'')
         self.assertNotIn('\x1b',dashboard.clip('\x1b[31mtext',20))
 
+    def test_validation_progress_requires_same_live_process_and_separate_frame_total(self):
+        pid=os.getpid()
+        starttime=Path(f'/proc/{pid}/stat').read_text().rsplit(')',1)[1].split()[19]
+        record={'episode':'S01E49','pid':pid,'starttime':starttime,'log':'validation.log',
+                'source_frames_total':1500,'label':'独立样片测试'}
+        self.write('reports/active_validation.json',record)
+        (self.post/'logs/validation.log').write_text('\n'.join(json.dumps(row) for row in [
+            {'episode':'S01E49','source_frames_complete':500,'source_frames_total':1500},
+            {'episode':'S01E50','source_frames_complete':999,'source_frames_total':1500},
+            {'episode':'S01E49','source_frames_complete':999,'source_frames_total':999}]))
+        with patch.object(Path,'read_bytes',return_value=b'/scripts/segmented_backend.py\0'):
+            view=dashboard.collect(self.post,'S01E49',self.now)
+            self.assertEqual(view['validation']['done'],500)
+            self.assertEqual(view['progress']['source_frames_complete'],750)
+            self.assertIn('500/1,500 源帧','\n'.join(dashboard.render(view)))
+            record['starttime']='wrong';self.write('reports/active_validation.json',record)
+            self.assertIsNone(dashboard.validation_status(self.post,'S01E49'))
+        record['starttime']=starttime;record['log']='../other.log'
+        self.write('reports/active_validation.json',record)
+        self.assertIsNone(dashboard.validation_status(self.post,'S01E49'))
+
 
 if __name__=='__main__':unittest.main()
