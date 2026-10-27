@@ -16,6 +16,10 @@ param(
 )
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
+# Hidden/background PowerShell may inherit a legacy console code page. Python
+# emits UTF-8 explicitly; decode it consistently before using chapter names.
+[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)
+$OutputEncoding=[System.Text.UTF8Encoding]::new($false)
 $repo=Split-Path -Parent $PSScriptRoot
 $project=Get-Content -LiteralPath (Join-Path $repo 'config/project.json') -Raw -Encoding utf8 | ConvertFrom-Json
 $season=[string]$project.season
@@ -83,7 +87,11 @@ function Download([string]$from,[string]$to){
   }
   throw "Local file differs; won't overwrite $to"
  }
- $part="$to.downloading"
+ # Windows OpenSSH can corrupt non-ASCII local paths. Transfer to an ASCII
+ # staging name, verify its hash, then use native PowerShell for the final name.
+ $staging=Join-Path $RootDir '.kwjd/downloads'
+ New-Item -ItemType Directory -Force $staging | Out-Null
+ $part=Join-Path $staging "$hash.downloading"
  & scp.exe -O -o Compression=no -- ($SshAlias+':'+$from) $part; AssertExit 'scp download'
  if((Get-FileHash -Algorithm SHA256 -LiteralPath $part).Hash.ToLowerInvariant() -ne $hash){throw 'Download SHA mismatch'}
  Move-Item -LiteralPath $part -Destination $to
