@@ -1,5 +1,6 @@
 """Pinned same-model TensorRT RIFE placement on the shared physical A4000."""
 import json
+import math
 from pathlib import Path
 import subprocess
 import time
@@ -10,6 +11,14 @@ from enhance_stage import sha256,WaitGPU
 
 ENGINE_SHA='77a32369d84689d37ee64141a900531239346efa7b9001cc1cd1bdb72ed5f90a'
 BUILD_RECIPE_SHA='b850d393872d990c452c52858c8b800e726d9ecb60262a50a8c5fedbe0e82ee3'
+
+
+def runtime_reserve_bytes(cfg):
+    """Runtime admission policy; independent of the historical engine build floor."""
+    value=cfg.get('restore_free_reserve_gib',4)
+    if type(value) not in (int,float) or not math.isfinite(value) or not .5<=value<=8:
+        raise ValueError('Shared CUDA reserve must be finite and within0.5..8GiB')
+    return int(value*GIB)
 
 
 class CudaRife(BaseRife):
@@ -24,6 +33,7 @@ class CudaRife(BaseRife):
         self._thermal_checked=now
 
     def __init__(self,cfg):
+        self.reserve_bytes=runtime_reserve_bytes(cfg)
         self.thermal_check()
         pins=cfg['file_sha256']
         for key in ('rife_trt_engine','rife_trt_model','rife_trt_build_report','rife_trt_build_recipe','rife_onnx'):
@@ -57,7 +67,7 @@ class CudaRife(BaseRife):
                                        '--format=csv,noheader'],text=True).strip()
         if actual!='NVIDIA RTX A4000, 580.178.04':raise ValueError('Physical GPU/driver differs')
         cap=float(cfg['restore_memory_gib'])*GIB
-        def reserve():return 4*GIB+max(0,cap-torch.cuda.memory_reserved(0))+128*1024**2
+        def reserve():return self.reserve_bytes+max(0,cap-torch.cuda.memory_reserved(0))+128*1024**2
         self.memory=DeviceMemory();self.allocator=make_allocator(trt,self.memory,reserve)
         self.logger=trt.Logger(trt.Logger.WARNING);self.runtime=trt.Runtime(self.logger)
         self.runtime.gpu_allocator=self.allocator
@@ -85,10 +95,12 @@ class CudaRife(BaseRife):
                           'engine_sha256':ENGINE_SHA,'global_free_bytes':self.memory.free_bytes(),
                           'context_device_memory_bytes':self.engine.device_memory_size_v2,
                           'allocator_peak_bytes':self.allocator.peak_bytes}),flush=True)
+        print(json.dumps({'shared_runtime_reserve_bytes':self.reserve_bytes,
+                          'torch_allocator_cap_bytes':int(cap),'headroom_margin_bytes':128*1024**2}),flush=True)
 
     def interpolate(self,a,b,timestep):
         self.thermal_check()
-        if self.memory.free_bytes()<4*GIB+128*1024**2:raise WaitGPU('Shared SM86 global headroom changed')
+        if self.memory.free_bytes()<self.reserve_bytes+128*1024**2:raise WaitGPU('Shared SM86 global headroom changed')
         result=super().interpolate(a,b,timestep)
         if self.allocator.errors:raise WaitGPU('SM86 allocation callback failed; segment retained')
         return result

@@ -1,5 +1,21 @@
 # Linux enhancement backend contract (implementation handoff)
 
+## E49 runtime memory reserve authorization (2026-10-27)
+
+The user explicitly permits reducing shared GPU free-memory reserve to keep E49
+running. The SM86 runtime uses `restore_free_reserve_gib` consistently for both
+restoration admission and TensorRT admission/frame checks (default4GiB, bounded
+0.5..8GiB). The first authorized adjustment is3GiB; retain the remaining Torch
+allocation budget and128MiB margin, the0.5GiB Torch cap, actual thermal limits,
+and the identical pinned models/kernels. Historical engine-build proof at4GiB
+remains historical evidence and must not be rewritten as a new build.
+
+A resource-policy change changes the backend fingerprint. Existing completed
+segments may be explicitly carried forward only after a bounded actual GPU
+equivalence check, individual media SHA verification and a preserved old/new
+receipt mapping; never relabel or delete the original audited receipts, or
+restart enhancement from zero merely because the reserve changed.
+
 ## Current authorization and independent stage (2026-10-26)
 
 The user now accepts residual hard subtitles and explicitly waived the manual
