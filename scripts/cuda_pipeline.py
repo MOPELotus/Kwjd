@@ -4,6 +4,7 @@ RGB frames travel to CUDA once for restoration and stay there through RIFE.
 Only final RGB output crosses back for FFmpeg/NVENC. No PNG frame exchange.
 """
 import json
+from contextlib import nullcontext
 from pathlib import Path
 import subprocess
 import time
@@ -16,7 +17,10 @@ def run(master, output, episode, cfg, *, source_start=0, source_frames=None,
         prepared=None, restorer=None):
     import enhance_backend as engine
     from cuda_restore import Restorer
-    from cuda_rife import CudaRife
+    if cfg.get('rife_backend')=='cuda_trt':
+        from cuda_trt import CudaRife
+    else:
+        from cuda_rife import CudaRife
     from PIL import Image
     begin=time.monotonic()
     if Path(output).exists():raise ValueError('Refusing to overwrite CUDA output')
@@ -39,6 +43,13 @@ def run(master, output, episode, cfg, *, source_start=0, source_frames=None,
     restorer=restorer or Restorer(cfg)
     if not hasattr(restorer,'rife'):restorer.rife=CudaRife(cfg)
     rife=restorer.rife;torch=restorer.torch
+    # Keep TRT enqueue, peer copies and output consumption on one persistent
+    # non-default stream. The borrowed output is consumed before the next call.
+    if cfg.get('rife_backend')=='cuda_trt' and not hasattr(rife,'pipeline_stream'):
+        rife.pipeline_stream=torch.cuda.Stream(device=rife.device)
+    def rife_context():
+        return (torch.cuda.stream(rife.pipeline_stream)
+                if hasattr(rife,'pipeline_stream') else nullcontext())
     timing['initialization']=time.monotonic()-initialization
     decoder=encoder=pool=None;emitted=generated=cuts=0;cut_frames=[];frames=engine.output_count(count)
     available=min(count+1,full-source_start)
@@ -65,9 +76,11 @@ def run(master, output, episode, cfg, *, source_start=0, source_frames=None,
             return image,tensor
         def to_rife(tensor):
             stamp=time.monotonic()
-            if tensor.device!=rife.device:
-                tensor=tensor.to(rife.device)
-                torch.cuda.synchronize(rife.device)
+            with rife_context():
+                if tensor.device!=rife.device:
+                    tensor=tensor.to(rife.device)
+                    if hasattr(rife,'pipeline_stream'):rife.pipeline_stream.synchronize()
+                    else:torch.cuda.synchronize(rife.device)
             timing['peer_transfer']+=time.monotonic()-stamp
             return tensor
         previous,a=read();a=to_rife(a)
@@ -93,13 +106,14 @@ def run(master, output, episode, cfg, *, source_start=0, source_frames=None,
                 while emitted<frames:
                     left,alpha=engine.frame_position(emitted)
                     if left!=index:break
-                    if alpha and not cut and index+1<available:
-                        stamp=time.monotonic();frame=rife.interpolate(a,b,float(alpha))
-                        timing['rife']+=time.monotonic()-stamp;generated+=1
-                    else:frame=a
-                    stamp=time.monotonic()
-                    pixels=(frame[0].permute(1,2,0)*255).round().clamp_(0,255).to(torch.uint8).contiguous().cpu().numpy().tobytes()
-                    timing['output_transfer']+=time.monotonic()-stamp
+                    with rife_context():
+                        if alpha and not cut and index+1<available:
+                            stamp=time.monotonic();frame=rife.interpolate(a,b,float(alpha))
+                            timing['rife']+=time.monotonic()-stamp;generated+=1
+                        else:frame=a
+                        stamp=time.monotonic()
+                        pixels=(frame[0].permute(1,2,0)*255).round().clamp_(0,255).to(torch.uint8).contiguous().cpu().numpy().tobytes()
+                        timing['output_transfer']+=time.monotonic()-stamp
                     stamp=time.monotonic();encoder.stdin.write(pixels)
                     timing['encode_pipe']+=time.monotonic()-stamp;emitted+=1
                 previous,a=following,b

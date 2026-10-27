@@ -63,9 +63,11 @@ def config(path):
     for filename, expected in data['file_sha256'].items():
         if sha256(filename) != expected:
             raise ValueError('Backend/model hash mismatch: '+filename)
-    if data.get('rife_backend','ncnn') not in ('ncnn','cuda_onnx'):
+    if data.get('rife_backend','ncnn') not in ('ncnn','cuda_onnx','cuda_trt'):
         raise ValueError('Unknown RIFE backend; implicit fallback forbidden')
-    needed = ([data['rife_onnx']] if data.get('rife_backend')=='cuda_onnx' else
+    needed = ([data['rife_trt_engine'],data['rife_trt_model'],data['rife_trt_provenance']]
+              if data.get('rife_backend')=='cuda_trt' else
+              [data['rife_onnx']] if data.get('rife_backend')=='cuda_onnx' else
               [data['rife'],str(Path(data['rife_model'])/'flownet.bin'),
               str(Path(data['rife_model'])/'flownet.param')])
     if data['restore'] and data.get('restoration_backend','ncnn') == 'ncnn':
@@ -80,8 +82,9 @@ def config(path):
     data['fingerprint'] = hashlib.sha256(Path(path).read_bytes()+Path(__file__).read_bytes()).hexdigest()
     if data.get('restoration_backend') == 'cuda_srvgg':
         data['fingerprint']=hashlib.sha256((data['fingerprint']+sha256(Path(__file__).with_name('cuda_restore.py'))).encode()).hexdigest()
-    if data.get('rife_backend')=='cuda_onnx':
-        for name in ('cuda_rife.py','cuda_pipeline.py'):
+    if data.get('rife_backend') in ('cuda_onnx','cuda_trt'):
+        helper='cuda_trt.py' if data['rife_backend']=='cuda_trt' else 'cuda_rife.py'
+        for name in (helper,'cuda_pipeline.py'):
             data['fingerprint']=hashlib.sha256((data['fingerprint']+sha256(Path(__file__).with_name(name))).encode()).hexdigest()
     scratch, selection = choose_scratch(Path(path).parent.parent, 8*GIB,
         candidates=None if data.get('scratch') is None else _scratch_candidates(data, path))
@@ -133,7 +136,7 @@ def disk_plan(data, cfg):
 
 
 def run(master, output, episode, cfg, *, source_start=0, source_frames=None, prepared=None, restorer=None):
-    if cfg.get('rife_backend')=='cuda_onnx':
+    if cfg.get('rife_backend') in ('cuda_onnx','cuda_trt'):
         from cuda_pipeline import run as cuda_run
         return cuda_run(master,output,episode,cfg,source_start=source_start,source_frames=source_frames,
                         prepared=prepared,restorer=restorer)

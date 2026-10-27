@@ -97,6 +97,43 @@ are **not** whole-pipeline or episode ETA. Record a longer continuous actual-mas
 fullchain test, including startup, frame I/O, encode and complete decode validation,
 before publishing an ETA or admitting the full episode.
 
+### Strongly typed TensorRT RIFE candidate (2026-10-27)
+
+`prepare_trt_backend.py` validates the existing CUDA profile plus all local
+TensorRT model/engine/provenance pins, then publishes an inactive `runtime.trt.json`
+and `enhance.trt.sh`. It never starts GPU work, overwrites differing assets,
+activates the main launcher or creates production readiness. Original conversion
+and build recipes are archived byte-for-byte in `scripts/recipes/`; their README
+states the required original execution layout and independent evidence boundaries.
+
+`cuda_trt.py` uses the locally built TensorRT10.13.3.9 strongly typed engine on
+verified physical GPU1 Tesla T10/sm75 and driver580.178.04. Neural layers use
+FP16 while original coordinates, flow, resize, warp and blend remain FP32.
+The pinned typed graph independently proves four float32 GridSample nodes and84
+half-precision neural nodes; engine inspector layer-name output alone does not
+prove dtype. Input/output are native1080p float32 CUDA tensors. The persistent
+nondefault CUDA1 stream contains peer handoff, enqueue, finite checks and output
+consumption. Borrowed output is consumed synchronously before reuse. GPU0
+prefetch never submits work to GPU1. Host finite checks and output copies still
+synchronize their stream; this is not a claim of fully asynchronous execution.
+
+The original untyped/all-half conversion and the neural-only-half ORT candidate
+were rejected. The native TensorRT short comparison measured23–25ms per generated
+frame versus46–47ms for official FP32 ORT, with PSNR75–79dB for two tested phases.
+Those are short, sequential measurements, not a sustained episode ETA. Actual
+six-segment60-second fullchain validation is required before activation. The
+2026-10-27 actual-master45–105s test completed all1500 source/3600 output frames,
+segment and concat full decode, cross-filesystem copy/SHA acceptance in579.91s,
+versus891.55s for the preceding FP32 CUDA chain. Last three segment throughputs
+were2.66/2.52/2.61 source fps under sustained load. A4000 restoration, rather than
+TRT interpolation, dominates this profile; other users' load and thermal limits
+still affect elapsed time. The conservative episode estimate is11–14hours from
+full start through final encode/checks, not elapsed progress. Root reviewed16
+actual output samples at the known audience cut and segment seams; independent
+visual evidence is retained locally. Use
+`benchmark_cuda_pipeline.py` to retain elapsed times, per-segment metrics, source
+and configuration hashes, output receipt and complete segment/concat acceptance.
+
 `segmented_backend.py` stores compressed10-second payloads (250 native frames;
 last payload may be shorter). The exact25-to60 clock and real next-source-frame
 lookahead preserve segment boundaries; scene cuts hold the preceding restored
