@@ -127,8 +127,9 @@ segment and concat full decode, cross-filesystem copy/SHA acceptance in579.91s,
 versus891.55s for the preceding FP32 CUDA chain. Last three segment throughputs
 were2.66/2.52/2.61 source fps under sustained load. A4000 restoration, rather than
 TRT interpolation, dominates this profile; other users' load and thermal limits
-still affect elapsed time. The conservative episode estimate is11–14hours from
-full start through final encode/checks, not elapsed progress. Root reviewed16
+still affect elapsed time. The initial11–14hour episode estimate was withdrawn
+when longer production monitoring revealed an unsafe T10 thermal trajectory;
+the short benchmark does not establish sustainable thermal throughput. Root reviewed16
 actual output samples at the known audience cut and segment seams; independent
 visual evidence is retained locally. Use
 `benchmark_cuda_pipeline.py` to retain elapsed times, per-segment metrics, source
@@ -206,6 +207,41 @@ service monitors every5seconds; source/model fingerprints remain unchanged.
 The dashboard explicitly overlays cooling pauses and invalidates unsupported
 remaining-time estimates. An alternate GPU placement must preserve the4GiB
 shared-memory reserve and pass actual resource/quality checks before admission.
+
+### Same-model A4000 placement after thermal validation
+
+The later `cuda_trt_sm86.py` candidate places both neural models on physical
+A4000/sm86; T10 only encodes HEVC. It preserves the independently audited typed
+RIFE graph and restoration weights/DNI/blend. Restoration tiles320 with40-pixel
+overlap and a0.5GiB Torch allocator cap passed the actual combined-memory test;
+this does not lower the4GiB shared physical free-memory floor. The runtime's
+TensorRT allocator additionally reserves unspent Torch budget and128MiB. It
+verifies the actual GPU, driver, runtime, engine, graph, build report and archived
+build recipe before using this separately built SM86 engine.
+
+`build_rife_sm86.py` implements alignment-aware, reserve-aware CUDA allocation,
+reallocation and release. Denied oversized build tactics can fall back to smaller
+TensorRT tactics; an allocator error prevents acceptance. The actual successful
+build used an archived earlier recipe; its hash is retained separately from the
+later exception-path hardening in the current helper. Do not retroactively claim
+the hardened helper produced an existing engine.
+
+The2026-10-27 same-master45–105s six-segment test completed1500 source/3600 output
+frames and full segment/concat decode, count and cross-filesystem acceptance
+in793.02s (1.8915source fps). Sampled resource telemetry across26 observations
+recorded A4000≤95°C with≥4641MiB free and T10≤83°C. This bounds that test, not
+future shared load. The runtime checks both cards at most five seconds apart
+while interpolating and exits76/WAIT_GPU at A4000≥97°C or T10≥86°C, releasing
+contexts and retaining completed segments for the worker's cooling retry.
+The older explicit-PID guardian must not be restarted against obsolete PIDs.
+
+Two tested interpolation phases agree with the original FP32 reference at
+79.36/79.06dB PSNR; a sampled restored image was identical between512/320 tiles.
+Independent visual review examined twelve actual frames, shot changes and segment
+boundaries in the first four completed segments. These are bounded quality
+checks, not a claim that every frame has been visually inspected. Different
+backend fingerprints keep distinct segment contexts; old verified segments are
+retained with their original provenance and never relabeled as the new backend.
 
 ### Read-only tmux progress view
 

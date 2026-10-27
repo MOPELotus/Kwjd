@@ -17,7 +17,9 @@ def run(master, output, episode, cfg, *, source_start=0, source_frames=None,
         prepared=None, restorer=None):
     import enhance_backend as engine
     from cuda_restore import Restorer
-    if cfg.get('rife_backend')=='cuda_trt':
+    if cfg.get('rife_backend')=='cuda_trt_sm86':
+        from cuda_trt_sm86 import CudaRife
+    elif cfg.get('rife_backend')=='cuda_trt':
         from cuda_trt import CudaRife
     else:
         from cuda_rife import CudaRife
@@ -45,7 +47,7 @@ def run(master, output, episode, cfg, *, source_start=0, source_frames=None,
     rife=restorer.rife;torch=restorer.torch
     # Keep TRT enqueue, peer copies and output consumption on one persistent
     # non-default stream. The borrowed output is consumed before the next call.
-    if cfg.get('rife_backend')=='cuda_trt' and not hasattr(rife,'pipeline_stream'):
+    if cfg.get('rife_backend') in ('cuda_trt','cuda_trt_sm86') and not hasattr(rife,'pipeline_stream'):
         rife.pipeline_stream=torch.cuda.Stream(device=rife.device)
     def rife_context():
         return (torch.cuda.stream(rife.pipeline_stream)
