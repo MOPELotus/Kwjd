@@ -271,6 +271,21 @@ child pidfd stop/continue test passed; these do not establish final GPU encoding
 temperature or replace actual activation/monitoring at that stage. The dashboard
 shows a final cooling pause only with a matching live stopped encoder identity.
 
+For this already running worker, `final_guard_watch.py` can be armed beforehand
+with its explicit PID **and observed process start time**. It does not launch
+media work or mutate the queue. Before `PROCESSING` it only checks the known
+worker and job; afterwards it reads only that worker's direct children and uses
+the strict final guardian identity checks. A unique candidate is handed to the
+inner guardian under its existing lock for fresh admission. The separate
+`reports/final_guard_watch.json` records `WAITING`/`ATTACHING`/`ENDED`; only the
+inner guardian's actual receipt establishes thermal attachment. Worker exit or
+PID reuse ends this one-worker watch rather than discovering another worker.
+
+```bash
+python3 scripts/final_guard_watch.py --post ~/qingqingwu/post --episode S01E49 \
+  --worker-pid ACTUAL_WORKER_PID --worker-starttime OBSERVED_PROC_STARTTIME
+```
+
 `post_dashboard.py --post ~/qingqingwu/post --episode S01E49` renders a standalone
 Chinese terminal dashboard; `--once` prints the same evidence as plain text.
 The local `kwjd-progress` tmux session runs this view. Attach with
