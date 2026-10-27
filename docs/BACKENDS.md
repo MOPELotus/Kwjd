@@ -182,6 +182,26 @@ publication writes a persistent deduplicated PENDING_NOTIFICATION record. This
 record does not claim that an unavailable cross-thread tool sent a message.
 Finals remain until receipt-gated Windows acceptance.
 
+### Read-only tmux progress view
+
+`post_dashboard.py --post ~/qingqingwu/post --episode S01E49` renders a standalone
+Chinese terminal dashboard; `--once` prints the same evidence as plain text.
+The local `kwjd-progress` tmux session runs this view. Attach with
+`tmux attach -t kwjd-progress`, or switch from another tmux client with
+`tmux switch-client -t kwjd-progress`. `Ctrl-b d` detaches and `q` closes only
+the view; neither signals the worker. Existing tmux sessions are preserved.
+
+The panel refreshes every2seconds from the30-second monitor snapshot. It shows
+stage/state, exact receipt-reported source progress, segment count, source-video
+clock, bounded recent weighted throughput, the measured ETA range, physical GPU
+telemetry, per-volume free bytes, process identity and the last three log lines.
+Logs are bounded to128KiB per read; no model/GPU inference or media hashing is
+started. Missing/mismatched evidence is unknown; snapshots older than120seconds
+are explicitly STALE. Enhancement100% does not mean final acceptance. Remaining
+time is an estimate derived from the dated completion window; an expired window
+is explicitly stale instead of a false zero-time completion. GPU memory is
+reported as used/free, not an invented sum presented as physical total.
+
 ### Retained portable GPU backend (fallback profile)
 
 
