@@ -126,6 +126,16 @@ class StageTests(unittest.TestCase):
             with self.assertRaises(stage.WaitDisk):stage.check_space(Path('/tmp'),6*stage.GIB,25)
         with self.assertRaises(ValueError):stage.validate_video(media(),media(25))
 
+    def test_probeable_interrupted_output_metadata_has_recoverable_validation_errors(self):
+        invalid=[{}, {'duration':None}, {'duration':'N/A'}, {'duration':'NaN'},
+                 {'duration':'inf'}, {'duration':'0'}, {'duration':'-1'}]
+        for metadata in invalid:
+            with self.subTest(format=metadata):
+                result=media();result['format']=metadata
+                with self.assertRaises(ValueError):stage.validate_video(media(),result)
+        result=media();result['streams'][0]['avg_frame_rate']='0/0'
+        with self.assertRaises(ValueError):stage.validate_video(media(),result)
+
     def test_enhance_only_needs_no_srt_style_or_fonts(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);post=root/'post';post.mkdir();backend=post/'backend';backend.write_text('#!/bin/sh');backend.chmod(0o700)

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 from fractions import Fraction
@@ -46,14 +47,21 @@ def probe(path):
 
 
 def validate_video(source, result):
-    video = next(s for s in result['streams'] if s['codec_type'] == 'video')
-    fps = Fraction(video['avg_frame_rate'])
-    nominal = Fraction(video['r_frame_rate'])
-    if (video['width'], video['height']) != (1920, 1080) or fps != 60 or nominal != 60:
+    try:
+        video = next(s for s in result['streams'] if s['codec_type'] == 'video')
+        fps = Fraction(video['avg_frame_rate'])
+        nominal = Fraction(video['r_frame_rate'])
+        dimensions = (video['width'], video['height'])
+        durations = [float(item['format']['duration']) for item in (source, result)]
+    except (KeyError, TypeError, ValueError, ZeroDivisionError, StopIteration) as error:
+        raise ValueError('Incomplete or invalid enhanced video metadata') from error
+    if any(not math.isfinite(value) or value <= 0 for value in durations):
+        raise ValueError('Enhanced video requires finite positive source/output durations')
+    if dimensions != (1920, 1080) or fps != 60 or nominal != 60:
         raise ValueError('Enhanced output must be 1920x1080 at nominal and average60fps')
     if any(s['codec_type'] == 'subtitle' for s in result['streams']):
         raise ValueError('Enhanced intermediate must not contain subtitle streams')
-    delta = abs(float(source['format']['duration']) - float(result['format']['duration']))
+    delta = abs(durations[0] - durations[1])
     if delta > .5:
         raise ValueError(f'Enhanced duration differs from master by{delta:.3f}s')
     return {'width':1920, 'height':1080, 'fps':60, 'duration_delta':delta}
