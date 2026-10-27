@@ -137,5 +137,25 @@ class DashboardTests(unittest.TestCase):
         self.write('reports/active_validation.json',record)
         self.assertIsNone(dashboard.validation_status(self.post,'S01E49'))
 
+    def test_final_cooling_requires_owned_stop_and_matching_live_encoder_identity(self):
+        self.job['state']='PROCESSING';self.write('jobs/S01E49.json',self.job)
+        pid=os.getpid();stat_path=Path(f'/proc/{pid}/stat')
+        stat_text=stat_path.read_text();prefix,tail=stat_text.rsplit(')',1);fields=tail.split()
+        record={'episode':'S01E49','master_sha256':'a'*64,'backend_fingerprint':'b'*64,
+                'owned_stop':True,'backend_pid':pid,'worker_pid':int(fields[1]),
+                'backend_starttime':fields[19],'backend_cmdline':['ffmpeg','approved-final'],
+                'stage':'FINAL_ENCODE'}
+        self.write('reports/final_encode_thermal_pause.json',record)
+        fields[0]='T';stopped=prefix+') '+' '.join(fields)
+        real_read=Path.read_text
+        def read(path,*args,**kwargs):
+            return stopped if path==stat_path else real_read(path,*args,**kwargs)
+        with patch.object(Path,'read_text',read),patch.object(Path,'read_bytes',return_value=b'ffmpeg\0approved-final\0'):
+            view=dashboard.collect(self.post,'S01E49',self.now)
+            self.assertTrue(view['thermal_paused'])
+            self.assertIn('温度保护降温','\n'.join(dashboard.render(view)))
+            record['backend_starttime']='recycled';self.write('reports/final_encode_thermal_pause.json',record)
+            self.assertFalse(dashboard.collect(self.post,'S01E49',self.now)['thermal_paused'])
+
 
 if __name__=='__main__':unittest.main()

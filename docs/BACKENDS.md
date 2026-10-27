@@ -245,6 +245,32 @@ retained with their original provenance and never relabeled as the new backend.
 
 ### Read-only tmux progress view
 
+Final ASS/NVENC encoding has its own explicit-child protection in
+`final_encode_guard.py`; the AI runtime's thermal checks end with its process.
+Attach the final guard when the actual `PROCESSING` FFmpeg child exists, using
+its actual PID and the existing worker PID. Do not reuse an earlier AI PID or
+the disabled legacy guardian unit. The guard checks same-uid direct parentage,
+both process start times, executable and complete approved final command, plus
+source-bundle/enhancement receipts and actual ASS/style/font hashes. Preserved
+media inode/size/mtime are bound without delaying attachment for another full
+media hash pass; the worker still performs full final SHA/PCM/frame acceptance.
+The original master may already have been legitimately released at this stage.
+
+```bash
+python3 scripts/final_encode_guard.py --post ~/qingqingwu/post --episode S01E49 \
+  --pid ACTUAL_FINAL_FFMPEG_PID --worker-pid ACTUAL_WORKER_PID
+```
+
+Its separate `reports/final_encode_thermal_pause.json` and
+`logs/final_encode_thermal_guard.jsonl` preserve ownership and actual limits.
+Only its own verified pause can be continued after cooling; uncertain input or
+ownership remains stopped, and restart adoption requires explicit `--adopt` with
+the same source/process receipt. Process exit records `ENDED`, never final
+quality acceptance. Nine simulated guard tests and an actual CPU-only owned
+child pidfd stop/continue test passed; these do not establish final GPU encoding
+temperature or replace actual activation/monitoring at that stage. The dashboard
+shows a final cooling pause only with a matching live stopped encoder identity.
+
 `post_dashboard.py --post ~/qingqingwu/post --episode S01E49` renders a standalone
 Chinese terminal dashboard; `--once` prints the same evidence as plain text.
 The local `kwjd-progress` tmux session runs this view. Attach with

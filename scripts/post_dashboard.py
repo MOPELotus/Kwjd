@@ -150,7 +150,8 @@ def collect(post,episode,now=None):
                and eta.get('backend_fingerprint')==production.get('backend_fingerprint')
                and bool(production.get('backend_fingerprint')))
     if not eta_bound:eta={}
-    thermal=read_json(post/'reports/thermal_pause.json')
+    final_phase=job.get('state')=='PROCESSING'
+    thermal=read_json(post/'reports'/('final_encode_thermal_pause.json' if final_phase else 'thermal_pause.json'))
     thermal_bound=(thermal.get('episode')==episode and thermal.get('master_sha256')==digest
                    and thermal.get('backend_fingerprint')==fp)
     paused=False
@@ -159,7 +160,12 @@ def collect(post,episode,now=None):
             process=Path('/proc')/str(thermal['backend_pid'])
             fields=(process/'stat').read_text().rsplit(')',1)[1].split()
             cmd=(process/'cmdline').read_bytes()
-            paused=(fields[0] in ('T','t') and b'/scripts/segmented_backend.py' in cmd
+            if final_phase:
+                argv=[x.decode(errors='replace') for x in cmd.split(b'\0') if x]
+                command_matches=(argv[:1]==['ffmpeg'] and argv==thermal.get('backend_cmdline')
+                                 and thermal.get('stage')=='FINAL_ENCODE')
+            else:command_matches=b'/scripts/segmented_backend.py' in cmd
+            paused=(fields[0] in ('T','t') and command_matches
                     and fields[19]==str(thermal.get('backend_starttime'))
                     and fields[1]==str(thermal.get('worker_pid')))
         except (OSError,IndexError):pass
