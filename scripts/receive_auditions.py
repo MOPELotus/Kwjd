@@ -36,6 +36,9 @@ def main():
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', args.ssh_alias):
         p.error('Use an existing plain SSH alias')
     plan = json.loads(args.manifest.read_text(encoding='utf-8-sig'))
+    if (not re.fullmatch(r'[0-9a-f]{64}', plan['source_sha256'])
+            or plan['fps'] != 25 or not 0 < plan['duration_seconds'] <= 300):
+        p.error('Require a source SHA, 25fps and a bounded sample duration')
     names = set()
     for item in plan['files']:
         name, remote, sha = item['name'], item['remote_path'], item['sha256']
@@ -75,18 +78,26 @@ def main():
             if (video['codec_name'] != 'hevc' or video.get('profile') != 'Main 10'
                     or (video['width'], video['height']) != (1920, 1080)
                     or video['r_frame_rate'] != f"{plan['fps']}/1"
+                    or video.get('color_space') != 'bt709' or video.get('color_range') != 'tv'
                     or audio['codec_name'] != 'flac' or audio.get('bits_per_raw_sample') != '24'
                     or audio['sample_rate'] != '48000' or audio['channels'] != 2
                     or abs(float(probe['format']['duration']) - plan['duration_seconds']) > 0.15):
                 raise RuntimeError(f'Sample media specification mismatch: {temporary}')
+            progress = args.output / (item['name'] + '.decode-progress.log')
             with (args.output / (item['name'] + '.decode.log')).open('w', encoding='utf-8') as log:
                 subprocess.run(['ffmpeg', '-hide_banner', '-nostdin', '-v', 'error', '-xerror',
+                                '-progress', str(progress),
                                 '-threads', '4', '-i', str(temporary), '-map', '0:v:0',
                                 '-map', '0:a:0', '-f', 'null', '-'], stdout=log, stderr=log, check=True)
+            frame_counts = re.findall(r'^frame=(\d+)$', progress.read_text(), re.MULTILINE)
+            expected_frames = round(plan['duration_seconds'] * plan['fps'])
+            if not frame_counts or int(frame_counts[-1]) != expected_frames:
+                raise RuntimeError(f'Decoded frame count mismatch: {temporary}')
             if temporary != final:
                 temporary.rename(final)
             row.update(status='verified', path=str(final.resolve()), bytes=final.stat().st_size,
                        technical_checked=True, probe=probe)
+            row['decoded_frames'] = expected_frames
             save(receipt_path, receipt)
             print(json.dumps({'name': item['name'], 'status': 'verified', 'path': str(final.resolve())}), flush=True)
         receipt['status'] = 'verified'

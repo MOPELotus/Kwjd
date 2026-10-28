@@ -97,10 +97,12 @@ def main():
                 command = ['ffmpeg', '-hide_banner', '-nostdin', '-n', '-threads', str(args.threads),
                            '-filter_threads', str(args.threads), '-ss', str(start), '-i', str(args.input),
                            '-t', str(duration), '-map', '0:v:0', '-map', '0:a:0',
-                           '-vf', 'fps=25,' + FILTERS[name] + ',format=p010le',
+                           '-vf', 'fps=25,' + FILTERS[name]
+                           + ',scale=in_range=pc:out_range=tv:out_color_matrix=bt709,format=p010le',
                            '-c:v', 'hevc_nvenc', '-gpu', str(args.gpu), '-preset', 'p6',
                            '-tune', 'hq', '-profile:v', 'main10', '-rc', 'vbr', '-cq', '16', '-b:v', '0',
-                           '-c:a', 'flac', '-sample_fmt', 's32', '-map_metadata', '-1',
+                           '-colorspace', 'bt709', '-color_trc', 'bt709', '-color_primaries', 'bt709',
+                           '-color_range', 'tv', '-c:a', 'flac', '-sample_fmt', 's32', '-map_metadata', '-1',
                            '-metadata', f'comment=audition {name}; source {args.input_sha256}; {start}:{duration}',
                            str(part)]
                 seconds = run(command, folder / f'part_{index:02d}.log')
@@ -126,6 +128,7 @@ def main():
             if (video['codec_name'] != 'hevc' or video['profile'] != 'Main 10'
                     or (video['width'], video['height']) != (1920, 1080)
                     or video['r_frame_rate'] != '25/1' or audio['codec_name'] != 'flac'
+                    or video.get('color_space') != 'bt709' or video.get('color_range') != 'tv'
                     or audio.get('bits_per_raw_sample') != '24'
                     or audio.get('sample_rate') != '48000' or audio.get('channels') != 2
                     or abs(float(info['format']['duration']) - entry['input_seconds']) > 0.15):

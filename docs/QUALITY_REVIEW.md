@@ -42,3 +42,5 @@ python scripts/compare_frame_pairs.py --directory D:/qingqingwu/work/S01E49/qual
 用户要求将以上全部方案实际做几分钟样片、分别测速并回传逐个观看。本轮固定60–120、1700–1760、2800–2860秒三段共180秒，统一25fps，基准、CAS、加强锐化、GFPGAN1.4、CodeFormer使用同一底片与时间段。原母片不再保留，三段只能基于已交付成片做增量处理；报告必须明确限制，不以此冒充原母片恢复效果或原生生产ETA。CodeFormer可加0.5/0.8两档比较，输出不重跑RIFE。
 
 Windows负责 scripts/render_filter_samples.py、统一编码基准与滤镜样片、回传核验；Linux负责独立人脸环境、后端和样片脚本。固定HEVC Main10/CQ16/p6及FLAC24bit48k Stereo，音频不调增益。准备/下载依赖、有效推理、含检测融合编码总耗时、技术验收分别记录；同机器耗时方可直接比较。样片与日志不提交Git，不能据样片任务改生产默认或重跑整集。完整成片和当前Resolve缓存保持保留。
+
+样片RGB回转YUV必须明确 Rec.709 limited range 并写入色彩标签；render_filter_samples.py 使用显式矩阵且接收端校验bt709/tv和全段实际解码帧数。2026-10-28初轮缺少色彩矩阵标签的文件只保留为pilot，不作为最终候选交付；修正后重新出样，所有方案统一相同颜色转换。
