@@ -480,3 +480,145 @@ On a fresh machine the Worker reports WAIT_BACKEND until the real backend is ins
 ## Season profile
 
 Read `config/seasons/S01.json` (cut starts after 30s, tail first white frame, OCR horizontal full-width/vertical auto). These rules apply across the whole first season, not just E49–E55. The existing in-progress E49–E55 items are merely the initial adoption set. Derive episode IDs from source file names / job files, do not code fixed episode ranges.
+
+## Native-resolution light filter + GFPGAN policy (2026-10-28)
+
+The user selected the future episode policy: native-resolution light processing,
+GFPGAN1.4 faces, real RIFE60, approved ASS, final encoding and unchanged mixed
+FLAC. `config/project.json` records clarity/CAS as the lightweight default and
+records the validated native Worker integration. Native activation requires an
+actual media acceptance report and current source hashes, not just a policy bool.
+Existing CUDA configs and SRVGG checkpoints retain their historical fingerprints.
+
+The isolated `face_chain_smoke.py` implements one video decode and one final
+lossy encode: FFmpeg none or the existing clarity recipe, persistent A4000
+GFPGAN, CPU alignment/ParseNet fusion, upload to the pinned T10 TensorRT RIFE,
+ASS at the original program clock, NVENC Main10/Rec709/tv plus original-gain
+FLAC. This is not a zero-copy CUDA-only chain. No ROI optimization is enabled.
+A retained FFV1 native25 cache freshly matched historical SHA and master binding;
+its original59–65s six-second sample includes the59.36s shot cut. Both candidates
+actually processed151 native frames including one lookahead into360 output60fps
+frames, restored all151, detected the cut and skipped interpolation across it.
+Measured continuous decode/filter/GF/RIFE/ASS/encode wall was74.863s for none and
+69.142s for clarity, model initialization and strict QC separate. This one short
+shared-server pass does not prove CAS is faster or predict full-episode speed.
+Full decode,60fps PTS,Rec709/Main10/FLAC,exact original mixed PCM and actual
+MiSans font resolution passed. Original hard-sub remnants remain as accepted.
+
+For E49 only, the master is already legitimately released: the preserved final
+SHA `f2bae90ba1b50bc7953867433c25b6a70be233828f14257fe646c975e8b4d3fc`
+is the sole full input. The user explicitly authorized full face rework after
+technical validation. `face_rework_worker.py` processes every existing60fps
+frame, no RIFE or ASS reburn, no newly added CAS on this already enhanced final.
+GF fusion is prevented from changing rows760–1079 before encoding, preserving
+the existing subtitle region; that strip still undergoes final lossy encoding.
+Small/low faces overlapping the protected strip may receive only partial face
+changes. Actual6s/360frame tests preserved the strip on every frame and retained
+sample-identical original mixed audio. About3.3–3.5processed60fps frames/second
+in this short test implies an order of17hours for211054frames, not realtime or
+the earlier25fps audition ETA. Sustained segments must update the estimate.
+
+The worker requires an explicit, isolated manifest. It pins source, own processor
+code, installed face-helper source, package versions and official weight SHAs;
+changed contexts refuse old checkpoints. Segments and final publish hash-bound
+pending intents before rename. Recovery verifies exact media SHA and fully
+decodes/clock-checks before completing receipts, not presence adoption. Original
+source SHA is rechecked at each attempt and after final validation. The full
+original FLAC is stream copied at final mux; only bounded sample audio is
+losslessly re-encoded for exact sample trimming. Segment receipts and final
+pending-intent recovery were actually exercised without rerunning neural frames.
+
+One persistent face model owns a common same-user lease. The process checks
+physical A4000 thermal/headroom and disk floor, exits76 on resource pressure,
+and can be restarted by a persistent user service after cooling; unknown errors
+stop for inspection. `watch_face_rework.py` separately observes service state,
+progress, GPUs and disk into JSON metrics and sparse log events. A Windows SSH
+`tail` is only a viewer and does not own the inference process lifetime.
+
+Rework output lives independently on the measured home filesystem. Main10
+CQ16,16Mbps maximum video and a conservative two-copy+audio+scratch budget keep
+25GiB free; the root filesystem is below the floor and is not used for new media.
+The original final, all prior review/receipt history and Windows old copy remain.
+New output must receive its own full SHA/frame/PCM/visual checks and Windows
+verified replacement. Old quality acceptance is never inherited. No Resolve or
+CacheClip operation is part of this Linux rework.
+
+
+## Native fused Worker integration and acceptance (2026-10-28)
+
+`prepare_native_face_backend.py` pins the installed face packages, official
+weights, existing tested T10 RIFE engine and source files into a native template.
+Activation requires real technical/visual acceptance plus matching current code
+hashes. It archives the old launcher and refuses unfinished legacy checkpoints.
+`native_face_job.py` prepares immutable approved ASS, fonts, sealed SRT and the
+master-specific timing mapping before neural work. Unlike the historical
+style-independent path, fused mode must wait for these approvals before inference.
+A job's picture pipeline is frozen; existing legacy checkpoints are never relabeled.
+
+`native_face_pipeline.py` decodes native frames, applies the existing clarity/CAS
+filter, runs persistent GFPGAN on A4000, fuses on CPU, and runs real T10 TensorRT
+RIFE at the exact rational 60fps clock with shot-cut handling. It burns approved
+ASS after interpolation and encodes HEVC Main10 once. The subtitle-bearing
+checkpoint is explicitly `ass_styled_video`; the final mux only copies video and
+the preserved original-mix FLAC. BGR8 restoration does not become ten-bit neural
+processing merely because the encoded stream is Main10. No ROI optimization.
+Both GPUs use explicit identity/headroom/thermal checks; the human authorized a
+3GiB A4000 free reserve. Resource pressure exits for controlled retry.
+
+Segment adoption requires pipeline evidence and complete frame-log coverage,
+not file presence. Current-master calibration binds the actual source SHA,
+backend fingerprint, finite measured speed and strictly decoded sample. The
+short calibration records whether GFPGAN actually saw faces. Full jobs retain
+the master through final technical QC and subtitle approval/publication; late
+upload/local-release receipts retain the exact styled checkpoint and FLAC until
+master release can be validated. This extends the old handoff lifetime for the
+fused path; historical evidence and old source-release receipts stay unchanged.
+
+An actual native-cache test at original program72.4–77.4s processed125 native
+frames plus one lookahead, restored126 faces, and produced300 frames with one
+cut at75.68s. Processing took58.421s; including model initialization64.689s.
+Strict full decode/60fps PTS/Rec709/Main10, actual MiSans resolution, unchanged
+decoded original-mix PCM and identical encoded-video payload across final mux
+passed. The original whole master is already released: picture came from its
+SHA-verified native FFV1 cache, matching original-mix audio from the retained
+delivered final. This is bounded compatibility evidence, not a new whole-master
+acceptance or a full-episode ETA. A4000 hardware playback used nvdec-copy and
+showed zero display/decoder drops across two runs, including the shot cut; five
+screenshots were visually reviewed. Accepted inherited hard-sub fragments and
+scene overlays remain. No server audio listening or all-frame visual claim.
+
+The actual tested runtime/source snapshot is retained separately. Subsequent
+changes only add CPU-side migration/master-binding guards and a precision note;
+30 native contract tests plus27 enhancement and3 segment regression tests passed.
+The acceptance records both tested and current hashes instead of relabeling the
+old GPU benchmark. Each new master still needs its own actual calibration.
+
+Operational rollout: native backend is prepared/activated only after acceptance;
+the existing E49-only queue process remains unchanged until the independent
+E49 full60fps face rework has been delivered. Reload the queue to the new code
+then, before processing a fresh episode. Never restart E49 neural work to apply
+this future-episode policy. The running full rework uses frozen61ef57a source
+and an independent persistent systemd service with segment-level recovery.
+
+
+### Rework receipt audits and queue storage gate
+
+`audit_face_rework.py --work <rework-folder> --report <new-report.json>` audits
+completed segment hashes, contiguous frame coverage, processing/protection
+counters and face-log statistics without invoking models or changing media.
+Missing segments, duplicate frames and mismatched evidence stop the audit.
+The report explicitly keeps `final_acceptance: false`, even if all frames are
+present. `--verify-source` adds a fresh whole-input SHA check; without that flag
+the report does not claim one. Use a new report path to retain prior audit history.
+Full final decode/PTS/PCM and visual/hardware-playback acceptance remain separate.
+
+Before reloading the future-episode queue, budget the canonical `post/cache`
+filesystem as well as incoming/final/scratch. Placing only native scratch and
+experiments on a writable volume does not relocate Worker checkpoints. A root
+volume below25GiB correctly leaves a fresh job in WAIT_DISK. If relocation is
+needed, preserve logical paths and receipts through a declared top-level cache
+area link under the existing storage/lifecycle contract. Inner episode symlinks
+are forbidden. Defer any cache migration that would consume the running E49
+rework's peak reserve; complete the verified handoff/authorized cleanup and
+recalculate the whole next-episode peak first. Backend short acceptance is not
+proof that deployment storage and queue reload have already been completed.

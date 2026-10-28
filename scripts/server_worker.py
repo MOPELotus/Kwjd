@@ -128,10 +128,17 @@ def verified_master_hash(master, job):
 
 
 def validate_final_binding(report, final, episode, master_hash, receipt, srt_hash, style_hash, fonts=None):
+    if (report.get('picture_pipeline')=='native_light_gfpgan_rife_ass_one_encode'
+            and receipt.get('output_kind')!='ass_styled_video'):
+        raise ValueError('Fused final cannot inherit a legacy checkpoint')
     expected = {"episode": episode, "master_sha256": master_hash,
                 "enhanced_sha256": receipt["sha256"], "srt_sha256": srt_hash,
                 "style_sha256": style_hash, "sha256": sha256(final)}
     if fonts is not None:expected['fonts'] = fonts
+    if receipt.get('output_kind')=='ass_styled_video':
+        expected.update(picture_pipeline='native_light_gfpgan_rife_ass_one_encode',video_encodes=1,
+            native_recipe_sha256=receipt['native_recipe_sha256'],
+            fused_subtitle_binding=receipt['fused_subtitle_binding'])
     if any(report.get(key) != value for key, value in expected.items()):
         raise ValueError("Existing final does not match current master/enhancement/SRT/style hashes; retained")
 
@@ -180,7 +187,7 @@ def register_completed_assets(ep, master_hash, final, directory):
     archive=POST/'reports/stages'/ep/master_hash
     archive.mkdir(parents=True,exist_ok=True)
     for source in directory.rglob('*'):
-        if source.is_file() and (source.suffix == '.json' or source.name == ep+'.ass'):
+        if source.is_file() and (source.suffix in ('.json','.jsonl') or source.name == ep+'.ass'):
             target=archive/source.relative_to(directory)
             target.parent.mkdir(parents=True,exist_ok=True)
             if target.exists():
@@ -229,6 +236,7 @@ def do_job(job_path):
     report_path = POST/'reports'/f'{ep}.json'
     pending_report = report_path.with_name(ep+'.pending.json')
     final_partial = final.with_name(final.stem+'.partial'+final.suffix)
+    native_context=None
     if (final.is_file() or pending_report.is_file()) and STAGE == 'all':
         expected = verified_master_hash(master, job) if master.exists() else job.get('master_sha256')
         inputs = approved_inputs(job_path, job, srt, style,expected)
@@ -242,6 +250,9 @@ def do_job(job_path):
                 or source_record.get('master_sha256') != expected):
             raise ValueError('Existing final lacks current source handoff binding')
         receipt = source_record['enhanced_checkpoint']
+        if receipt.get('output_kind')=='ass_styled_video':
+            from native_face_job import recover_context
+            native_context=recover_context(receipt)
         candidate = final if final.is_file() else final_partial
         validate_final_binding(report,candidate,ep,expected,receipt,current_hash,style_hash,font_hashes)
         timing_mapping=read_mapping(POST,ep,expected,current_hash)
@@ -252,10 +263,22 @@ def do_job(job_path):
         if not final.exists():
             os.link(final_partial,final);final_partial.unlink()
         if not report_path.exists():write_json(report_path,report)
-        release_enhancement_inputs(POST,ep,enhanced,source_bundle.with_name(ep+'.mixed.flac'),
-                                  final,report,worker_lock_held=WORKER_LOCK_HELD)
+        if native_context is not None and master.exists():
+            upload_path=POST/'receipts'/f'{ep}.upload.json'
+            upload=json.loads(upload_path.read_text()) if upload_path.exists() else {}
+            if (upload.get('episode')==ep and upload.get('sha256')==expected
+                    and upload.get('verified') is True and upload.get('local_master_deleted') is True):
+                release_master_copy(POST,master,source_bundle,enhanced,expected,
+                                    worker_lock_held=WORKER_LOCK_HELD)
+        # A late upload/local-master-deleted receipt still needs these exact
+        # handoff assets to validate master release. Retain them until then.
+        if native_context is None or not master.exists():
+            release_enhancement_inputs(POST,ep,enhanced,source_bundle.with_name(ep+'.mixed.flac'),
+                                      final,report,worker_lock_held=WORKER_LOCK_HELD)
+        job['native_source_release_pending']=native_context is not None and master.exists()
         register_completed_assets(ep,expected,final,enhanced.parent)
-        update(job_path,job,'READY','Verified final retained; previous-stage inputs released')
+        update(job_path,job,'READY','Verified final retained; previous-stage inputs retained pending upload receipt'
+            if job['native_source_release_pending'] else 'Verified final retained; previous-stage inputs released')
         queue_completion_notice(ep,report,final)
         return
     released = not master.exists() and source_bundle.is_file()
@@ -269,6 +292,33 @@ def do_job(job_path):
     reject_retired(master_hash, POST/'backend/master-policy.json')
     job['master_sha256'] = master_hash
     if not released:register_artifact(ROOT,ep,'linux',master_rel.as_posix())
+    from native_face_job import enabled as native_enabled
+    if native_enabled(POST):
+        old_receipt_path=source_bundle if source_bundle.exists() else enhanced.with_name(enhanced.name+'.ready.json')
+        if old_receipt_path.exists():
+            old=json.loads(old_receipt_path.read_text())
+            old=old.get('enhanced_checkpoint',old)
+            if old.get('output_kind')!='ass_styled_video':
+                update(job_path,job,'WAIT_LEGACY_BACKEND',
+                    'Legacy checkpoint retained; native default cannot change its pipeline/profile')
+                return
+        if job.get('picture_pipeline') not in (None,'native_light_gfpgan_rife_ass_one_encode'):
+            update(job_path,job,'WAIT_LEGACY_BACKEND','Job pipeline is already frozen to a legacy backend');return
+        job['picture_pipeline']='native_light_gfpgan_rife_ass_one_encode'
+        # Fused encoding needs immutable subtitle approval before NN starts.
+        # Historical style-independent/SRVGG jobs take the unchanged old path.
+        inputs=approved_inputs(job_path,job,srt,style,master_hash)
+        if inputs is None:return
+        from native_face_job import prepare as prepare_native,calibrate
+        try:
+            native_context=prepare_native(POST,ep,master_hash,srt,style,inputs[4],log)
+            if not released and not enhanced.exists():
+                update(job_path,job,'ENHANCING','Bounded current-master native/GF/RIFE/ASS technical validation')
+                calibrate(master,POST,ep,native_context,log)
+        except WaitDisk as exc:
+            update(job_path,job,'WAIT_DISK',str(exc));return
+        except WaitGPU as exc:
+            update(job_path,job,'WAIT_GPU',str(exc));return
     if (not BACKEND.is_file() or not os.access(BACKEND, os.X_OK)) and not enhanced.exists():
         update(job_path, job, "WAIT_BACKEND", "Validated enhancement backend not installed")
         return
@@ -276,7 +326,7 @@ def do_job(job_path):
         update(job_path,job,'WAIT_BACKEND_TECHNICAL',
                'Actual-master technical/performance validation pending; no AI job launched')
         return
-    update(job_path, job, "ENHANCING", "Independent of ASS, fonts and OCR SRT")
+    update(job_path, job, "ENHANCING", "Native light/GF/RIFE/ASS single encode" if native_context else "Independent of ASS, fonts and OCR SRT")
     try:
         if released:
             source_record, mixed_audio = validate_bundle(source_bundle, enhanced, master_hash)
@@ -290,6 +340,9 @@ def do_job(job_path):
                 raise ValueError('Backend profile changed after source release; prior checkpoint retained for review')
         else:
             receipt = ensure_enhanced(master, enhanced, BACKEND, ep, log, PROJECT["minimum_free_gib"])
+            if native_context is not None:
+                from native_face_job import check_checkpoint
+                check_checkpoint(receipt,native_context)
             source_record, mixed_audio = preserve_source(master, enhanced, receipt, source_bundle, ep, log)
     except WaitDisk as exc:
         update(job_path, job, "WAIT_DISK", str(exc))
@@ -299,12 +352,16 @@ def do_job(job_path):
         return
     if receipt.get("master_sha256") != master_hash:
         raise ValueError("Enhanced checkpoint does not bind the confirmed master")
+    if receipt.get('output_kind')=='ass_styled_video':
+        from native_face_job import recover_context,check_checkpoint
+        native_context=native_context or recover_context(receipt)
+        check_checkpoint(receipt,native_context)
     # Explicit Windows completion confirmation is separate from upload/file presence.
     upload_receipt = POST/'receipts'/f'{ep}.upload.json'
     upload = json.loads(upload_receipt.read_text()) if upload_receipt.is_file() else {}
     may_release = (upload.get('episode') == ep and upload.get('sha256') == master_hash
                    and upload.get('verified') is True and upload.get('local_master_deleted') is True)
-    if released or may_release:
+    if (released or may_release) and native_context is None:
         release_master_copy(POST, master, source_bundle, enhanced, master_hash,
                             worker_lock_held=WORKER_LOCK_HELD)
     job["enhanced_sha256"] = receipt["sha256"]
@@ -316,21 +373,26 @@ def do_job(job_path):
     current_hash, style_hash, marker, style_seal, font_hashes = inputs
     # Encoded output has a bounded50Mbps video budget plus lossless audio margin.
     seconds = duration(source_record['source_probe'])
-    need = int(seconds * 60_000_000 / 8 + 1024**3)
+    if native_context is not None:
+        native_audio=next(s for s in source_record['source_probe']['streams'] if s['codec_type']=='audio')
+        need=int(seconds*(18_000_000/8+int(native_audio['sample_rate'])*int(native_audio['channels'])*4)+1024**3)
+    else:need = int(seconds * 60_000_000 / 8 + 1024**3)
     try:
         check_space(final.parent, need, PROJECT["minimum_free_gib"])
     except WaitDisk as exc:
         update(job_path, job, "WAIT_DISK", str(exc))
         return
-    update(job_path, job, "PROCESSING", "AI enhancement, then ASS burn-in")
+    update(job_path, job, "PROCESSING", "Stream-copy already styled video plus original mix" if native_context else "AI enhancement, then ASS burn-in")
     ass.parent.mkdir(parents=True, exist_ok=True)
     from kwjd import cmd_make_ass
     from argparse import Namespace
-    cmd_make_ass(Namespace(srt=str(srt), template=str(style), output=str(ass)))
+    if native_context is None:cmd_make_ass(Namespace(srt=str(srt), template=str(style), output=str(ass)))
+    else:ass=native_context['ass']
     timing_mapping=read_mapping(POST,ep,master_hash,current_hash)
-    timing_audit=apply_offset(ass,timing_mapping['offset_ms'])
-    write_json(ass.with_name(ep+'.subtitle-timing.applied.json'),
-               {'mapping':timing_mapping,'master_sha256':master_hash,'srt_sha256':current_hash,**timing_audit})
+    if native_context is None:
+        timing_audit=apply_offset(ass,timing_mapping['offset_ms'])
+        write_json(ass.with_name(ep+'.subtitle-timing.applied.json'),
+                   {'mapping':timing_mapping,'master_sha256':master_hash,'srt_sha256':current_hash,**timing_audit})
     font_evidence = font_preflight(style,POST/'styles/fonts',ass.parent,log)
     src = source_record['source_probe']
     audio_streams = [item for item in src["streams"] if item["codec_type"] == "audio"]
@@ -351,22 +413,29 @@ def do_job(job_path):
     ass_str = str(ass).replace("\\", "/").replace(":", r"\:")
     font_str = str(fonts).replace("\\", "/").replace(":", r"\:")
     vf = f"ass=filename='{ass_str}':fontsdir='{font_str}'"
-    runtime=json.loads((POST/'backend/runtime.json').read_text())
-    encoder_gpu=runtime.get('encoder_gpu')
-    if type(encoder_gpu) is not int or encoder_gpu < 0:
-        raise ValueError('Explicit physical NVENC GPU required')
-    gpu_name=subprocess.check_output(['nvidia-smi','--id='+str(encoder_gpu),
-        '--query-gpu=name','--format=csv,noheader'],text=True).strip()
-    if gpu_name != runtime.get('gpu_name'):
-        raise ValueError('NVENC physical device identity differs from tested runtime')
-    code = command(["ffmpeg", "-hide_banner", "-n", "-nostdin", "-v", "warning",
+    encoder_gpu=1
+    if native_context is None:
+        runtime=json.loads((POST/'backend/runtime.json').read_text())
+        encoder_gpu=runtime.get('encoder_gpu')
+        if type(encoder_gpu) is not int or encoder_gpu < 0:
+            raise ValueError('Explicit physical NVENC GPU required')
+        gpu_name=subprocess.check_output(['nvidia-smi','--id='+str(encoder_gpu),
+            '--query-gpu=name','--format=csv,noheader'],text=True).strip()
+        if gpu_name != runtime.get('gpu_name'):
+            raise ValueError('NVENC physical device identity differs from tested runtime')
+    encode_command=["ffmpeg", "-hide_banner", "-n", "-nostdin", "-v", "warning",
                     "-i", str(enhanced), "-itsoffset", str(source_record['audio_offset_seconds']), "-i", str(mixed_audio),
                     "-map", "0:v:0", "-map", "1:a:0?",
                     "-vf", vf, "-c:v", "hevc_nvenc", "-gpu",str(encoder_gpu),"-preset", "p6",
                     "-rc", "vbr", "-cq", "18", "-b:v", "0", "-maxrate", "50M", "-bufsize", "100M", "-pix_fmt", "p010le",
                     "-c:a", "flac", "-sample_fmt", "s32",
                     "-bits_per_raw_sample", "24", "-ar", str(final_rate),
-                    str(temp)], log)
+                    str(temp)]
+    if native_context is not None:
+        from native_face_job import final_command,check_checkpoint
+        check_checkpoint(receipt,native_context)
+        encode_command=final_command(enhanced,mixed_audio,source_record['audio_offset_seconds'],temp)
+    code = command(encode_command, log)
     if code:
         raise RuntimeError(f"ASS burn-in/encode failed ({code}); see {log}")
     out = probe(temp)
@@ -419,7 +488,7 @@ def do_job(job_path):
         "preserved_audio_sha256": source_record['audio_sha256'],
         "source_bundle_sha256": sha256(source_bundle),
         "retained_evidence_dir":str(POST/'reports/stages'/ep/master_hash),
-        "final_ass":str(POST/'reports/stages'/ep/master_hash/(ep+'.ass')),
+        "final_ass":str(POST/'reports/stages'/ep/master_hash/ass.relative_to(enhanced.parent)),
         "final_decode_checked": True, "final_pcm_equivalent": True,
         "final_video_frame_count": source_record['enhanced_frame_count'],
         "master_duration": duration(src), "output_duration": duration(out),
@@ -430,13 +499,23 @@ def do_job(job_path):
         "audio_note": "High-spec lossless output cannot recover source details; Bilibili Hi-Res visibility depends on platform submission eligibility.",
         "note": "Technical checks only; user must approve video edge quality and audio.",
     }
+    if native_context is not None:
+        from native_face_job import check_checkpoint
+        check_checkpoint(receipt,native_context)
+        report.update(picture_pipeline='native_light_gfpgan_rife_ass_one_encode',video_encodes=1,
+            fused_subtitle_binding=receipt['fused_subtitle_binding'],native_recipe_sha256=receipt['native_recipe_sha256'])
     # Persist acceptance before publication, allowing recovery across link/report crashes.
     write_json(pending_report,report)
     os.link(temp, final)  # Refuse to replace a final that appeared during encoding.
     temp.unlink()
     write_json(report_path, report)
-    release_enhancement_inputs(POST,ep,enhanced,mixed_audio,final,report,
-                              worker_lock_held=WORKER_LOCK_HELD)
+    if native_context is not None and (released or may_release):
+        release_master_copy(POST,master,source_bundle,enhanced,master_hash,
+                            worker_lock_held=WORKER_LOCK_HELD)
+    if native_context is None or not master.exists():
+        release_enhancement_inputs(POST,ep,enhanced,mixed_audio,final,report,
+                                  worker_lock_held=WORKER_LOCK_HELD)
+    job['native_source_release_pending']=native_context is not None and master.exists()
     register_completed_assets(ep,master_hash,final,enhanced.parent)
     update(job_path, job, "READY", "Final passed structural checks; download with SHA-256 validation")
     queue_completion_notice(ep,report,final)
@@ -475,8 +554,14 @@ def main():
                     for file in jobs:
                         try:
                             job = json.loads(file.read_text(encoding="utf-8-sig"))
-                            if job.get("state") in ("QUEUED", "ENHANCING", "PROCESSING", "WAIT_MASTER", "WAIT_MASTER_VERIFICATION", "WAIT_SUBTITLE",
-                                                    "WAIT_STYLE", "WAIT_STYLE_APPROVAL", "WAIT_BACKEND", "WAIT_BACKEND_TECHNICAL", "WAIT_DISK", "WAIT_GPU", "ENHANCED_READY"):
+                            eligible=job.get("state") in ("QUEUED", "ENHANCING", "PROCESSING", "WAIT_MASTER", "WAIT_MASTER_VERIFICATION", "WAIT_SUBTITLE",
+                                                    "WAIT_STYLE", "WAIT_STYLE_APPROVAL", "WAIT_BACKEND", "WAIT_BACKEND_TECHNICAL", "WAIT_DISK", "WAIT_GPU", "ENHANCED_READY")
+                            if job.get('state')=='READY' and job.get('native_source_release_pending'):
+                                upload_path=POST/'receipts'/f"{job['episode']}.upload.json"
+                                upload=json.loads(upload_path.read_text()) if upload_path.exists() else {}
+                                eligible=(upload.get('episode')==job['episode'] and upload.get('sha256')==job.get('master_sha256')
+                                    and upload.get('verified') is True and upload.get('local_master_deleted') is True)
+                            if eligible:
                                 if STAGE == "enhance" and job.get("state") == "ENHANCED_READY":
                                     continue
                                 do_job(file)

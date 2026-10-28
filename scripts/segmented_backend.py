@@ -44,6 +44,9 @@ def verified_segment_bytes(directory,digest,fp):
 
 
 def plan(master,cfg,output=None,episode=None):
+    if (cfg.get('restoration_backend')=='cuda_gfpgan_fused'
+            and sha256(master)!=cfg['fused_subtitle_binding']['master_sha256']):
+        raise ValueError('Native ASS recipe belongs to a different master')
     result=engine.disk_plan(engine.source_info(master),cfg)
     # CUDA uses rawvideo pipes: only compressed video, receipts and logs touch disk.
     # Retain the portable PNG pipeline's8GiB bound and the25GiB filesystem floor.
@@ -53,7 +56,13 @@ def plan(master,cfg,output=None,episode=None):
     result['scratch_strategy']='rawvideo_pipe' if streaming else 'png_exchange'
     # Segments plus concatenated output coexist until complete decode acceptance.
     seconds=result['input_duration']
-    result['additional_peak_bytes']=int(seconds*90_000_000/8)+working_bytes
+    planning_bitrate=18_000_000 if cfg.get('restoration_backend')=='cuda_gfpgan_fused' else 45_000_000
+    result['additional_peak_bytes']=int(seconds*planning_bitrate*2/8)+working_bytes
+    if cfg.get('restoration_backend')=='cuda_gfpgan_fused':
+        result.update(max_video_bitrate=16_000_000,output_kind='ass_styled_video',
+                      fused_subtitle_binding=cfg['fused_subtitle_binding'],video_encodes=1,
+                      native_recipe=cfg['native_recipe'],native_recipe_sha256=cfg['native_recipe_sha256'])
+        result['precision_note']='GFPGAN uses BGR8 face/fusion; RIFE float32 IO with typed half neural layers; Main10 container is not ten-bit model restoration'
     result['backend_fingerprint']=fingerprint(cfg)
     result['resumable_segments']=True
     if output is not None:
@@ -80,7 +89,7 @@ def plan(master,cfg,output=None,episode=None):
         if cfg.get('post_root'):
             if not identity:
                 identity=make_identity(ep,digest,fp,engine.source_packet_count(master),cfg.get('segment_source_frames',250))
-            video_budget=int(seconds*45_000_000/8)+1
+            video_budget=int(seconds*planning_bitrate/8)+1
             _,extra=concat_transfer.choose_concat(cfg['post_root'],output,directory,identity,video_budget,
                                                   releasable_bytes=occupied)
             if extra:
@@ -154,8 +163,9 @@ def run(master,output,episode,cfg):
         print(json.dumps({'resumed_verified_transfer':str(output)}),flush=True);return
     concat_path=output
     if cfg.get('post_root'):
+        planning_bitrate=18_000_000 if cfg.get('restoration_backend')=='cuda_gfpgan_fused' else 45_000_000
         concat_path,_=concat_transfer.choose_concat(cfg['post_root'],output,directory,identity,
-            int(float(source['format']['duration'])*45_000_000/8)+1,
+            int(float(source['format']['duration'])*planning_bitrate/8)+1,
             releasable_bytes=verified_segment_bytes(directory,digest,fp))
         if concat_path!=output and concat_path.exists():
             try:validate(concat_path)
@@ -196,10 +206,17 @@ def run(master,output,episode,cfg):
         ready=target.with_suffix('.ready.json');pending=target.with_suffix('.pending.json')
         binding={**identity,'index':index,'source_start':start,'source_frames':selected,'frames':frames}
         reused=target.exists()
+        native=cfg.get('restoration_backend')=='cuda_gfpgan_fused'
+        def native_evidence():
+            from native_face_pipeline import validate_pipeline
+            return validate_pipeline(partial,cfg,start,selected,count)
         if target.exists():
             record=json.loads(ready.read_text()) if ready.is_file() else {}
             if any(record.get(k)!=v for k,v in binding.items()) or record.get('sha256')!=sha256(target):
                 raise ValueError('Segment differs from its completion receipt; retained')
+            if native:
+                evidence=native_evidence()
+                if any(record.get(k)!=v for k,v in evidence.items()):raise ValueError('Native segment evidence changed')
             if partial.exists():
                 if (not pending.is_file() or json.loads(pending.read_text())!=binding
                         or sha256(partial)!=record['sha256']):
@@ -209,7 +226,9 @@ def run(master,output,episode,cfg):
             if partial.exists():
                 if not pending.is_file() or json.loads(pending.read_text())!=binding:
                     raise ValueError('Orphan partial not owned by this segment; retained')
-                try:validate_segment(partial,frames,frames/60,log)
+                try:
+                    validate_segment(partial,frames,frames/60,log)
+                    if native:native_evidence()
                 except (ValueError,subprocess.CalledProcessError,StopIteration) as error:
                     atomic_json(directory/f'{index:06d}.discarded.json',{'reason':str(error),'sha256':sha256(partial)})
                     release_verified_file(partial,sha256(partial))
@@ -218,10 +237,14 @@ def run(master,output,episode,cfg):
                 if restorer is None and cfg['restore'] and cfg.get('restoration_backend')=='cuda_srvgg':
                     from cuda_restore import Restorer
                     restorer=Restorer(cfg)
+                if restorer is None and cfg.get('restoration_backend')=='cuda_gfpgan_fused':
+                    from native_face_pipeline import NativeFrames
+                    restorer=NativeFrames(cfg)
                 engine.run(master,partial,episode,cfg,source_start=start,source_frames=selected,
                            prepared=prepared,restorer=restorer)
                 validate_segment(partial,frames,frames/60,log)
             record={**binding,'sha256':sha256(partial)}
+            if native:record.update(native_evidence())
             # Publish receipt first: a crash after link can validate target on retry.
             atomic_json(ready,record);os.link(partial,target);partial.unlink()
         paths.append(target);receipts.append(record)
