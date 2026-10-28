@@ -28,6 +28,7 @@ def audit(work,verify_source=False):
     source=Path(manifest['source'])
     if verify_source:require(digest(source)==manifest['source_sha256'],'Original source SHA changed')
     rows=[];gaps=[];gap=None;expected=first
+    multi_runs=[];multi=None;multi_count=0;maximum_faces=0
     paths=[p for p in sorted((work/'segments').glob('segment-*.json'))
            if re.fullmatch(r'segment-\d{5}\.json',p.name)]
     for p in paths:
@@ -49,7 +50,13 @@ def audit(work,verify_source=False):
                 and d['validation'].get('frames')==count,'Incomplete processing/protection/decode: '+p.name)
         for x in records:
             require(all(type(x.get(k)) is int and x[k]>=0 for k in ('faces_detected','faces_restored'))
-                    and x['faces_restored']<=x['faces_detected'],'Invalid face counts: '+p.name)
+                    and x['faces_restored']==x['faces_detected'],'Invalid face counts: '+p.name)
+            detected=x['faces_detected'];maximum_faces=max(maximum_faces,detected)
+            if detected>1:
+                multi_count+=1
+                if multi is None:multi=[x['frame'],x['frame']+1,detected]
+                else:multi[1]=x['frame']+1;multi[2]=max(multi[2],detected)
+            elif multi is not None:multi_runs.append(multi);multi=None
             if x['faces_detected']==0:
                 if gap is None:gap=[x['frame'],x['frame']+1]
                 else:gap[1]=x['frame']+1
@@ -65,6 +72,7 @@ def audit(work,verify_source=False):
             media_sha256=d['validation']['sha256'],frame_log_sha256=d['frame_log_sha256']))
         expected+=count
     if gap is not None:gaps.append(gap)
+    if multi is not None:multi_runs.append(multi)
     return dict(at=datetime.now().astimezone().isoformat(),fingerprint=fingerprint,
         scope='Completed segment SHA/frame-log coverage audit only. Prior strict decode is bound in each receipt; no repeated full media decode or visual/PCM approval.',
         source_sha_freshly_checked=verify_source,all_frames_present=expected==first+total,
@@ -73,6 +81,9 @@ def audit(work,verify_source=False):
         no_detection_frames=sum(x['no_detection_frames'] for x in rows),
         failed_frames=0,protected_bottom_unchanged_frames=expected-first,
         no_detection_runs_seconds=[dict(start=a/60,end=b/60,frames=b-a) for a,b in gaps if b-a>=60],
+        multi_face_frames=multi_count,max_faces_detected=maximum_faces,
+        multi_face_runs_seconds=[dict(start_frame=a,end_frame_exclusive=b,start=a/60,end=b/60,
+            frames=b-a,max_faces=maximum) for a,b,maximum in multi_runs],
         segments=rows)
 
 

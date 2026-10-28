@@ -75,6 +75,36 @@ class AuditFaceReworkTests(unittest.TestCase):
         self.assertFalse(audit(self.work)['source_sha_freshly_checked'])
         with self.assertRaises(ValueError):audit(self.work,True)
 
+    def change_face_counts(self,index,counts,restored_counts=None):
+        p=self.work/'segments'/f'segment-{index:05d}.json';d=json.loads(p.read_text())
+        log=Path(d['frame_log']);records=[json.loads(x) for x in log.read_text().splitlines()]
+        restored_counts=counts if restored_counts is None else restored_counts
+        for record,detected,restored in zip(records,counts,restored_counts):
+            record.update(faces_detected=detected,faces_restored=restored)
+        log.write_text(''.join(json.dumps(x)+'\n' for x in records))
+        d.update(frame_log_sha256=digest(log),faces_restored=sum(restored_counts),
+                 restored_frames=sum(x>0 for x in restored_counts),no_detection_frames=sum(x==0 for x in counts))
+        self.write(p,d)
+
+    def test_multiface_includes_single_frame_and_cross_segment_run(self):
+        self.change_face_counts(0,[1,2,1]);result=audit(self.work)
+        self.assertEqual(result['multi_face_frames'],1)
+        self.assertEqual(result['multi_face_runs_seconds'][0]['start_frame'],1)
+        self.assertEqual(result['multi_face_runs_seconds'][0]['frames'],1)
+        self.change_face_counts(0,[1,1,2]);result=audit(self.work)
+        self.assertEqual(result['multi_face_runs_seconds'][0]['end_frame_exclusive'],3)
+        self.make_segment(1,3,2)
+        self.change_face_counts(0,[1,2,2]);self.change_face_counts(1,[3,1])
+        result=audit(self.work);self.assertEqual(result['multi_face_frames'],3)
+        self.assertEqual(result['max_faces_detected'],3)
+        self.assertEqual(result['multi_face_runs_seconds'],[dict(start_frame=1,end_frame_exclusive=4,
+            start=1/60,end=4/60,frames=3,max_faces=3)])
+        self.assertFalse(result['final_acceptance'])
+
+    def test_partial_face_restoration_rejected_despite_consistent_receipt_totals(self):
+        self.change_face_counts(0,[1,2,1],[1,1,1])
+        with self.assertRaises(ValueError):audit(self.work)
+
     def test_samples_refuse_invalid_or_unprocessed_positions_before_decoder(self):
         result=audit(self.work)
         with patch('audit_face_rework.subprocess.run') as run:

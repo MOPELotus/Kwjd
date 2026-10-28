@@ -607,6 +607,11 @@ and an independent persistent systemd service with segment-level recovery.
 completed segment hashes, contiguous frame coverage, processing/protection
 counters and face-log statistics without invoking models or changing media.
 Missing segments, duplicate frames and mismatched evidence stop the audit.
+Each detected face must have a recorded restoration, not just a valid aggregate
+receipt count. Multi-face intervals include single-frame events and merge across
+segment boundaries; their frame bounds and maximum face count identify additional
+visual-review candidates. Multiple detections alone do not prove background
+contamination or authorize removing a face.
 The report explicitly keeps `final_acceptance: false`, even if all frames are
 present. `--verify-source` adds a fresh whole-input SHA check; without that flag
 the report does not claim one. Use a new report path to retain prior audit history.
