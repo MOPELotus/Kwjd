@@ -44,3 +44,9 @@ python scripts/compare_frame_pairs.py --directory D:/qingqingwu/work/S01E49/qual
 Windows负责 scripts/render_filter_samples.py、统一编码基准与滤镜样片、回传核验；Linux负责独立人脸环境、后端和样片脚本。固定HEVC Main10/CQ16/p6及FLAC24bit48k Stereo，音频不调增益。准备/下载依赖、有效推理、含检测融合编码总耗时、技术验收分别记录；同机器耗时方可直接比较。样片与日志不提交Git，不能据样片任务改生产默认或重跑整集。完整成片和当前Resolve缓存保持保留。
 
 样片RGB回转YUV必须明确 Rec.709 limited range 并写入色彩标签；render_filter_samples.py 使用显式矩阵且接收端校验bt709/tv和全段实际解码帧数。2026-10-28初轮缺少色彩矩阵标签的文件只保留为pilot，不作为最终候选交付；修正后重新出样，所有方案统一相同颜色转换。
+
+### 三分钟Rec.709滤镜实测结果
+
+同一服务器、CPU四线程、GPU1(Tesla T10) NVENC编码；25fps共4500帧，HEVC Main10/p6/CQ16，FLAC24bit48k Stereo；先后串行运行。显式Rec.709版本实际处理加拼接：基准74.213秒(60.636fps)、CAS124.484秒(36.149fps)、加强档174.175秒(25.836fps)。各自全段解码/媒体/哈希校验另耗24.478、29.582、34.999秒；下载不计。数字含解码、滤镜及音视频编码，不能与之前20秒to-null数字混用，也不包含RIFE、环境准备或原母片完整生产链。
+
+实际查看回传CAS同帧裁切：衣服纹理、脸部轮廓更利落，但五官收益仍小，背景噪声会突出。未据此自动选定生产方案。人脸候选继续独立实测和回传。
