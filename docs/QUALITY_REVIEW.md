@@ -36,3 +36,9 @@ python scripts/compare_frame_pairs.py --directory D:/qingqingwu/work/S01E49/qual
 这仅是短片CPU解码、色彩转换和滤镜吞吐，不含RIFE、音频、编码、落盘与全片校验，不可当作整集ETA。报告与媒体保留在数据目录 work/S01E49/fast-look-preview 和服务器 post/reports/fast_filters_20261028，不提交Git。
 
 更明显的面部细节候选是仅针对人脸的 GFPGAN 1.4 或 CodeFormer，再搭配轻量清晰度和既有补帧。官方来源：https://github.com/TencentARC/GFPGAN 、https://github.com/sczhou/CodeFormer 、https://ffmpeg.org/ffmpeg-filters.html#cas 。本次未安装或测这两种人脸模型，不能承诺速度或收益；使用前须测连续视频的嘴型、身份、脸部融合与闪烁。接受细节猜测不等于允许明显改变人物身份或表情。
+
+## 三分钟可播放候选样片授权：2026-10-28
+
+用户要求将以上全部方案实际做几分钟样片、分别测速并回传逐个观看。本轮固定60–120、1700–1760、2800–2860秒三段共180秒，统一25fps，基准、CAS、加强锐化、GFPGAN1.4、CodeFormer使用同一底片与时间段。原母片不再保留，三段只能基于已交付成片做增量处理；报告必须明确限制，不以此冒充原母片恢复效果或原生生产ETA。CodeFormer可加0.5/0.8两档比较，输出不重跑RIFE。
+
+Windows负责 scripts/render_filter_samples.py、统一编码基准与滤镜样片、回传核验；Linux负责独立人脸环境、后端和样片脚本。固定HEVC Main10/CQ16/p6及FLAC24bit48k Stereo，音频不调增益。准备/下载依赖、有效推理、含检测融合编码总耗时、技术验收分别记录；同机器耗时方可直接比较。样片与日志不提交Git，不能据样片任务改生产默认或重跑整集。完整成片和当前Resolve缓存保持保留。
