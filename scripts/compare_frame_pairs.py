@@ -22,10 +22,15 @@ def main():
     p.add_argument('--directory', required=True, type=Path)
     p.add_argument('--sample', required=True, action='append', help='seconds,x,y,width,height')
     p.add_argument('--scale', type=int, default=2)
+    p.add_argument('--output-dir', type=Path, help='Separate figures from original saved frames')
+    p.add_argument('--before-label', default='Before: DaVinci master')
+    p.add_argument('--after-label', default='After: delivered final')
     args = p.parse_args()
     if args.scale not in (1, 2, 3, 4):
         p.error('Use equal integer magnification from 1 to 4')
     results = []
+    output_dir = args.output_dir or args.directory
+    output_dir.mkdir(parents=True, exist_ok=True)
     for sample in args.sample:
         stamp, x, y, width, height = map(int, sample.split(','))
         if min(x, y) < 0 or min(width, height) <= 0:
@@ -40,12 +45,12 @@ def main():
         canvas = Image.new('RGB', (2 * w + 3 * padding, h + header + padding), '#20242b')
         draw = ImageDraw.Draw(canvas)
         font = ImageFont.load_default(size=21)
-        for index, (label, crop) in enumerate(zip(('Before: DaVinci master', 'After: delivered final'), crops)):
+        for index, (label, crop) in enumerate(zip((args.before_label, args.after_label), crops)):
             left = padding + index * (w + padding)
             draw.text((left, 8), label, font=font, fill='white')
             draw.text((left, 36), f'{stamp}s | same crop | {args.scale}x nearest', font=font, fill='#b9c8dc')
             canvas.paste(crop.resize((w, h), Image.Resampling.NEAREST), (left, header))
-        output = args.directory / f'comparison_{stamp}.png'
+        output = output_dir / f'comparison_{stamp}.png'
         if output.exists():
             raise FileExistsError(output)
         canvas.save(output)
@@ -56,10 +61,11 @@ def main():
                         'mean_absolute_rgb_difference_0_255': difference.mean,
                         'output': str(output), 'output_sha256': digest(output)})
         print(output)
-    report = args.directory / 'comparisons.json'
+    report = output_dir / 'comparisons.json'
     if report.exists():
         raise FileExistsError(report)
-    report.write_text(json.dumps({'scope': __doc__, 'samples': results}, indent=2) + '\n', encoding='utf-8')
+    report.write_text(json.dumps({'scope': __doc__, 'labels': [args.before_label, args.after_label],
+                                 'samples': results}, indent=2) + '\n', encoding='utf-8')
 
 
 if __name__ == '__main__':

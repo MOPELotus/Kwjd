@@ -19,3 +19,20 @@ python scripts/compare_frame_pairs.py --directory D:/qingqingwu/work/S01E49/qual
 ```
 
 成片帧提取使用FFmpeg的同一时间基准，例如`-ss 60 -i <成片> -frames:v 1 -vf format=rgb24`。对照前必须核实时间与姿态；不可拿不同镜头、缩放尺寸或不同锐化设置的播放器截图混比。输出已存在时脚本拒绝覆盖，重做应使用新的比较目录。
+
+## 快速候选实验：2026-10-28
+
+用户倾向可见收益与速度，接受不影响整体的细节猜测。本次只是候选研究，不代表批准更改生产参数或重跑E49。
+
+新增 `scripts/preview_fast_filters.py`，对留存母片PNG生成轻量滤镜候选，并对现有成片做有界测速。CAS方案为亮度锐化加少量对比度/饱和度；加强方案额外加入宽半径轻量unsharp。实际查看60和1700秒相同裁切：轮廓更利落、衣服纹理更突出，但小脸五官没有明显恢复，也会强调噪声；不能宣称画质质变。候选图须使用 compare_frame_pairs.py 的 --after-label 明确标注候选，不能标成已交付成片。
+
+同一20秒视频、CPU四线程、降至25fps后解码及滤镜输出到null的单次测速：
+
+| 环境 | 无增强基线 | CAS方案 | 加强方案 |
+| --- | ---: | ---: | ---: |
+| Windows | 3.063秒 | 3.900秒 | 5.961秒 |
+| Linux服务器 | 6.586秒 | 10.141秒 | 15.569秒 |
+
+这仅是短片CPU解码、色彩转换和滤镜吞吐，不含RIFE、音频、编码、落盘与全片校验，不可当作整集ETA。报告与媒体保留在数据目录 work/S01E49/fast-look-preview 和服务器 post/reports/fast_filters_20261028，不提交Git。
+
+更明显的面部细节候选是仅针对人脸的 GFPGAN 1.4 或 CodeFormer，再搭配轻量清晰度和既有补帧。官方来源：https://github.com/TencentARC/GFPGAN 、https://github.com/sczhou/CodeFormer 、https://ffmpeg.org/ffmpeg-filters.html#cas 。本次未安装或测这两种人脸模型，不能承诺速度或收益；使用前须测连续视频的嘴型、身份、脸部融合与闪烁。接受细节猜测不等于允许明显改变人物身份或表情。
