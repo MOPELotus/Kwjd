@@ -49,6 +49,10 @@ def main():
         names.add(name)
     args.output.mkdir(parents=True, exist_ok=True)
     receipt_path = args.output / 'sample-receipt.json'
+    previous = json.loads(receipt_path.read_text(encoding='utf-8')) if receipt_path.exists() else {}
+    checked = {row['sha256']: row for row in previous.get('files', [])
+               if previous.get('source_sha256') == plan['source_sha256']
+               and row.get('technical_checked') and row.get('status') == 'verified'}
     receipt = {'manifest_sha256': digest(args.manifest), 'source_sha256': plan['source_sha256'],
                'scope': __doc__, 'files': [], 'status': 'running'}
     save(receipt_path, receipt)
@@ -84,20 +88,25 @@ def main():
                     or abs(float(probe['format']['duration']) - plan['duration_seconds']) > 0.15):
                 raise RuntimeError(f'Sample media specification mismatch: {temporary}')
             progress = args.output / (item['name'] + '.decode-progress.log')
-            with (args.output / (item['name'] + '.decode.log')).open('w', encoding='utf-8') as log:
-                subprocess.run(['ffmpeg', '-hide_banner', '-nostdin', '-v', 'error', '-xerror',
-                                '-progress', str(progress),
-                                '-threads', '4', '-i', str(temporary), '-map', '0:v:0',
-                                '-map', '0:a:0', '-f', 'null', '-'], stdout=log, stderr=log, check=True)
-            frame_counts = re.findall(r'^frame=(\d+)$', progress.read_text(), re.MULTILINE)
             expected_frames = round(plan['duration_seconds'] * plan['fps'])
-            if not frame_counts or int(frame_counts[-1]) != expected_frames:
-                raise RuntimeError(f'Decoded frame count mismatch: {temporary}')
+            prior = checked.get(item['sha256'], {})
+            reuse = (temporary == final and prior.get('path') == str(final.resolve())
+                     and prior.get('decoded_frames') == expected_frames)
+            if not reuse:
+                with (args.output / (item['name'] + '.decode.log')).open('w', encoding='utf-8') as log:
+                    subprocess.run(['ffmpeg', '-hide_banner', '-nostdin', '-v', 'error', '-xerror',
+                                    '-progress', str(progress),
+                                    '-threads', '4', '-i', str(temporary), '-map', '0:v:0',
+                                    '-map', '0:a:0', '-f', 'null', '-'], stdout=log, stderr=log, check=True)
+                frame_counts = re.findall(r'^frame=(\d+)$', progress.read_text(), re.MULTILINE)
+                if not frame_counts or int(frame_counts[-1]) != expected_frames:
+                    raise RuntimeError(f'Decoded frame count mismatch: {temporary}')
             if temporary != final:
                 temporary.rename(final)
             row.update(status='verified', path=str(final.resolve()), bytes=final.stat().st_size,
                        technical_checked=True, probe=probe)
             row['decoded_frames'] = expected_frames
+            row['reused_full_decode_after_fresh_sha'] = reuse
             save(receipt_path, receipt)
             print(json.dumps({'name': item['name'], 'status': 'verified', 'path': str(final.resolve())}), flush=True)
         receipt['status'] = 'verified'
