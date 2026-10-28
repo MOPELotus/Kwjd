@@ -480,3 +480,65 @@ On a fresh machine the Worker reports WAIT_BACKEND until the real backend is ins
 ## Season profile
 
 Read `config/seasons/S01.json` (cut starts after 30s, tail first white frame, OCR horizontal full-width/vertical auto). These rules apply across the whole first season, not just E49–E55. The existing in-progress E49–E55 items are merely the initial adoption set. Derive episode IDs from source file names / job files, do not code fixed episode ranges.
+
+## Native-resolution light filter + GFPGAN policy (2026-10-28)
+
+The user selected the future episode policy: native-resolution light processing,
+GFPGAN1.4 faces, real RIFE60, approved ASS, final encoding and unchanged mixed
+FLAC. `config/project.json` records clarity/CAS as the lightweight default and
+explicitly reports pending Worker integration. This is not an activated backend
+merely because a bool or policy file changed. Existing production CUDA config
+and SRVGG checkpoints are retained with their historical fingerprints.
+
+The isolated `face_chain_smoke.py` implements one video decode and one final
+lossy encode: FFmpeg none or the existing clarity recipe, persistent A4000
+GFPGAN, CPU alignment/ParseNet fusion, upload to the pinned T10 TensorRT RIFE,
+ASS at the original program clock, NVENC Main10/Rec709/tv plus original-gain
+FLAC. This is not a zero-copy CUDA-only chain. No ROI optimization is enabled.
+A retained FFV1 native25 cache freshly matched historical SHA and master binding;
+its original59–65s six-second sample includes the59.36s shot cut. Both candidates
+actually processed151 native frames including one lookahead into360 output60fps
+frames, restored all151, detected the cut and skipped interpolation across it.
+Measured continuous decode/filter/GF/RIFE/ASS/encode wall was74.863s for none and
+69.142s for clarity, model initialization and strict QC separate. This one short
+shared-server pass does not prove CAS is faster or predict full-episode speed.
+Full decode,60fps PTS,Rec709/Main10/FLAC,exact original mixed PCM and actual
+MiSans font resolution passed. Original hard-sub remnants remain as accepted.
+
+For E49 only, the master is already legitimately released: the preserved final
+SHA `f2bae90ba1b50bc7953867433c25b6a70be233828f14257fe646c975e8b4d3fc`
+is the sole full input. The user explicitly authorized full face rework after
+technical validation. `face_rework_worker.py` processes every existing60fps
+frame, no RIFE or ASS reburn, no newly added CAS on this already enhanced final.
+GF fusion is prevented from changing rows760–1079 before encoding, preserving
+the existing subtitle region; that strip still undergoes final lossy encoding.
+Small/low faces overlapping the protected strip may receive only partial face
+changes. Actual6s/360frame tests preserved the strip on every frame and retained
+sample-identical original mixed audio. About3.3–3.5processed60fps frames/second
+in this short test implies an order of17hours for211054frames, not realtime or
+the earlier25fps audition ETA. Sustained segments must update the estimate.
+
+The worker requires an explicit, isolated manifest. It pins source, own processor
+code, installed face-helper source, package versions and official weight SHAs;
+changed contexts refuse old checkpoints. Segments and final publish hash-bound
+pending intents before rename. Recovery verifies exact media SHA and fully
+decodes/clock-checks before completing receipts, not presence adoption. Original
+source SHA is rechecked at each attempt and after final validation. The full
+original FLAC is stream copied at final mux; only bounded sample audio is
+losslessly re-encoded for exact sample trimming. Segment receipts and final
+pending-intent recovery were actually exercised without rerunning neural frames.
+
+One persistent face model owns a common same-user lease. The process checks
+physical A4000 thermal/headroom and disk floor, exits76 on resource pressure,
+and can be restarted by a persistent user service after cooling; unknown errors
+stop for inspection. `watch_face_rework.py` separately observes service state,
+progress, GPUs and disk into JSON metrics and sparse log events. A Windows SSH
+`tail` is only a viewer and does not own the inference process lifetime.
+
+Rework output lives independently on the measured home filesystem. Main10
+CQ16,16Mbps maximum video and a conservative two-copy+audio+scratch budget keep
+25GiB free; the root filesystem is below the floor and is not used for new media.
+The original final, all prior review/receipt history and Windows old copy remain.
+New output must receive its own full SHA/frame/PCM/visual checks and Windows
+verified replacement. Old quality acceptance is never inherited. No Resolve or
+CacheClip operation is part of this Linux rework.
