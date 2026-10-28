@@ -172,6 +172,14 @@ def ensure_enhanced(master, enhanced, backend, episode, log, reserve_gib=25):
               'stage':'ENHANCED_READY', 'style_required':False,
               'audio_policy':'Final audio must come from untouched mixed master',
               'residual_hardsubs':'Retained per user authorization; no new subtitles burned'}
+    if plan.get('output_kind')=='ass_styled_video':
+        binding=plan.get('fused_subtitle_binding')
+        if not isinstance(binding,dict) or binding.get('master_sha256')!=master_hash:
+            raise ValueError('Fused checkpoint lacks master-bound subtitle approval')
+        record.update(output_kind='ass_styled_video',style_required=True,
+            fused_subtitle_binding=binding,video_encodes=1,
+            native_recipe=plan['native_recipe'],native_recipe_sha256=plan['native_recipe_sha256'],
+            residual_hardsubs='Original fragments retained; approved ASS already rendered after GF/RIFE')
     # link() refuses overwrite even if another file appeared during processing.
     atomic_json(pending_checkpoint,record)
     os.link(partial, enhanced)

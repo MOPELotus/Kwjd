@@ -58,7 +58,7 @@ def config(path):
         raise ValueError('Physical GPU identity must be configured and verified')
     if data.get('restore') not in (True,False):
         raise ValueError('Explicit restoration policy required')
-    if data.get('restoration_backend','ncnn') not in ('ncnn','cuda_srvgg'):
+    if data.get('restoration_backend','ncnn') not in ('ncnn','cuda_srvgg','cuda_gfpgan_fused'):
         raise ValueError('Unknown restoration backend; implicit fallbacks forbidden')
     for filename, expected in data['file_sha256'].items():
         if sha256(filename) != expected:
@@ -77,6 +77,23 @@ def config(path):
                    str(Path(data['esrgan_models'])/'realesrgan-x4plus.param')]
     if data['restore'] and data.get('restoration_backend') == 'cuda_srvgg':
         needed += [data['srvgg_source'],data['srvgg_general'],data['srvgg_wdn']]
+    if data.get('restoration_backend')=='cuda_gfpgan_fused':
+        import importlib.metadata
+        from face_frame_processor import WEIGHTS
+        from native_face_recipe import validate_recipe
+        if (data['restore'] is not True or data.get('rife_backend')!='cuda_trt'
+                or data.get('gpu')!=1 or data.get('restore_gpu')!=0
+                or data.get('light_filter') not in ['none','clarity']
+                or data.get('max_video_mbps')!=16):
+            raise ValueError('Require tested native face/CAS/RIFE device and encoding policy')
+        if any(importlib.metadata.version(name)!=version for name,version in data['face_versions'].items()):
+            raise ValueError('Native face environment differs from validated package versions')
+        needed += [str(Path(data['face_weights'])/name) for name in WEIGHTS]
+        for name,expected in WEIGHTS.items():
+            if sha256(Path(data['face_weights'])/name)!=expected:raise ValueError('Changed official face weight')
+        recipe=validate_recipe(data['native_recipe'],data['native_recipe_sha256'])
+        data['fused_subtitle_binding']={key:recipe[key] for key in
+            ['master_sha256','srt_sha256','style_sha256','fonts','subtitle_timing','ass_sha256']}
     if any(n not in data['file_sha256'] for n in needed):
         raise ValueError('All executable/model files must be hash-pinned')
     if not Path(data['nvidia_icd']).is_file():
@@ -84,13 +101,17 @@ def config(path):
     data['fingerprint'] = hashlib.sha256(Path(path).read_bytes()+Path(__file__).read_bytes()).hexdigest()
     if data.get('restoration_backend') == 'cuda_srvgg':
         data['fingerprint']=hashlib.sha256((data['fingerprint']+sha256(Path(__file__).with_name('cuda_restore.py'))).encode()).hexdigest()
+    if data.get('restoration_backend')=='cuda_gfpgan_fused':
+        for name in ['native_face_pipeline.py','native_face_recipe.py','face_frame_processor.py','render_face_samples.py']:
+            data['fingerprint']=hashlib.sha256((data['fingerprint']+sha256(Path(__file__).with_name(name))).encode()).hexdigest()
     if data.get('rife_backend') in ('cuda_onnx','cuda_trt','cuda_trt_sm86'):
         helper={'cuda_trt':'cuda_trt.py','cuda_trt_sm86':'cuda_trt_sm86.py','cuda_onnx':'cuda_rife.py'}[data['rife_backend']]
         helpers=[helper,'cuda_pipeline.py']
         if data['rife_backend']=='cuda_trt_sm86':helpers+=['cuda_trt.py','build_rife_sm86.py']
         for name in helpers:
             data['fingerprint']=hashlib.sha256((data['fingerprint']+sha256(Path(__file__).with_name(name))).encode()).hexdigest()
-    scratch, selection = choose_scratch(Path(path).parent.parent, 8*GIB,
+    scratch_bytes=512*1024**2 if data.get('restoration_backend')=='cuda_gfpgan_fused' else 8*GIB
+    scratch, selection = choose_scratch(Path(path).parent.parent, scratch_bytes,
         candidates=None if data.get('scratch') is None else _scratch_candidates(data, path))
     data['scratch'] = str(scratch)
     data['post_root'] = str(Path(path).parent.parent)
@@ -140,6 +161,10 @@ def disk_plan(data, cfg):
 
 
 def run(master, output, episode, cfg, *, source_start=0, source_frames=None, prepared=None, restorer=None):
+    if cfg.get('restoration_backend')=='cuda_gfpgan_fused':
+        from native_face_pipeline import run as native_run
+        return native_run(master,output,episode,cfg,source_start=source_start,source_frames=source_frames,
+                          prepared=prepared,restorer=restorer)
     if cfg.get('rife_backend') in ('cuda_onnx','cuda_trt','cuda_trt_sm86'):
         from cuda_pipeline import run as cuda_run
         return cuda_run(master,output,episode,cfg,source_start=source_start,source_frames=source_frames,

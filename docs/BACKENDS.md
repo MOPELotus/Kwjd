@@ -486,9 +486,9 @@ Read `config/seasons/S01.json` (cut starts after 30s, tail first white frame, OC
 The user selected the future episode policy: native-resolution light processing,
 GFPGAN1.4 faces, real RIFE60, approved ASS, final encoding and unchanged mixed
 FLAC. `config/project.json` records clarity/CAS as the lightweight default and
-explicitly reports pending Worker integration. This is not an activated backend
-merely because a bool or policy file changed. Existing production CUDA config
-and SRVGG checkpoints are retained with their historical fingerprints.
+records the validated native Worker integration. Native activation requires an
+actual media acceptance report and current source hashes, not just a policy bool.
+Existing CUDA configs and SRVGG checkpoints retain their historical fingerprints.
 
 The isolated `face_chain_smoke.py` implements one video decode and one final
 lossy encode: FFmpeg none or the existing clarity recipe, persistent A4000
@@ -542,3 +542,60 @@ The original final, all prior review/receipt history and Windows old copy remain
 New output must receive its own full SHA/frame/PCM/visual checks and Windows
 verified replacement. Old quality acceptance is never inherited. No Resolve or
 CacheClip operation is part of this Linux rework.
+
+
+## Native fused Worker integration and acceptance (2026-10-28)
+
+`prepare_native_face_backend.py` pins the installed face packages, official
+weights, existing tested T10 RIFE engine and source files into a native template.
+Activation requires real technical/visual acceptance plus matching current code
+hashes. It archives the old launcher and refuses unfinished legacy checkpoints.
+`native_face_job.py` prepares immutable approved ASS, fonts, sealed SRT and the
+master-specific timing mapping before neural work. Unlike the historical
+style-independent path, fused mode must wait for these approvals before inference.
+A job's picture pipeline is frozen; existing legacy checkpoints are never relabeled.
+
+`native_face_pipeline.py` decodes native frames, applies the existing clarity/CAS
+filter, runs persistent GFPGAN on A4000, fuses on CPU, and runs real T10 TensorRT
+RIFE at the exact rational 60fps clock with shot-cut handling. It burns approved
+ASS after interpolation and encodes HEVC Main10 once. The subtitle-bearing
+checkpoint is explicitly `ass_styled_video`; the final mux only copies video and
+the preserved original-mix FLAC. BGR8 restoration does not become ten-bit neural
+processing merely because the encoded stream is Main10. No ROI optimization.
+Both GPUs use explicit identity/headroom/thermal checks; the human authorized a
+3GiB A4000 free reserve. Resource pressure exits for controlled retry.
+
+Segment adoption requires pipeline evidence and complete frame-log coverage,
+not file presence. Current-master calibration binds the actual source SHA,
+backend fingerprint, finite measured speed and strictly decoded sample. The
+short calibration records whether GFPGAN actually saw faces. Full jobs retain
+the master through final technical QC and subtitle approval/publication; late
+upload/local-release receipts retain the exact styled checkpoint and FLAC until
+master release can be validated. This extends the old handoff lifetime for the
+fused path; historical evidence and old source-release receipts stay unchanged.
+
+An actual native-cache test at original program72.4–77.4s processed125 native
+frames plus one lookahead, restored126 faces, and produced300 frames with one
+cut at75.68s. Processing took58.421s; including model initialization64.689s.
+Strict full decode/60fps PTS/Rec709/Main10, actual MiSans resolution, unchanged
+decoded original-mix PCM and identical encoded-video payload across final mux
+passed. The original whole master is already released: picture came from its
+SHA-verified native FFV1 cache, matching original-mix audio from the retained
+delivered final. This is bounded compatibility evidence, not a new whole-master
+acceptance or a full-episode ETA. A4000 hardware playback used nvdec-copy and
+showed zero display/decoder drops across two runs, including the shot cut; five
+screenshots were visually reviewed. Accepted inherited hard-sub fragments and
+scene overlays remain. No server audio listening or all-frame visual claim.
+
+The actual tested runtime/source snapshot is retained separately. Subsequent
+changes only add CPU-side migration/master-binding guards and a precision note;
+30 native contract tests plus27 enhancement and3 segment regression tests passed.
+The acceptance records both tested and current hashes instead of relabeling the
+old GPU benchmark. Each new master still needs its own actual calibration.
+
+Operational rollout: native backend is prepared/activated only after acceptance;
+the existing E49-only queue process remains unchanged until the independent
+E49 full60fps face rework has been delivered. Reload the queue to the new code
+then, before processing a fresh episode. Never restart E49 neural work to apply
+this future-episode policy. The running full rework uses frozen61ef57a source
+and an independent persistent systemd service with segment-level recovery.

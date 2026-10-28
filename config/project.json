@@ -63,7 +63,8 @@
     "sync_each_development_step": true,
     "max_active_episodes_scope": "cloud_worker_only",
     "cloud_post_fully_managed": true,
-    "windows_may_prepare_next_after_verified_upload_cleanup": true
+    "windows_may_prepare_next_after_verified_upload_cleanup": true,
+    "enhance_before_style_ready_scope": "legacy_style_independent_backends_only"
   },
   "delivery": {
     "filename_pattern": "第{story_part_chinese}回 {chapter_title}.mkv",
@@ -99,7 +100,10 @@
     "windows_offline_after_consecutive_failures": 3,
     "require_no_recent_positive_online_evidence": true,
     "timezone": "Asia/Shanghai",
-    "likely_windows_offline_hours": {"start": "23:00", "end": "07:00"},
+    "likely_windows_offline_hours": {
+      "start": "23:00",
+      "end": "07:00"
+    },
     "continue_cloud_processing_while_windows_offline": true,
     "retain_final_until_verified_windows_receipt": true
   },
@@ -129,12 +133,14 @@
       "final_nvenc_and_lossless_mix"
     ],
     "neural_full_frame_upscale": false,
-    "production_integration_status": "bounded_chain_validated_pending_worker_integration",
+    "production_integration_status": "validated_native_backend_ready_queue_reload_after_e49_rework",
     "existing_60fps_final_rework": {
       "preserve_all_frames": true,
       "repeat_rife": false,
       "repeat_ass": false,
       "retain_unique_input_until_new_full_validation": true
-    }
+    },
+    "fused_style_approval_before_inference": true,
+    "video_encodes": 1
   }
 }
