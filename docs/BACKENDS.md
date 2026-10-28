@@ -599,3 +599,26 @@ E49 full60fps face rework has been delivered. Reload the queue to the new code
 then, before processing a fresh episode. Never restart E49 neural work to apply
 this future-episode policy. The running full rework uses frozen61ef57a source
 and an independent persistent systemd service with segment-level recovery.
+
+
+### Rework receipt audits and queue storage gate
+
+`audit_face_rework.py --work <rework-folder> --report <new-report.json>` audits
+completed segment hashes, contiguous frame coverage, processing/protection
+counters and face-log statistics without invoking models or changing media.
+Missing segments, duplicate frames and mismatched evidence stop the audit.
+The report explicitly keeps `final_acceptance: false`, even if all frames are
+present. `--verify-source` adds a fresh whole-input SHA check; without that flag
+the report does not claim one. Use a new report path to retain prior audit history.
+Full final decode/PTS/PCM and visual/hardware-playback acceptance remain separate.
+
+Before reloading the future-episode queue, budget the canonical `post/cache`
+filesystem as well as incoming/final/scratch. Placing only native scratch and
+experiments on a writable volume does not relocate Worker checkpoints. A root
+volume below25GiB correctly leaves a fresh job in WAIT_DISK. If relocation is
+needed, preserve logical paths and receipts through a declared top-level cache
+area link under the existing storage/lifecycle contract. Inner episode symlinks
+are forbidden. Defer any cache migration that would consume the running E49
+rework's peak reserve; complete the verified handoff/authorized cleanup and
+recalculate the whole next-episode peak first. Backend short acceptance is not
+proof that deployment storage and queue reload have already been completed.
