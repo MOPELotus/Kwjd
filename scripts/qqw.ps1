@@ -205,12 +205,24 @@ foreach($n in $numbers){
     $retired=Get-Content -LiteralPath $discarded -Raw -Encoding utf8|ConvertFrom-Json
     if($retired.sha256 -eq $validated.sha256){throw 'This is the retired master; wait for the new export'}
    }
-   & python -X utf8 (Join-Path $PSScriptRoot 'resolve_cache.py') snapshot --root $RootDir --episode $id
-   AssertExit 'CacheClip upload-start snapshot'
+   $precleaned=$false
+   $localCacheReceipt=Join-Path $RootDir ".kwjd/cache-cleanup/$id.local-anchor.json"
+   if(Test-Path -LiteralPath $localCacheReceipt){
+    $localCacheRecord=Get-Content -LiteralPath $localCacheReceipt -Raw -Encoding utf8|ConvertFrom-Json
+    $precleaned=($localCacheRecord.state -eq 'LOCAL_ANCHORED_CACHE_CLEANED' -and $localCacheRecord.master_sha256 -eq $validated.sha256)
+   }
+   if(-not $precleaned){
+    & python -X utf8 (Join-Path $PSScriptRoot 'resolve_cache.py') snapshot --root $RootDir --episode $id
+    AssertExit 'CacheClip upload-start snapshot'
+   }
    $remote="qingqingwu/post/incoming/$name"
    $hash=Upload $master $remote
    if($hash -ne $validated.sha256){throw 'Master changed after validation'}
-   $upload=Get-Content -LiteralPath (Join-Path $RootDir ".kwjd\cache-snapshots\$id.json") -Raw -Encoding utf8|ConvertFrom-Json
+   if($precleaned){
+    $upload=[pscustomobject]@{episode=$id;cache_path='D:\ResolveWork\CacheClip';cache_precleaned=$true}
+   }else{
+    $upload=Get-Content -LiteralPath (Join-Path $RootDir ".kwjd\cache-snapshots\$id.json") -Raw -Encoding utf8|ConvertFrom-Json
+   }
    $upload|Add-Member -NotePropertyName verified -NotePropertyValue $true -Force
    $upload|Add-Member -NotePropertyName sha256 -NotePropertyValue $hash -Force
    $upload|Add-Member -NotePropertyName local_path -NotePropertyValue $master -Force
@@ -223,8 +235,10 @@ foreach($n in $numbers){
    Move-Item -LiteralPath "$receiptPath.tmp" -Destination $receiptPath -Force
    & python -X utf8 (Join-Path $PSScriptRoot 'episode_lifecycle.py') register --root $RootDir --episode $id --artifact "masters/$name"
    AssertExit 'register uploaded master'
-   & python -X utf8 (Join-Path $PSScriptRoot 'resolve_cache.py') cleanup --root $RootDir --episode $id --execute
-   if($LASTEXITCODE -ne 0){Write-Warning 'Upload verified; CacheClip was retained. Inspect cache state before cleanup.'}
+   if(-not $precleaned){
+    & python -X utf8 (Join-Path $PSScriptRoot 'resolve_cache.py') cleanup --root $RootDir --episode $id --execute
+    if($LASTEXITCODE -ne 0){Write-Warning 'Upload verified; CacheClip was retained. Inspect cache state before cleanup.'}
+   }
    & python -X utf8 (Join-Path $PSScriptRoot 'resolve_cache.py') delete-uploaded-master --root $RootDir --episode $id --execute
    AssertExit 'delete only the SHA-verified uploaded local master'
    ConfirmUpload $id

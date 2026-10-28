@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""User-authorized CacheClip cleanup after a verified master upload only.
+"""User-authorized CacheClip cleanup after upload or explicit local anchoring.
 
 The CLI cannot target any folder except D:/ResolveWork/CacheClip.
 An upload-start snapshot protects caches changed by a newer Resolve task.
@@ -41,6 +41,12 @@ def cleanup(root, ep, execute=False):
     receipt = load(root / '.kwjd/uploads' / f'{ep}.json')
     if receipt.get('episode') != ep or receipt.get('verified') is not True:
         raise ValueError('No verified master upload receipt')
+    precleaned_path = root / '.kwjd/cache-cleanup' / f'{ep}.local-anchor.json'
+    if precleaned_path.exists():
+        previous = load(precleaned_path)
+        if (previous.get('state') == 'LOCAL_ANCHORED_CACHE_CLEANED'
+                and previous.get('master_sha256') == receipt.get('sha256')):
+            return {**previous, 'state': 'CACHE_ALREADY_RELEASED_NEW_CACHE_RETAINED'}
     if receipt.get('cache_path') != str(CACHE):
         raise ValueError('Only the explicitly authorized CacheClip path is allowed')
     if receipt.get('sha256') != sha256(receipt['local_path']):
@@ -109,9 +115,62 @@ def delete_uploaded_master(root, ep):
     return {'state': 'UPLOADED_LOCAL_MASTER_DELETED', 'episode': ep, 'sha256': receipt['sha256']}
 
 
+def cleanup_local_anchor(root, ep, execute=False):
+    """Release only CacheClip while retaining the verified, authorized local master."""
+    import re
+    root = Path(root).resolve()
+    record = load(root / '.kwjd/cache-local-approvals' / f'{ep}.json')
+    if record.get('episode') != ep or record.get('authorized') is not True:
+        raise ValueError('Explicit local-cache cleanup authorization is required')
+    review = load(root / '.kwjd' / f'{ep.lower().replace("s01", "")}-export-handoff.json')
+    target = Path(review['path'])
+    if (target.is_symlink() or target.parent.resolve() != (root / 'masters').resolve()
+            or not re.fullmatch(re.escape(ep) + r'[.]clean-master[.](mov|mkv|mp4)', target.name)):
+        raise ValueError('Expected the exact local episode master')
+    expected = record.get('master_sha256')
+    if review.get('sampled_av_decode_passed') is not True or review.get('sha256') != expected:
+        raise ValueError('Missing matching master technical evidence')
+    if not review.get('duration_gate_passed'):
+        exception = review.get('duration_exception', {})
+        if exception.get('approved') is not True or exception.get('master_sha256') != expected:
+            raise ValueError('Duration difference has not been accepted for this master')
+    before = target.stat()
+    if sha256(target) != expected:
+        raise ValueError('Local master changed; cache retained')
+    prior_path = root / '.kwjd/cache-cleanup' / f'{ep}.local-anchor.json'
+    if prior_path.exists():
+        prior = load(prior_path)
+        if prior.get('state') == 'LOCAL_ANCHORED_CACHE_CLEANED' and prior.get('master_sha256') == expected:
+            return {**prior, 'state': 'CACHE_ALREADY_RELEASED_NEW_CACHE_RETAINED'}
+    if CACHE.resolve() != CACHE.absolute() or CACHE.parent.resolve() != Path('D:/ResolveWork').absolute():
+        raise ValueError('CacheClip resolves outside the exact authorized directory')
+    baseline = snapshot(CACHE)
+    report = {'episode': ep, 'state': 'LOCAL_ANCHORED_CACHE_PLAN', 'checked_at': now(),
+              'master_sha256': expected, 'master_retained': True, 'cache_path': str(CACHE),
+              'bytes': sum(v['bytes'] for v in baseline['entries'])}
+    if execute:
+        save(root / '.kwjd/cache-snapshots' / f'{ep}.local-anchor.json', baseline)
+        time.sleep(2)
+        after = target.stat()
+        if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+            raise ValueError('Master changed during cleanup preparation')
+        check_snapshot(CACHE, baseline)
+        if CACHE.exists():
+            for item in list(CACHE.iterdir()):
+                if item.is_dir():
+                    shutil.rmtree(item)
+                else:
+                    item.unlink()
+        report['state'] = 'LOCAL_ANCHORED_CACHE_CLEANED'
+        save(root / '.kwjd/cache-cleanup' / f'{ep}.local-anchor.json', report)
+        save(root / '.kwjd/cache-cleanup' / f'{ep}.json',
+             {**report, 'state': 'CACHE_CLEANED', 'basis': 'EXPLICIT_LOCAL_ANCHOR_AUTHORIZATION'})
+    return report
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('command', choices=('snapshot', 'cleanup', 'delete-uploaded-master'))
+    p.add_argument('command', choices=('snapshot', 'cleanup', 'cleanup-local', 'delete-uploaded-master'))
     p.add_argument('--root', required=True, type=Path)
     p.add_argument('--episode', required=True)
     p.add_argument('--execute', action='store_true')
@@ -126,6 +185,8 @@ def main():
         if not args.execute:
             p.error('--execute is required to delete the verified uploaded master')
         result = delete_uploaded_master(args.root, args.episode)
+    elif args.command == 'cleanup-local':
+        result = cleanup_local_anchor(args.root, args.episode, args.execute)
     else:
         result = cleanup(args.root, args.episode, args.execute)
     print(json.dumps({k: v for k, v in result.items() if k != 'cache_snapshot'}, ensure_ascii=False, indent=2))

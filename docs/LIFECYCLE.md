@@ -14,6 +14,8 @@
 
 用户最新持续授权：逐阶段校验交接后，清理上一步不再需要的产物，避免累积母片和缓存。只有服务器最终成片的删除必须等Windows接收验收；不要把这道门禁套到所有中间物。
 
+2026-10-28用户进一步授权：本地母片已完成技术检查、SHA锚定且确认导出结束后，可以在上传前先释放CacheClip，让Windows继续下一回Mask；本地母片必须保留到远端新鲜SHA匹配。使用`resolve_cache.py cleanup-local --root <数据根> --episode S01Exx --execute`，要求本地`.kwjd/cache-local-approvals/S01Exx.json`显式授权并绑定母片SHA、匹配的导出检查记录、时长通过或同SHA的用户例外批准；执行前重新哈希母片和两次比对缓存快照，拒绝链接/越界/变化。只清D:/ResolveWork/CacheClip内容，保留目录、.gallery和其他ResolveWork内容；正在生成新Mask缓存时不得清理。本地锚定不代表已上传或服务器接收，不能伪造上传收据。
+
 1. 本地母片技术检查、原子上传、双方新鲜SHA匹配后，保存上传收据并删除本地该导出母片；只清`D:/ResolveWork/CacheClip`内容，保留目录、`.gallery`及其他ResolveWork内容。开始上传先快照，清理前两次复核；新Mask或缓存变化就保留，不误删新工作。
    本地释放后向`post/receipts/S01Exx.upload.json`发送小型确认，绑定episode/SHA、verified和local_master_deleted。Linux释放incoming前还须验证该确认，避免在Windows仍做fresh SHA核验时提前删远端母片。`send-master`自动发送，异常恢复可用`confirm-upload -Episode 49`幂等补发；它不重新上传媒体。
 2. 上一步完成后Windows可开始下一集Mask；不必等云端上一集最终回传。`gate-next`只检查此前本地上传释放，不以Windows最终接收阻挡云端已接任务。
