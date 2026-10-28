@@ -111,7 +111,7 @@ def main():
     parser.add_argument('--clip', action='append', help='start:duration; up to3clips, total<=180seconds')
     parser.add_argument('--variant', action='append', choices=['gfpgan14', 'codeformer_w05', 'codeformer_w08'])
     parser.add_argument('--threads', type=int, default=4)
-    parser.add_argument('--fusion', choices=['official','float32'], default='official')
+    parser.add_argument('--fusion', choices=['official','float32','roi'], default='official')
     parser.add_argument('--precision', choices=['fp32','tf32','fp16'], default='fp32')
     parser.add_argument('--original-stills-dir', type=Path, help='Optional3preserved original-master PNGs, not video baseline')
     args = parser.parse_args()
@@ -244,6 +244,9 @@ def main():
                 patched_source=original_source.replace('mask = np.zeros(out.shape)','mask = np.zeros(out.shape, dtype=np.float32)')
                 scope={};exec(compile(patched_source,'<face-audition-float32-mask>','exec'),official_fuse.__func__.__globals__,scope)
                 helper.paste_faces_to_input_image=types.MethodType(scope['paste_faces_to_input_image'],helper)
+            if args.fusion=='roi':
+                from face_audition_fusion import paste_faces_roi
+                helper.paste_faces_to_input_image=types.MethodType(lambda owner,save_path=None,upsample_img=None:paste_faces_roi(owner),helper)
             parsing_wall=0.
             original_parse_forward=helper.face_parse.forward
             def measured_parse_forward(*items,**kwargs):
@@ -270,6 +273,7 @@ def main():
             model.eval().to(device)
             assert next(model.parameters()).device==device
             entry={'name':variant,'status':'running','model_init_seconds':time.monotonic()-t,
+                'fusion_helper_sha256':digest(Path(__file__).with_name('face_audition_fusion.py')) if args.fusion=='roi' else None,
                 'fidelity_weight':fidelity,'gfpgan_randomize_noise':False if fidelity is None else None,
                 'fusion_equivalence_samples':[],'segments':[]};report['variants'].append(entry);save(args.output/'report.json',report)
             variant_start=time.monotonic();pause_before=thermal_paused
@@ -300,14 +304,14 @@ def main():
                     result,dt=timed(fuse);detail['times']['fusion']=dt
                     parse_dt=parsing_wall-parsing_before
                     detail['fusion_breakdown']={'parsing_network_seconds':parse_dt,'cpu_warp_blur_blend_transfer_seconds':max(0,dt-parse_dt)}
-                    if check_fusion and args.fusion=='float32':
+                    if check_fusion and args.fusion!='official':
                         with torch.autocast(device_type='cuda',dtype=torch.float16,enabled=args.precision=='fp16'):
                             reference,reference_dt=timed(lambda:official_fuse(upsample_img=None))
                         difference=cv2.absdiff(reference,result)
                         comparison={'max_uint8_delta':int(difference.max()),'mean_uint8_delta':float(difference.mean()),
                             'changed_values':int(np.count_nonzero(difference)),'official_reference_extra_seconds_excluded_from_model_timing':reference_dt}
                         entry['fusion_equivalence_samples'].append(comparison)
-                        if comparison['max_uint8_delta']>2:raise RuntimeError('Float32 fusion differs by>2LSB; reject optimization')
+                        if comparison['max_uint8_delta']>2:raise RuntimeError('Optimized fusion differs by>2LSB; reject optimization')
                 else:result=img
                 assert result.shape==img.shape and result.dtype==np.uint8
                 detail['faces_restored']=len(helper.restored_faces)
