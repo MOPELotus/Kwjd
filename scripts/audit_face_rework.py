@@ -6,6 +6,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 import re
+import subprocess
 
 
 def digest(path):
@@ -75,14 +76,56 @@ def audit(work,verify_source=False):
         segments=rows)
 
 
+def sample_frames(work,directory,seconds,audited):
+    """CPU-decode whole-second evidence frames; preserve native PNGs and hashes."""
+    work=Path(work);directory=Path(directory)
+    manifest=json.loads((work/'full.manifest.json').read_text())
+    first=manifest['start_frame'];size=manifest['segment_frames']
+    require(seconds and len(set(seconds))==len(seconds)
+            and all(type(t) is int and first<=t*60<first+audited['frames'] for t in seconds),
+            'Sample positions must be unique whole seconds inside the audited completed prefix')
+    require(manifest.get('fps')==60 and first%60==0 and size%60==0,
+            'Sampling requires the exact60fps whole-second rework clock')
+    directory.mkdir(parents=True,exist_ok=False)
+    from PIL import Image,ImageDraw
+    contact=Image.new('RGB',(1536,456*len(seconds)));evidence=[]
+    for row,t in enumerate(seconds):
+        index=(t*60-first)//size;local=(t*60-first-index*size)/60
+        media=work/'segments'/f'segment-{index:05d}.mkv'
+        for col,(kind,path,position) in enumerate([
+                ('source',Path(manifest['source']),t),('rework',media,local)]):
+            png=directory/f'{t}-{kind}.png'
+            command=['ffmpeg','-nostdin','-v','error','-n','-threads','2','-filter_threads','2',
+                '-ss',str(position),'-i',str(path),'-frames:v','1',str(png)]
+            subprocess.run(command,check=True)
+            with Image.open(png) as image:
+                require(image.size==(1920,1080),'Unexpected evidence-frame dimensions')
+                thumbnail=image.convert('RGB').resize((768,432))
+            contact.paste(thumbnail,(768*col,456*row+24))
+            ImageDraw.Draw(contact).text((768*col+8,456*row+5),f'{t}s {kind}',fill='white')
+            evidence.append(dict(second=t,kind=kind,path=str(png),sha256=digest(png),command=command))
+    output=directory/'source-vs-rework.png';contact.save(output)
+    record=dict(at=datetime.now().astimezone().isoformat(),fps=60,seconds=seconds,
+        fingerprint=audited['fingerprint'],source_sha256_expected=manifest['source_sha256'],
+        source_sha_freshly_checked=audited['source_sha_freshly_checked'],
+        native_frames_preserved=True,decoder='FFmpeg CPU decode; no GPU/render acceptance claim',
+        visual_acceptance=False,contact=str(output),contact_sha256=digest(output),captures=evidence)
+    with (directory/'manifest.json').open('x') as stream:json.dump(record,stream,ensure_ascii=False,indent=2)
+    return record
+
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--work',type=Path,required=True);p.add_argument('--report',type=Path,required=True)
-    p.add_argument('--verify-source',action='store_true');args=p.parse_args()
+    p.add_argument('--verify-source',action='store_true')
+    p.add_argument('--sample-seconds',type=int,nargs='+',help='Optional CPU native-frame evidence; no visual approval')
+    args=p.parse_args()
+    if args.report.exists():raise FileExistsError('Audit report already exists; preserve prior evidence')
     result=audit(args.work,args.verify_source)
     args.report.parent.mkdir(parents=True,exist_ok=True)
-    if args.report.exists():raise FileExistsError('Audit report already exists; preserve prior evidence')
     with args.report.open('x') as stream:json.dump(result,stream,ensure_ascii=False,indent=2);stream.write('\n')
+    if args.sample_seconds:
+        sample_frames(args.work,args.report.parent/'visual-samples',args.sample_seconds,result)
     print(json.dumps({k:v for k,v in result.items() if k!='segments'},ensure_ascii=False))
 
 

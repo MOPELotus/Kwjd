@@ -4,9 +4,10 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from audit_face_rework import audit,digest
+from audit_face_rework import audit,digest,sample_frames
 
 
 class AuditFaceReworkTests(unittest.TestCase):
@@ -73,6 +74,40 @@ class AuditFaceReworkTests(unittest.TestCase):
         self.source.write_bytes(b'new source')
         self.assertFalse(audit(self.work)['source_sha_freshly_checked'])
         with self.assertRaises(ValueError):audit(self.work,True)
+
+    def test_samples_refuse_invalid_or_unprocessed_positions_before_decoder(self):
+        result=audit(self.work)
+        with patch('audit_face_rework.subprocess.run') as run:
+            for seconds in [[-1],[1],[0,0],[True],[0.5],[]]:
+                with self.subTest(seconds=seconds),self.assertRaises(ValueError):
+                    sample_frames(self.work,self.work/'pictures',seconds,result)
+            run.assert_not_called()
+
+    def sample_setup(self):
+        p=self.work/'full.manifest.json';d=json.loads(p.read_text())
+        d.update(fps=60,frames=1200,segment_frames=600);self.write(p,d)
+        return dict(frames=1200,fingerprint='f'*64,source_sha_freshly_checked=False)
+
+    def test_samples_preserve_existing_evidence_directory(self):
+        result=self.sample_setup();directory=self.work/'pictures';directory.mkdir()
+        with patch('audit_face_rework.subprocess.run') as run,self.assertRaises(FileExistsError):
+            sample_frames(self.work,directory,[10],result)
+        run.assert_not_called()
+
+    def test_sample_segment_clock_and_hashed_native_evidence(self):
+        from PIL import Image
+        result=self.sample_setup();commands=[]
+        def decode(command,check):
+            commands.append(command)
+            Image.new('RGB',(1920,1080)).save(command[-1])
+        with patch('audit_face_rework.subprocess.run',side_effect=decode):
+            report=sample_frames(self.work,self.work/'pictures',[10],result)
+        self.assertEqual([c[c.index('-ss')+1] for c in commands],['10','0.0'])
+        self.assertEqual(commands[1][commands[1].index('-i')+1],str(self.work/'segments/segment-00001.mkv'))
+        self.assertTrue(all('-n' in c for c in commands))
+        self.assertFalse(report['visual_acceptance']);self.assertFalse(report['source_sha_freshly_checked'])
+        self.assertTrue(report['native_frames_preserved'])
+        self.assertTrue(all(digest(x['path'])==x['sha256'] for x in report['captures']))
 
 
 if __name__=='__main__':unittest.main()

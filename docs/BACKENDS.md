@@ -611,6 +611,12 @@ The report explicitly keeps `final_acceptance: false`, even if all frames are
 present. `--verify-source` adds a fresh whole-input SHA check; without that flag
 the report does not claim one. Use a new report path to retain prior audit history.
 Full final decode/PTS/PCM and visual/hardware-playback acceptance remain separate.
+Optional `--sample-seconds 1460 1540 ...` CPU-decodes unique whole-second positions
+inside the audited completed prefix, using the exact source/segment clock. It
+retains native-resolution PNGs plus a contact sheet and capture-command/SHA
+manifest in the new report directory's `visual-samples/`. Existing evidence is
+never overwritten. The capture manifest keeps `visual_acceptance: false` until
+an actual reviewer inspects the images and writes a separate review record.
 
 Before reloading the future-episode queue, budget the canonical `post/cache`
 filesystem as well as incoming/final/scratch. Placing only native scratch and
