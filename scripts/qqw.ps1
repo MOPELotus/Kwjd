@@ -197,7 +197,10 @@ foreach($n in $numbers){
    if(-not(Test-Path -LiteralPath $manifest)){throw 'Need the cut manifest to validate master duration'}
    $cut=Get-Content -LiteralPath $manifest -Raw -Encoding utf8|ConvertFrom-Json
    $validation=Join-Path $RootDir ".kwjd\master-validation\$id.json"
-   & python -X utf8 (Join-Path $PSScriptRoot 'validate_master.py') --file $master --receipt $validation --expected-duration $cut.OutputDurationSeconds
+   $validationArgs=@('--file',$master,'--receipt',$validation,'--expected-duration',[string]$cut.OutputDurationSeconds)
+   $durationApproval=Join-Path $RootDir ".kwjd\master-duration-approvals\$id.json"
+   if(Test-Path -LiteralPath $durationApproval){$validationArgs+=@('--duration-approval',$durationApproval)}
+   & python -X utf8 (Join-Path $PSScriptRoot 'validate_master.py') @validationArgs
    AssertExit 'master technical validation'
    $validated=Get-Content -LiteralPath $validation -Raw -Encoding utf8|ConvertFrom-Json
    $discarded=Join-Path $RootDir ('.kwjd\'+$id.ToLowerInvariant().Replace('s01','')+'-discarded-master.json')
