@@ -731,3 +731,39 @@ Neither helper changes the active backend fingerprint or approves visual quality
 Human visual scope is Guo Degang only; audience/other-person restoration quality
 does not block acceptance or justify new enhancement jobs. Subtitle, audio and
 whole-file technical checks still apply.
+
+**Experimental, not enabled for production:** `scripts/native_guard_watch.py`
+can attach to an explicitly
+supplied live worker PID/starttime and episode. It reuses the pidfd-based owned
+stop state machine from `thermal_guard.py`, admits only the exact face-venv native
+production child (not `--plan`), and checks the immutable runtime/profile and
+master/fingerprint context. Its separate process adapts pause temperatures to
+the lower of the measured hardware boundary and two degrees below the unchanged
+native abort guard; resume is six degrees cooler. Hardware limits are measured
+once; subsequent single two-GPU UUID/name/temperature queries have a two-second
+timeout, with one-second polling instead of the legacy default five seconds.
+Current hardware therefore
+gives pause/resume 93/87 C on A4000 and 83/77 C on T10. Only the matched producer
+is paused; its FFmpeg pipes naturally back-pressure. No model, frame clock,
+encoder, gain, backend fingerprint or existing production unit changes.
+
+An attachment candidate is not proof of protection. Verify the actual guardian
+receipt, physical temperatures, stopped/running process state and same-PID frame
+progress before treating a new installation as validated. Existing owned stops
+or externally stopped processes are never automatically adopted/resumed. A guard
+failure may intentionally retain its owned stop: inspect the exact PID/starttime
+and receipt before explicit recovery. Historical thermal receipts are SHA-named
+and retained before a new attachment writes current telemetry. A PID-scoped
+guardian must be re-admitted if the production worker is replaced; the original
+native abort-only guard remains the fallback in every case.
+
+Actual E50 trial on 2026-10-29 did **not** validate a throughput improvement:
+the exact producer stopped, but loaded T10 idle power remained about50W and
+temperature stayed around83C after151seconds, above the77C resume line. After
+309.5seconds the guard service was stopped and its exact owned PID/starttime
+was explicitly reviewed and resumed below the unchanged native abort limits.
+The service remains inactive; original native retry protection continues.
+Local SHA-bound stopped-process and rollback evidence is retained under
+`post/reports/S01E50-review/thermal-trial-*.json`. Do not automatically enable
+this experiment or treat an attachment, a STOP, or its CPU tests as successful
+production thermal validation. No GPU power/clock settings were changed.

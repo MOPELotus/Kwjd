@@ -125,7 +125,9 @@ def adopt(receipt,identity,backend):
     return paused.timestamp()
 
 
-def run(post,episode,pid,worker_pid,adopt_stop=False):
+def run(post,episode,pid,worker_pid,adopt_stop=False,*,poll_seconds=5):
+    if type(poll_seconds) is not int or not 1<=poll_seconds<=5:
+        raise ValueError('Guardian polling interval must be1..5 seconds')
     identity,backend=identify(post,episode,pid,worker_pid)
     path=post/'reports/thermal_pause.json'
     prior=load(path) if path.exists() else {}
@@ -175,11 +177,11 @@ def run(post,episode,pid,worker_pid,adopt_stop=False):
                 if not deliver(signal.SIGSTOP):return
                 owned=True;paused_at=time.time();state['paused_at']=utc()
             publish('THERMAL_PAUSE' if owned else 'UNOWNED_STOP','Telemetry/state unavailable: '+str(error))
-            time.sleep(5);continue
+            time.sleep(poll_seconds);continue
         action=decision(temps,owned,backend['state'] in ('T','t'))
         if action=='CONT' and not resume_authority:
             publish('THERMAL_PAUSE','Stop ownership was unreadable/changed; explicit re-adoption required',temps)
-            time.sleep(5);continue
+            time.sleep(poll_seconds);continue
         if action=='OWNERSHIP_LOST':
             # Someone resumed our stop. Drop authority; next hot pass may acquire
             # a fresh stop, but we never claim to own that external transition.
@@ -198,7 +200,7 @@ def run(post,episode,pid,worker_pid,adopt_stop=False):
         elif action=='EXTERNAL_STOP':publish('UNOWNED_STOP','Stopped without owned-stop authority; never resume',temps)
         elif action=='WAIT':publish('THERMAL_PAUSE','Waiting for both GPUs to cool below resume limits',temps)
         else:publish('RUNNING','Both GPUs below pause limits',temps)
-        time.sleep(5)
+        time.sleep(poll_seconds)
 
 
 def main():
