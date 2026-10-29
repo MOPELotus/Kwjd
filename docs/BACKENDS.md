@@ -767,3 +767,98 @@ Local SHA-bound stopped-process and rollback evidence is retained under
 `post/reports/S01E50-review/thermal-trial-*.json`. Do not automatically enable
 this experiment or treat an attachment, a STOP, or its CPU tests as successful
 production thermal validation. No GPU power/clock settings were changed.
+
+### Native overlap and in-process resource policy (2026-10-29 candidate)
+
+The human approved feasible, validated scheduling optimizations as the formal
+native defaults after the long trial and scoped physical review of Guo Degang.
+The candidate `prepare_native_face_backend.py` template now explicitly selects
+`overlap1-legacy`: `pipeline_prefetch=true`, `pipeline_prefetch_frames=1`,
+`resource_wait_in_process=false`, `resource_wait_poll_seconds=1.5`,
+`resource_wait_timeout_seconds=120`, and
+`benchmark_native_frame_sha256=false`. This is a source/template policy change;
+the long trial and Guo physical review are still pending. It does not activate
+that candidate or certify it for production. Retained-state thermal waiting
+remains experimental; the formal candidate keeps legacy abort/retry protection.
+The controlled live source stays
+at `e7be0af` until the remaining evidence and rollover checks pass.
+
+`scheduling_profile(name)` defines independent comparison and rollback settings:
+
+| Profile | Bounded producer overlap | In-process resource wait | Queued CPU frames |
+| --- | --- | --- | --- |
+| `serial` | Off | Off | 1 (unused) |
+| `serial-gate` | Off | On | 1 (unused) |
+| `overlap1-legacy` | On | Off | 1 |
+| `overlap1-gate` | On | On | 1 |
+| `overlap2-gate` | On | On | 2 |
+
+Two-frame overlap is a comparison profile; the formal default is one queued CPU
+frame with legacy abort/retry. Poll/timeout values remain explicit for opt-in
+experiments but are inactive when `resource_wait_in_process=false`. Resource
+retention does not depend on enabling overlap. Benchmark frame
+hashing is a separate explicit opt-in and stays off in the production template.
+These options change scheduling only: the pinned models, detector calls, clarity
+filter, masks, precision, all native25 frames and rational60fps interpolation,
+lookahead/cut handling, approved ASS, Main10/CQ16 video settings and original
+mixed lossless audio remain under the same quality contracts.
+
+The producer owns the mutable GFPGAN/parser state and bounded CPU frame queue;
+the consumer owns RIFE device/stream work. With the experimental retained-state
+gate enabled, GPU leases exclude blocking queue and decoder operations. Both
+stages then share one UUID/name-bound physical NVIDIA
+telemetry snapshot and stop admitting GPU work during a thermal wait. After
+active leases finish, a synchronized pause retains models and the exact current
+frames, decoder and encoder state. The unchanged hot boundaries are95C on A4000
+and85C on T10; proposed retained-state resume bounds are93C/84C. Free VRAM must
+still satisfy the original admission bounds: initially5120/3072MiB, and loaded
+3072/1024MiB on A4000/T10. The120-second retention budget ends in an explicit
+release/retry result if safe cooling cannot be reached. Shared-memory pressure,
+CUDA OOM and invalid/changed telemetry are distinct release reasons; non-OOM
+programming errors propagate. Model destruction belongs to the pipeline owner
+after both stages join. Verified completed segments remain intact, with at most
+the unfinished250-native-frame/10-source-second segment subject to retry.
+
+Telemetry queries have a five-second subprocess timeout. The1.5-second setting
+is a minimum interval after query completion; reports include actual telemetry
+query time, so this setting is not a claim of measured1.5-second sampling.
+Thermal wait wall time is counted once across both stages, including coordinated
+quiescence; a deadline may overrun by one bounded query/synchronizer call. Run
+cancellation wakes both stages without poisoning retained models for the next
+successful segment. Recovery callback failures retain the original structured
+CUDA OOM cause and report callback details. The failed outer SIGSTOP policy with
+T10's unreachable77C resume target remains inactive and must not be reused.
+
+Actual isolated evidence so far is bounded. A five-second source window spanning
+a cut measured serial57.7449s versus overlap43.4087s, with all126 restored native
+frames (including lookahead), all300 decoded output frames, cut positions and
+mixed PCM identical in the comparison, without a heat wait. This is not a
+whole-episode speedup estimate. Separate warm gate trials recorded14 and24
+thermal resumes, with wait-time deltas58.0909s and146.79s, with no model reload
+or current-segment redo; their wall times were slower. These show that reachable
+loaded-state recovery can preserve progress, not that thermal retention always
+improves throughput. The first three longer retained-gate segments measured
+81.09s (no thermal wait),163.43s (84.08s wait), and312.08s (230.85s wait).
+Their actual native/output pixel comparisons, full decode/PTS and mixed PCM
+checks passed across all three segments. The full trial and remaining physical
+review are still pending. Repeated85C→84C micro-resumes explain increasing wall
+time: the120s limit applies to each heat episode and currently does not cap
+cumulative waiting per segment. Do not promote this retained-state policy as a
+net speed improvement. The exact formal `overlap1-legacy` profile still needs
+its longer cold-segment comparison, and any future cumulative-retention policy
+needs actual hot release/fallback and recovery validation before adoption.
+No formal activation has occurred.
+
+Keep the exact legacy runtime config, launcher, source snapshot and fingerprint,
+plus a freshly SHA-verified completed-segment prefix, before any promotion.
+Preparation archives a changed template by SHA in `native-template-history`
+and pins the queue/gate/pipeline/preparation sources in the new template; ordinary
+preparation without a recipe leaves the active runtime and launcher untouched.
+An activation needs current-code acceptance evidence. Reusing earlier completed
+E50 segments requires explicit per-segment SHA provenance mapping from the old
+fingerprint to the new one, preserving old readiness/receipts and source
+snapshots. Do not relabel prior segments as newly processed, restart from the
+beginning, or replace `runtime.native-active.json` during comparison runs.
+Rollback restores the exact controlled legacy config/source identities rather
+than synthesizing a similar profile. No driver, clock, power or fan changes are
+part of this scheduling policy.

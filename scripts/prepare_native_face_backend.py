@@ -23,6 +23,33 @@ SOURCES=['enhance_backend.py','enhance_stage.py','segmented_backend.py','concat_
     'render_face_samples.py','server_worker.py','subtitle_timing.py','font_preflight.py','prepare_native_face_backend.py','storage_policy.py','stage_storage.py']
 
 
+# Scheduling is independent of the frozen picture/audio recipe. Keep explicit
+# serial profiles for controlled comparisons and rollback; two-frame overlap is
+# a comparison profile, not the production queue capacity. Retained-state heat
+# waiting remains experimental after repeated warm micro-resume stalls; the
+# formal candidate combines queue1 with the existing abort/retry policy.
+PRODUCTION_SCHEDULING_PROFILE = 'overlap1-legacy'
+SCHEDULING_PROFILES = {
+    'serial': (False, False, 1),
+    'serial-gate': (False, True, 1),
+    'overlap1-legacy': (True, False, 1),
+    'overlap1-gate': (True, True, 1),
+    'overlap2-gate': (True, True, 2),
+}
+
+
+def scheduling_profile(name=PRODUCTION_SCHEDULING_PROFILE):
+    """Return a fresh scheduling policy; hashes remain benchmark-only opt-in."""
+    try:
+        prefetch, resource_wait, frames = SCHEDULING_PROFILES[name]
+    except KeyError as error:
+        raise ValueError('Unknown native scheduling profile: '+str(name)) from error
+    return dict(pipeline_prefetch=prefetch, pipeline_prefetch_frames=frames,
+                resource_wait_in_process=resource_wait,
+                resource_wait_poll_seconds=1.5, resource_wait_timeout_seconds=120.,
+                benchmark_native_frame_sha256=False)
+
+
 def template(post):
     post=Path(post).absolute();base=json.loads((post/'backend/runtime.trt.json').read_text())
     _,_,provenance=validate_assets(base)
@@ -43,9 +70,10 @@ def template(post):
     cfg.update(restoration_backend='cuda_gfpgan_fused',restore=True,face_weights=str(weights),
         face_versions=versions,restore_gpu=0,restore_gpu_name='NVIDIA RTX A4000',
         restore_memory_gib=2.5,restore_free_reserve_gib=3.0,light_filter='clarity',max_video_mbps=16,
-        segment_source_frames=250,pipeline_prefetch=False,
+        segment_source_frames=250,
         scratch=str(post/'cache/scratch'),minimum_free_gib=minimum_free_gib(),
         file_sha256={p:sha256(p) for p in sorted(set(paths))})
+    cfg.update(scheduling_profile())
     cfg.pop('native_recipe',None);cfg.pop('native_recipe_sha256',None)
     return cfg
 
