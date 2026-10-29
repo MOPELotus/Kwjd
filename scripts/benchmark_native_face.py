@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Actual bounded current-master test for the native one-encode backend."""
+from storage_policy import minimum_free_gib
 import argparse
 import json
 import os
@@ -22,7 +23,7 @@ def main():
     if fingerprint(cfg)!=args.backend_fingerprint:raise ValueError('Calibration requested stale backend fingerprint')
     full=engine.source_packet_count(args.master);digest=sha256(args.master)
     if cfg.get('restoration_backend')!='cuda_gfpgan_fused':raise ValueError('Explicit native fused config required')
-    check_space(args.output,128*1024**2,25);args.output.mkdir(parents=True,exist_ok=True)
+    check_space(args.output,128*1024**2,minimum_free_gib(cfg));args.output.mkdir(parents=True,exist_ok=True)
     result_path=args.output/'result.json';pending=args.output/'pending.json';final=args.output/'sample.mkv'
     if result_path.exists():raise FileExistsError('Existing benchmark result retained; caller must validate/reuse')
     if pending.exists():

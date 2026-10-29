@@ -5,6 +5,7 @@ No worker may treat this styled checkpoint as a subtitle-free enhancement.
 """
 from collections import defaultdict
 from pathlib import Path
+from storage_policy import minimum_free_gib
 import json
 import subprocess
 import time
@@ -165,7 +166,7 @@ def run(master,output,episode,cfg,*,source_start=0,source_frames=None,prepared=N
                         emitted+=1
                     previous,a=following,b
                     if index%25==24:
-                        check_space(output.parent,16*1024**2,25)
+                        check_space(output.parent,16*1024**2,minimum_free_gib(cfg))
                         print(json.dumps(dict(episode=episode,source_start=source_start,processed=index+1,total=count,
                             output_frames=emitted,elapsed=time.monotonic()-began)),flush=True)
             start=time.monotonic();encoder.stdin.close()

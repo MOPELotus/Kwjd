@@ -8,6 +8,7 @@ Models reuse their GPU context across each bounded block; benchmark actual maste
 before making production throughput claims.
 """
 from __future__ import annotations
+from storage_policy import minimum_free_gib
 
 import argparse
 from fractions import Fraction
@@ -156,7 +157,7 @@ def disk_plan(data, cfg):
     return {'additional_peak_bytes':math.ceil(seconds*45_000_000/8)+8*GIB,
             'scratch_path':cfg['scratch'],'scratch_peak_bytes':8*GIB,
             'backend_fingerprint':cfg['fingerprint'],'input_duration':seconds,
-            'max_video_bitrate':40_000_000,'reserve_gib':25,
+            'max_video_bitrate':40_000_000,'reserve_gib':minimum_free_gib(cfg),
             'precision_note':'NCNN portable models consume8bitRGB;10bit HEVC encoding does not recover discarded source precision'}
 
 
@@ -185,8 +186,8 @@ def run(master, output, episode, cfg, *, source_start=0, source_frames=None, pre
     window_info={**info,'format':{**info['format'],'duration':str(count/25)}}
     plan=disk_plan(window_info,cfg)
     print(json.dumps({'storage_selection':cfg.get('storage_selection')}),flush=True)
-    check_space(Path(output).parent,plan['additional_peak_bytes'],25)
-    check_space(cfg['scratch'],plan['scratch_peak_bytes'],25)
+    check_space(Path(output).parent,plan['additional_peak_bytes'],minimum_free_gib(cfg))
+    check_space(cfg['scratch'],plan['scratch_peak_bytes'],minimum_free_gib(cfg))
     frames=output_count(count)
     expected=float(info['format']['duration'])
     if abs(full_count/25-expected)>.08:raise ValueError('Packet count/duration mismatch')

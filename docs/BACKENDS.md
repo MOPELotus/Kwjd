@@ -669,3 +669,52 @@ notification and Chinese SSH log message. This environment exposes no cross-thre
 chat-send tool; a queued notice explicitly remains undelivered until an actual
 chat-capable peer sends it. Absence of that cache receipt is normal, never an E50
 failure or authority to clean any Windows path.
+
+
+### Live15GiB policy and two-master receive queue (2026-10-29)
+
+After the human freed root-disk capacity and explicitly allowed15/10GiB reserve
+choices, the fresh per-filesystem audit selected **15GiB**, at most **two retained
+masters (one active plus one queued)** and **one GPU production episode**. E51
+receive admission is explicit in `post/reports/S01E51.receive-storage-gate.json`;
+no E52 upload is admitted yet. SCP partial-to-final rename is one inode, not two
+full master copies. Existing final/models/evidence already occupy measured free
+space; pending uploads reserve only not-yet-allocated bytes.
+
+Canonical cache was hash-migrated back to the newly roomy root disk, with both
+local declarations and lifecycle guards checked. Bulk AI segment/concat peak is
+about15.80GiB on root; home holds received masters and a final-mux bound of about
+9.95GiB. Phase maxima are grouped by filesystem; free space is never summed across
+mounts. At the audit snapshot, E50+E51 plus full processing left about21.45GiB on
+home and38.41GiB on root, above the selected15GiB reserve.10GiB could admit a third
+master but was deliberately not selected. Refresh admission before later uploads.
+
+`storage_policy.minimum_free_gib` validates one shared policy, included in the
+native profile/source pins; active calibration, frame writes, segmented scratch,
+all concat/copy/resume paths, audio handoff and mux use it. Legacy function default
+arguments remain backward compatible, but active native calls pass the bound
+policy explicitly. The acceptance records guard-only CPU source changes separately
+from historical actual GPU/visual evidence; E50 still gets real current-master
+calibration before full production. No neural/model/encoder/fps/quality change.
+
+The persistent receipt owner now supports the two explicitly known masters.
+E51's owner may wait online but cannot validate/calibrate/start GPU until E50 is
+READY; missing receipt is normal. Production workers are separately scoped and
+admission-started. Inaccessible container mount namespaces are skipped during
+scratch discovery instead of turning insufficient capacity into an exception.
+
+
+The two takeover and production services use the existing `post/face-venv`
+interpreter so installed Torch/model package metadata matches the validated
+profile; system Python is not a substitute. E50 program-clock evidence now uses
+native masked/source face-frame correspondence as primary timing evidence.
+Measured AAC-versus-mixed-PCM residual lags are reported, not used to warp the
+subtitle timeline or alter the mix. E51 follows the same bounded source/master
+frame verification and refuses an unverified mapping. Only derived ASS is shifted.
+
+E51 GPU admission additionally requires E50's real final report, SHA-bound
+`post/reports/S01E50.server-acceptance.json` (`server_accepted` and
+`bounded_visual_review_pass`) and `S01E50.stage-cleanup.json` (`complete`). These
+must be written from actual review/release evidence by the active Linux goal;
+technical READY alone cannot bypass review or stage release. This gate does not
+wait for Windows to be online or invent a final quality receipt.

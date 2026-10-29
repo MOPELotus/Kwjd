@@ -34,7 +34,7 @@
     "preserve_native_rate_if_at_least": 96000,
     "minimum_channels": 1
   },
-  "minimum_free_gib": 25,
+  "minimum_free_gib": 15,
   "keep_enhanced": false,
   "note": "First season profile shared by all discovered S01 episodes; existing E49–E55 bootstrap without restricting later episodes.",
   "master_export": {
@@ -142,5 +142,12 @@
     },
     "fused_style_approval_before_inference": true,
     "video_encodes": 1
+  },
+  "receive_queue": {
+    "max_total_masters": 2,
+    "max_pending_masters": 1,
+    "max_parallel_gpu_episodes": 1,
+    "admitted_pending_episode": "S01E51",
+    "admitted_pending_bytes": 7803409376
   }
 }

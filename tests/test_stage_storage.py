@@ -10,6 +10,13 @@ from enhance_stage import WaitDisk
 
 
 class StorageTests(unittest.TestCase):
+    def test_inaccessible_container_mount_is_skipped(self):
+        line='1 0 8:1 / /restricted rw - ext4 /dev/example rw\n'
+        with patch.object(Path,'read_text',return_value=line), \
+             patch.object(Path,'is_dir',side_effect=PermissionError('namespace')):
+            candidates=list(storage.mounted_scratch_candidates(Path('/tmp/post')))
+        self.assertEqual(len(candidates),2)
+
     def test_selected_directory_is_writable_and_budget_checked(self):
         with tempfile.TemporaryDirectory() as tmp:
             candidate=Path(tmp)/'scratch'

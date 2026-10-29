@@ -4,6 +4,7 @@
 Uses the real restoration/RIFE backend, retaining hash-bound segments until the
 whole enhancement has been decoded and accepted. Never decodes a full frame dump.
 """
+from storage_policy import minimum_free_gib
 import argparse
 import hashlib
 import json
@@ -91,7 +92,7 @@ def plan(master,cfg,output=None,episode=None):
                 identity=make_identity(ep,digest,fp,engine.source_packet_count(master),cfg.get('segment_source_frames',250))
             video_budget=int(seconds*planning_bitrate/8)+1
             _,extra=concat_transfer.choose_concat(cfg['post_root'],output,directory,identity,video_budget,
-                                                  releasable_bytes=occupied)
+                                                  reserve_gib=minimum_free_gib(cfg),releasable_bytes=occupied)
             if extra:
                 result['additional_peak_bytes']=max(16*1024**2,video_budget+working_bytes-occupied)
                 result['extra_volumes']=[{'path':str(Path(extra['concat_path']).parent),
@@ -159,14 +160,14 @@ def run(master,output,episode,cfg):
         if sha256(master)!=digest:raise ValueError('Master changed during segmented enhancement')
         return True
     if concat_transfer.resume_transfer(output,directory,identity,validate,
-                                      lambda:release_segments(directory),check_source):
+                                      lambda:release_segments(directory),check_source,reserve_gib=minimum_free_gib(cfg)):
         print(json.dumps({'resumed_verified_transfer':str(output)}),flush=True);return
     concat_path=output
     if cfg.get('post_root'):
         planning_bitrate=18_000_000 if cfg.get('restoration_backend')=='cuda_gfpgan_fused' else 45_000_000
         concat_path,_=concat_transfer.choose_concat(cfg['post_root'],output,directory,identity,
             int(float(source['format']['duration'])*planning_bitrate/8)+1,
-            releasable_bytes=verified_segment_bytes(directory,digest,fp))
+            reserve_gib=minimum_free_gib(cfg),releasable_bytes=verified_segment_bytes(directory,digest,fp))
         if concat_path!=output and concat_path.exists():
             try:validate(concat_path)
             except (ValueError,subprocess.CalledProcessError,StopIteration) as error:
@@ -174,7 +175,7 @@ def run(master,output,episode,cfg):
                 release_verified_file(concat_path,sha256(concat_path))
             else:
                 concat_transfer.complete_transfer(concat_path,output,directory,identity,validate,
-                    lambda:release_segments(directory),check_source)
+                    lambda:release_segments(directory),check_source,reserve_gib=minimum_free_gib(cfg))
                 return
     if output.exists():
         if not resume_check(master,output,episode,cfg):
@@ -193,10 +194,10 @@ def run(master,output,episode,cfg):
         else:
             atomic_json(completed,{**identity,'sha256':sha256(output)});release_segments(directory);return
     budget=plan(master,cfg,output,episode)
-    check_space(output.parent,budget['additional_peak_bytes'],25)
-    check_space(cfg['scratch'],budget['scratch_peak_bytes'],25)
+    check_space(output.parent,budget['additional_peak_bytes'],minimum_free_gib(cfg))
+    check_space(cfg['scratch'],budget['scratch_peak_bytes'],minimum_free_gib(cfg))
     for volume in budget.get('extra_volumes',[]):
-        check_space(volume['path'],volume['additional_peak_bytes'],25)
+        check_space(volume['path'],volume['additional_peak_bytes'],minimum_free_gib(cfg))
     stat=master.stat()
     prepared={'stat':(stat.st_ino,stat.st_size,stat.st_mtime_ns),'sha256':digest,'count':count,'info':source}
     restorer=None;paths=[];receipts=[]
@@ -258,7 +259,7 @@ def run(master,output,episode,cfg):
                     '-map','0:v:0','-an','-c:v','copy',str(concat_path)],check=True)
     if concat_path!=output:
         concat_transfer.complete_transfer(concat_path,output,directory,identity,validate,
-                                          lambda:release_segments(directory),check_source)
+                                          lambda:release_segments(directory),check_source,reserve_gib=minimum_free_gib(cfg))
         print(json.dumps({'episode':episode,'cross_filesystem_transfer_complete':str(output)}),flush=True)
         return
     validate_segment(output,total,total/60,log)

@@ -4,6 +4,7 @@ These are stage receipts, not Windows final-delivery/episode-cleanup receipts.
 Finals remain governed by the shared episode_lifecycle module.
 """
 from __future__ import annotations
+from storage_policy import minimum_free_gib
 
 import json
 import os
@@ -211,7 +212,7 @@ def preserve_source(master, enhanced, checkpoint, bundle_path, episode, log):
         recovered_encoding_partial = False
         if intent and intent.get('status') == 'audio_verified':
             raise ValueError('Verified pending audio is missing; retained for inspection')
-        check_space(bundle_path.parent, int(seconds * rate * channels * 4 + 16*1024**2), 25)
+        check_space(bundle_path.parent, int(seconds * rate * channels * 4 + 16*1024**2), minimum_free_gib())
         # Exclusive creation and inode binding allow recovery without trusting a
         # same-name file created by a different process. FFmpeg writes this fd.
         with partial.open('xb') as audio_out:

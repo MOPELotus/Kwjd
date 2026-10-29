@@ -5,6 +5,7 @@ The worker NEVER launches the legacy OCR job. Run it only after independently
 validating post/backend/enhance.sh on a short clip. One episode at a time.
 """
 from __future__ import annotations
+from storage_policy import minimum_free_gib
 
 import argparse
 import fcntl
@@ -339,7 +340,7 @@ def do_job(job_path):
             if receipt.get('backend_fingerprint') != current_backend.get('backend_fingerprint'):
                 raise ValueError('Backend profile changed after source release; prior checkpoint retained for review')
         else:
-            receipt = ensure_enhanced(master, enhanced, BACKEND, ep, log, PROJECT["minimum_free_gib"])
+            receipt = ensure_enhanced(master, enhanced, BACKEND, ep, log, minimum_free_gib())
             if native_context is not None:
                 from native_face_job import check_checkpoint
                 check_checkpoint(receipt,native_context)
@@ -378,7 +379,7 @@ def do_job(job_path):
         need=int(seconds*(18_000_000/8+int(native_audio['sample_rate'])*int(native_audio['channels'])*4)+1024**3)
     else:need = int(seconds * 60_000_000 / 8 + 1024**3)
     try:
-        check_space(final.parent, need, PROJECT["minimum_free_gib"])
+        check_space(final.parent, need, minimum_free_gib())
     except WaitDisk as exc:
         update(job_path, job, "WAIT_DISK", str(exc))
         return

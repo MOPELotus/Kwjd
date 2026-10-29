@@ -3,6 +3,7 @@
 
 Does not download models, change environments, launch GPU work or start jobs.
 """
+from storage_policy import minimum_free_gib
 import argparse
 import importlib.metadata
 import importlib.util
@@ -18,7 +19,7 @@ from cuda_trt import validate_assets
 SOURCES=['enhance_backend.py','enhance_stage.py','segmented_backend.py','concat_transfer.py',
     'linux_stage_handoff.py','cuda_trt.py','native_face_pipeline.py','native_face_recipe.py',
     'native_face_job.py','benchmark_native_face.py','face_frame_processor.py',
-    'render_face_samples.py','server_worker.py','subtitle_timing.py','font_preflight.py','prepare_native_face_backend.py']
+    'render_face_samples.py','server_worker.py','subtitle_timing.py','font_preflight.py','prepare_native_face_backend.py','storage_policy.py','stage_storage.py']
 
 
 def template(post):
@@ -42,7 +43,7 @@ def template(post):
         face_versions=versions,restore_gpu=0,restore_gpu_name='NVIDIA RTX A4000',
         restore_memory_gib=2.5,restore_free_reserve_gib=3.0,light_filter='clarity',max_video_mbps=16,
         segment_source_frames=250,pipeline_prefetch=False,
-        scratch=str(Path.home()/'qingqingwu/post-home/stage-scratch'),
+        scratch=str(post/'cache/scratch'),minimum_free_gib=minimum_free_gib(),
         file_sha256={p:sha256(p) for p in sorted(set(paths))})
     cfg.pop('native_recipe',None);cfg.pop('native_recipe_sha256',None)
     return cfg

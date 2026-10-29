@@ -33,6 +33,45 @@ def snapshot(directory):
     return result
 
 
+def relocate_to_root(root):
+    root=root.resolve();post=(root/'post').resolve();public=post/'cache'
+    work=root/'post-home/experiments/face_rework_E49_20261028'
+    report=work/'cache-migration-back-to-root.json'
+    if not public.is_symlink():
+        if report.exists():
+            artifact_path(root,'S01E49','linux','cache/S01E49')
+            return json.loads(report.read_text())
+        raise ValueError('Expected declared cache link before root relocation')
+    old=public.resolve();staging=post/'cache.root-staging-20261029';old_link=post/'cache.old-home-link-20261029'
+    if staging.exists() or old_link.exists():raise ValueError('Interrupted migration retained for reconciliation')
+    locks=[]
+    try:
+        for path in (work/'worker.lock',work.parents[1]/'.face-compute.lock',post/'jobs/.worker.lock'):
+            handle=path.open('a+');locks.append(handle);fcntl.flock(handle,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        before=snapshot(old);check_space(post,sum(x['bytes'] for x in before.values())+256*1024**2,25)
+        configs=[(post/'backend/storage.json','zones'),(root/'.kwjd/storage.json','areas')]
+        originals=[(p,field,json.loads(p.read_text())) for p,field in configs]
+        atomic_json(work/'cache-migration-back-to-root-intent.json',
+                    {'old':str(old),'new':str(public),'files':before,
+                     'previous_declarations':{str(p):data for p,_,data in originals}})
+        shutil.copytree(old,staging)
+        if snapshot(old)!=before or snapshot(staging)!=before:raise ValueError('Cache copy differs; preserve both')
+        public.rename(old_link);staging.rename(public)
+        for p,field,data in originals:
+            data[field]['cache']=str(public);atomic_json(p,data)
+        artifact_path(root,'S01E49','linux','cache/S01E49')
+        if snapshot(old)!=before or snapshot(public)!=before:raise ValueError('Cache changed; old copy retained')
+        for relative in before:(old/relative).unlink()
+        for directory in sorted((p for p in old.rglob('*') if p.is_dir()),key=lambda p:len(p.parts),reverse=True):directory.rmdir()
+        old.rmdir();old_link.unlink()
+        result=dict(status='CACHE_RELOCATED_TO_NEWLY_AVAILABLE_ROOT',logical_cache=str(root/'post/cache'),
+                    physical_cache=str(public),files_verified=len(before),bytes=sum(x['bytes'] for x in before.values()),
+                    both_storage_declarations_updated=True,lifecycle_path_guard_passed=True)
+        atomic_json(report,result);return result
+    finally:
+        for handle in reversed(locks):handle.close()
+
+
 def relocate(root):
     root = root.resolve()
     post = (root / 'post').resolve()
@@ -109,5 +148,6 @@ def relocate(root):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, default=Path.home() / 'qingqingwu')
+    parser.add_argument('--to',choices=['home','root'],default='home')
     args = parser.parse_args()
-    print(json.dumps(relocate(args.root), indent=2))
+    print(json.dumps((relocate_to_root if args.to=='root' else relocate)(args.root), indent=2))

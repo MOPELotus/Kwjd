@@ -4,6 +4,7 @@
 Never reads an uploading file, fabricates upload/visual receipts, touches Windows
 or changes reserve/quality. WAIT_DISK is retried against real filesystem capacity.
 """
+import argparse
 import fcntl
 import json
 import os
@@ -15,10 +16,13 @@ import time
 from datetime import datetime
 
 from enhance_stage import atomic_json, sha256, WaitDisk, WaitGPU
+from storage_policy import minimum_free_gib
+from queue_storage import phase_peaks,evaluate
 
 ROOT = Path.home() / 'qingqingwu'
 POST = ROOT / 'post'
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0,str(HERE.parent))
 EP = 'S01E50'
 EXPECTED = '7494ca20c6dca29b8c03cd927a293278a3ce01002beef031d5044ef61ca8f725'
 BYTES = 7840642589
@@ -30,6 +34,14 @@ SOURCE_SHA256 = sha256(Path(__file__))
 def require(value, message):
     if not value:
         raise ValueError(message)
+
+
+def configure_episode(episode):
+    global EP,EXPECTED,BYTES,FOLDER,UNIT
+    profiles={'S01E50':('7494ca20c6dca29b8c03cd927a293278a3ce01002beef031d5044ef61ca8f725',7840642589),
+              'S01E51':('2eb923278d3dd7526ed7466296ad437fd19411acaf303508ee8013d1239822f1',7803409376)}
+    EP=episode;EXPECTED,BYTES=profiles[episode]
+    FOLDER=POST/'reports'/f'{episode}-takeover';UNIT=f'kwjd-native-production-e{int(episode.split("E")[1])}.service'
 
 
 def receipt_ready(master, receipt):
@@ -57,20 +69,25 @@ def run_logged(arguments):
 def clock_evidence(master, source):
     import numpy as np
     from scipy.signal import correlate, correlation_lags
-    def audio(path, start):
-        raw = subprocess.check_output(['ffmpeg','-v','error','-nostdin','-ss',str(start),
-            '-i',str(path),'-t','12','-map','0:a:0','-vn','-ac','1','-ar','8000',
-            '-af','highpass=f=200,lowpass=f=3000','-f','f32le','-'])
-        values=np.frombuffer(raw,dtype='<f4').astype(np.float64);return values-values.mean()
+    def audio(path):
+        # Input seeking can round AAC packet starts differently at each window.
+        # Decode the complete mono analysis track once, align to PTS0, then slice.
+        raw = subprocess.check_output(['ffmpeg','-v','error','-nostdin','-i',str(path),
+            '-map','0:a:0','-vn','-ac','1','-ar','8000',
+            '-af','aresample=8000:async=1:first_pts=0,highpass=f=200,lowpass=f=3000','-f','f32le','-'])
+        return np.frombuffer(raw,dtype='<f4')
+    full_left,full_right=audio(master),audio(source)
     rows=[]
     for start in (60,900,1800,3300):
-        left,right=audio(master,start),audio(source,start)
+        left=full_left[start*8000:(start+12)*8000].astype(np.float64)
+        right=full_right[start*8000:(start+12)*8000].astype(np.float64)
+        left-=left.mean();right-=right.mean()
         require(len(left)==len(right)==96000,'Audio clock window incomplete')
         norm=float(np.linalg.norm(left)*np.linalg.norm(right));require(norm>0,'Silent clock evidence')
         corr=correlate(left,right,method='fft')/norm
         lags=correlation_lags(len(left),len(right));mask=np.abs(lags)<=4000
         index=int(np.argmax(corr[mask]));lag=int(lags[mask][index]);score=float(corr[mask][index])
-        require(abs(lag)<=16 and score>=.80,'Audio program clocks need independent review; no guessed offset')
+        require(abs(lag)<=960 and score>=.80,'Audio program identity differs by more than120ms; independent review required')
         rows.append(dict(start_seconds=start,lag_seconds=lag/8000,normalized_correlation=score))
     def first_video(path):
         data=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_streams','-of','json',str(path)]))
@@ -79,19 +96,28 @@ def clock_evidence(master, source):
     require(old['r_frame_rate']==new['r_frame_rate']=='25/1','Unexpected source frame clock')
     offset=round((float(new.get('start_time',0))-float(old.get('start_time',0)))*1000)
     require(-1000<=offset<=1000,'Unexpected container clock shift')
+    visual=FOLDER/'video-clock-matches.json'
+    if not visual.exists():
+        run_logged([str(POST/'face-venv/bin/python'),str(HERE/'verify_video_clock.py'),
+                    '--source',str(source),'--master',str(master),'--offset',str(offset/1000),'--output',str(visual)])
+    video=json.loads(visual.read_text())
+    require(video.get('verified') is True and abs(video['offset_seconds']-offset/1000)<1e-6,
+            'Native frame mapping needs independent review; no guessed subtitle shift')
     return dict(master_sha256=EXPECTED,source_sha256=sha256(source),windows=rows,
+                video_evidence_path=str(visual),video_evidence_sha256=sha256(visual),
+                audio_lags_used_to_shift_subtitles=False,
                 offset_ms=offset,source_video_start=old.get('start_time'),master_video_start=new.get('start_time'),
-                basis='Automatic same-program audio/PTS audit under standing processing authorization; not manual lip-sync or whole-film visual approval')
+                basis='Native frame mapping verified across program; subtitle shift follows video origin, not AAC/mixed-PCM lag. Audio checks program identity only. No whole-film lip-sync claim.')
 
 
 def prepare_inputs(master):
-    srt=ROOT/'output/S01E50.zh.srt';seal=json.loads(srt.with_name(srt.name+'.ready.json').read_text())
+    srt=ROOT/'output'/f'{EP}.zh.srt';seal=json.loads(srt.with_name(srt.name+'.ready.json').read_text())
     require(seal.get('reviewed') is True and seal['sha256']==sha256(srt),'Reviewed SRT seal differs')
     template=POST/'styles/template.ass';base=json.loads(template.with_name(template.name+'.ready.json').read_text())
     require(base.get('approved') is True and base['sha256']==sha256(template),'Standing approved style changed')
     for name,digest in base['fonts'].items():
         require(Path(name).name==name and sha256(POST/'styles/fonts'/name)==digest,'Packaged font changed')
-    style=POST/'styles/S01E50.ass'
+    style=POST/'styles'/f'{EP}.ass'
     if style.exists():require(style.read_bytes()==template.read_bytes(),'Per-master template differs')
     else:
         with style.open('xb') as stream:stream.write(template.read_bytes())
@@ -102,12 +128,12 @@ def prepare_inputs(master):
     if approval_path.exists():require(json.loads(approval_path.read_text())==approval,'Per-master style approval differs')
     else:atomic_json(approval_path,approval)
     evidence_path=FOLDER/'program-clock.json'
-    if not evidence_path.exists():atomic_json(evidence_path,clock_evidence(master,ROOT/'input/S01E50.mp4'))
+    if not evidence_path.exists():atomic_json(evidence_path,clock_evidence(master,ROOT/'input'/f'{EP}.mp4'))
     evidence=json.loads(evidence_path.read_text());require(evidence['master_sha256']==EXPECTED,'Clock evidence differs')
     timing=dict(schema_version=1,episode=EP,reviewed=True,reviewed_by='automatic_program_clock_audit',
         master_sha256=EXPECTED,srt_sha256=sha256(srt),offset_ms=evidence['offset_ms'],
-        evidence_path='reports/S01E50-takeover/program-clock.json',evidence_sha256=sha256(evidence_path))
-    timing_path=POST/'receipts/S01E50.subtitle-timing.json'
+        evidence_path=f'reports/{EP}-takeover/program-clock.json',evidence_sha256=sha256(evidence_path))
+    timing_path=POST/'receipts'/f'{EP}.subtitle-timing.json'
     if timing_path.exists():require(json.loads(timing_path.read_text())==timing,'Existing reviewed timing differs; preserve it')
     else:atomic_json(timing_path,timing)
     return srt,style,base['fonts']
@@ -137,25 +163,41 @@ def watch_cache_notice():
 
 
 def tick():
-    watch_cache_notice()
-    existing_job=POST/'jobs/S01E50.json'
+    if EP=='S01E50':watch_cache_notice()
+    if (FOLDER/'policy-maintenance.json').exists():
+        set_state('STORAGE_POLICY_MAINTENANCE');return
+    if EP=='S01E51':
+        prior=POST/'jobs/S01E50.json'
+        if not prior.exists() or json.loads(prior.read_text()).get('state')!='READY':
+            set_state('WAIT_SERIAL_PREDECESSOR_E50');return
+        review=POST/'reports/S01E50.server-acceptance.json'
+        cleanup=POST/'reports/S01E50.stage-cleanup.json'
+        if not review.exists() or not cleanup.exists():
+            set_state('WAIT_PREDECESSOR_BOUNDED_REVIEW_AND_STAGE_RELEASE');return
+        accepted=json.loads(review.read_text());released=json.loads(cleanup.read_text())
+        final_report=json.loads((POST/'reports/S01E50.json').read_text())
+        require(accepted.get('server_accepted') is True and accepted.get('bounded_visual_review_pass') is True
+                and accepted.get('sha256')==final_report['sha256']
+                and released.get('complete') is True and released.get('sha256')==final_report['sha256'],
+                'Predecessor actual review/stage release must bind its final SHA')
+    existing_job=POST/'jobs'/f'{EP}.json'
     if existing_job.exists():
         previous=json.loads(existing_job.read_text())
         require(previous.get('master_sha256')==EXPECTED,'Existing queue identity differs')
         if previous.get('state')=='FAILED':
             raise ValueError('Production worker reported failure: '+previous.get('detail',''))
         if previous.get('state')=='READY':
-            report=POST/'reports/S01E50.json';data=json.loads(report.read_text())
+            report=POST/'reports'/f'{EP}.json';data=json.loads(report.read_text())
             require(data.get('master_sha256')==EXPECTED and data.get('final_decode_checked') is True
                     and data.get('final_pcm_equivalent') is True,'Final report incomplete')
             notice=FOLDER/'final-confirmed.json'
             if not notice.exists():
-                require(sha256(POST/'final/S01E50.final-1080p60.mkv')==data['sha256'],'Final bytes changed')
+                require(sha256(POST/'final'/f'{EP}.final-1080p60.mkv')==data['sha256'],'Final bytes changed')
                 atomic_json(notice,dict(master_sha256=EXPECTED,sha256=data['sha256'],report_sha256=sha256(report)))
             set_state('FINAL_READY_PENDING_WINDOWS',report=str(report));return
         if subprocess.run(['systemctl','--user','is-active','--quiet',UNIT]).returncode==0:
             set_state('PRODUCTION_WORKER_ACTIVE',job_state=previous['state']);return
-    master=POST/'incoming/S01E50.clean-master.mov';receipt_path=POST/'receipts/S01E50.upload.json'
+    master=POST/'incoming'/f'{EP}.clean-master.mov';receipt_path=POST/'receipts'/f'{EP}.upload.json'
     upload=json.loads(receipt_path.read_text(encoding='utf-8-sig')) if receipt_path.exists() else {}
     if not receipt_ready(master,upload):
         set_state('WAIT_ATOMIC_MASTER_AND_REAL_UPLOAD_RECEIPT');return
@@ -167,13 +209,15 @@ def tick():
         require(master.stat().st_size==BYTES and sha256(master)==EXPECTED,'Published E50 master differs')
         # The human accepted only this SHA-bound extra tail-background exception.
         approval=FOLDER/'duration-approval.json'
-        atomic_json(approval,dict(schema_version=1,approved=True,approved_by='human',
+        if EP=='S01E50':atomic_json(approval,dict(schema_version=1,approved=True,approved_by='human',
             scope='extra_tail_background_only',episode=EP,master_sha256=EXPECTED,
             expected_duration_seconds=3649.933,actual_duration_seconds=3650.440,
             human_quote='对 尾部是一点点背景 裁背景素材的时候有一点误差 属合理情况',
             reason='Explicit previously recorded human approval for this exact E50 tail'))
-        run_logged([sys.executable,str(HERE/'validate_master.py'),'--file',str(master),'--receipt',str(marker),
-                    '--expected-duration','3649.933','--duration-approval',str(approval)])
+        command=[sys.executable,str(HERE/'validate_master.py'),'--file',str(master),'--receipt',str(marker),
+                 '--expected-duration','3649.933' if EP=='S01E50' else '3571.979']
+        if EP=='S01E50':command+=['--duration-approval',str(approval)]
+        run_logged(command)
     validated=json.loads(marker.read_text());require(validated['sha256']==EXPECTED,'Validation belongs to another master')
     stat=master.stat();current=[stat.st_dev,stat.st_ino,stat.st_size,stat.st_mtime_ns]
     identity=FOLDER/'verified-master-identity.json'
@@ -185,31 +229,44 @@ def tick():
         set_state('BOUNDED_CURRENT_MASTER_NATIVE_CALIBRATION')
         with (POST/'jobs/.worker.lock').open('a+') as lock:
             fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
-            context=prepare(POST,EP,EXPECTED,srt,style,fonts,POST/'logs/S01E50.log')
-            calibrate(master,POST,EP,context,POST/'logs/S01E50.log')
+            context=prepare(POST,EP,EXPECTED,srt,style,fonts,POST/'logs'/f'{EP}.log')
+            calibrate(master,POST,EP,context,POST/'logs'/f'{EP}.log')
             atomic_json(calibration,{'master_sha256':EXPECTED,'recipe_sha256':context['recipe_sha256']})
-    job_path=POST/'jobs/S01E50.json'
+    job_path=POST/'jobs'/f'{EP}.json'
     if not job_path.exists():
         atomic_json(job_path,dict(schema_version=1,episode=EP,state='WAIT_DISK',master='incoming/'+master.name,
-            master_sha256=EXPECTED,srt='../output/S01E50.zh.srt',style='styles/S01E50.ass',
-            output='final/S01E50.final-1080p60.mkv',created_at=datetime.now().astimezone().isoformat(),
+            master_sha256=EXPECTED,srt=f'../output/{EP}.zh.srt',style=f'styles/{EP}.ass',
+            output=f'final/{EP}.final-1080p60.mkv',created_at=datetime.now().astimezone().isoformat(),
             picture_pipeline='native_light_gfpgan_rife_ass_one_encode',detail='Persistent full-phase budget admission'))
     job=json.loads(job_path.read_text());require(job.get('master_sha256')==EXPECTED,'Existing queue identity differs')
     if job['state']=='READY':
-        set_state('FINAL_READY_PENDING_WINDOWS',report=str(POST/'reports/S01E50.json'));return
+        set_state('FINAL_READY_PENDING_WINDOWS',report=str(POST/'reports'/f'{EP}.json'));return
     active=subprocess.check_output(['systemctl','--user','is-active',UNIT],text=True).strip() if subprocess.run(
         ['systemctl','--user','is-active','--quiet',UNIT]).returncode==0 else 'inactive'
     if active=='active':
         set_state('PRODUCTION_WORKER_ACTIVE',job_state=job['state']);return
     seconds=validated['duration_seconds'];audio=validated['audio']
-    video=int(seconds*18_000_000/8);pcm=int(seconds*int(audio['sample_rate'])*audio['channels']*4)
-    required=max(2*video+512*1024**2,2*video+2*pcm+1024**3)
-    free=shutil.disk_usage(master).free
-    budget=dict(master_sha256=EXPECTED,free_bytes=free,additional_peak_bytes=required,reserve_gib=25,
-                shortfall_bytes=max(0,required+25*1024**3-free),cache=str((POST/'cache').resolve()),
-                note='All input bytes already occupy this filesystem; no incoming double-counting. Native encoding and final mux phases use max, not sum.')
+    paths={'cache':POST/'cache','scratch':POST/'cache','final':POST/'final'}
+    devices={key:path.stat().st_dev for key,path in paths.items()}
+    free={path.stat().st_dev:shutil.disk_usage(path).free for path in paths.values()}
+    peaks=phase_peaks(seconds,int(audio['sample_rate']),audio['channels'],devices)
+    held={}
+    gate=POST/'reports/S01E51.receive-storage-gate.json'
+    if gate.exists():
+        reservation=json.loads(gate.read_text())
+        if reservation.get('upload_allowed') is True:
+            allocated=0
+            for name in ['S01E51.clean-master.mov','S01E51.clean-master.mov.uploading']:
+                target=POST/'incoming'/name
+                if target.exists():
+                    stat=target.stat();allocated+=min(stat.st_size,stat.st_blocks*512)
+            held[(POST/'incoming').stat().st_dev]=max(0,reservation['expected_bytes']-allocated)
+    reserve=minimum_free_gib();assessment=evaluate(peaks,free,reserve,held)
+    budget=dict(master_sha256=EXPECTED,reserve_gib=reserve,**assessment,
+                cache=str((POST/'cache').resolve()),
+                note='Per-filesystem phase maxima; actual input blocks counted once and admitted E51 remaining upload reserved. GPU episodes stay serialized.')
     atomic_json(FOLDER/'production-budget.json',budget)
-    if budget['shortfall_bytes']:
+    if not budget['allowed']:
         set_state('WAIT_FULL_PRODUCTION_DISK',**budget);return
     subprocess.run(['systemctl','--user','start',UNIT],check=True)
     set_state('PRODUCTION_WORKER_STARTED',master_sha256=EXPECTED)
@@ -228,4 +285,8 @@ def main():
             time.sleep(30)
 
 
-if __name__=='__main__':main()
+if __name__=='__main__':
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--episode',choices=['S01E50','S01E51'],default='S01E50')
+    configure_episode(parser.parse_args().episode)
+    main()

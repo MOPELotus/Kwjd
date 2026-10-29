@@ -28,8 +28,11 @@ def mounted_scratch_candidates(post):
         mount = Path(re.sub(r'\\([0-7]{3})', lambda m:chr(int(m[1],8)),fields[4]))
         if 'ro' in fields[5].split(','):
             continue
-        if mount.is_dir() and mount.stat().st_uid == os.getuid() and os.access(mount,os.W_OK|os.X_OK):
-            yield mount/'kwjd-staging'/str(os.getuid())/'scratch'
+        try:
+            if mount.is_dir() and mount.stat().st_uid == os.getuid() and os.access(mount,os.W_OK|os.X_OK):
+                yield mount/'kwjd-staging'/str(os.getuid())/'scratch'
+        except OSError:
+            continue  # Inaccessible container namespaces are not usable storage.
 
 
 def choose_scratch(post, required_bytes, reserve_gib=25, *, candidates=None):
