@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""Candidate-only native checkpoint provenance migration; never activates a backend.
+"""Explicitly authorized native checkpoint provenance migration; no backend launch.
 
 Consumes an external root-controller authorization by caller-pinned SHA. This is
 local controller authorization, not a cryptographic signature. Old assets and
 receipts remain byte-identical. Prior segment full-decode/frame-count acceptance
 is inherited from hash-pinned producer receipts; no fresh prefix decode or claim
 of full-prefix PTS/visual acceptance is made. Bounded benchmark evidence is checked
-separately. Existing native validators intentionally cannot adopt these receipts
-without a future explicitly reviewed provenance-validation branch.
+separately. Scratch candidates remain non-adoptable. A separate production
+authorization plus CLI opt-in permits ordinary validators to adopt hash-identical
+pipeline/log hardlinks while retaining the original producer fingerprint.
 """
 import argparse
 import hashlib
@@ -17,6 +18,15 @@ import os
 from pathlib import Path
 import re
 import stat
+
+CORE_SOURCES=('native_face_pipeline.py','native_frame_queue.py','native_resource_gate.py',
+    'face_frame_processor.py','native_face_recipe.py','cuda_trt.py','cuda_pipeline.py',
+    'enhance_backend.py','enhance_stage.py','segmented_backend.py','concat_transfer.py',
+    'render_face_samples.py','face_rework_worker.py','storage_policy.py','master_policy.py',
+    'linux_stage_handoff.py','benchmark_native_optimization.py')
+PROVENANCE_SOURCES=tuple(sorted(set(CORE_SOURCES)|{
+    'native_face_job.py','benchmark_native_face.py','server_worker.py','subtitle_timing.py',
+    'font_preflight.py','prepare_native_face_backend.py','stage_storage.py'}))
 
 
 def sha(path):
@@ -113,15 +123,163 @@ def verify_benchmark(proof):
         equivalence_scope='Bounded benchmark native raw hashes/cuts/full decode/PTS/PCM; not full-prefix or final visual acceptance')
 
 
-def verify_authorization(path,digest):
+def new_config_identity(path):
+    import enhance_backend
+    from segmented_backend import fingerprint
+    cfg=enhance_backend.config(path)
+    return cfg,fingerprint(cfg)
+
+
+def verify_config_equivalence(proof,production_raw,trial_binding):
+    """Allow only diagnostic hash disablement and explicitly named repo metadata.
+
+    Assets, installed package .py pins, numerical settings and every other key
+    remain identical. The actual 17 used source bytes must equal the trial.
+    """
+    variant=bound(trial_binding['variant'],trial_binding['variant_sha256'])
+    if variant.stat().st_mode&0o222:raise ValueError('Trial variant must remain immutable')
+    trial_raw=load(variant)
+    current_root=Path(__file__).resolve().parents[1]
+    expected={str(Path('scripts')/name) for name in CORE_SOURCES}
+    sources=trial_binding['source_files']
+    aggregate=hashlib.sha256(json.dumps(sources,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+    if set(sources)!=expected or aggregate!=trial_binding['source_sha256']:
+        raise ValueError('Trial core source manifest/aggregate differs')
+    for name,digest in sources.items():bound(current_root/name,digest)
+    if (trial_raw.get('benchmark_native_frame_sha256') is not True
+            or production_raw.get('benchmark_native_frame_sha256') is not False):
+        raise ValueError('Only trial native hashing True to production False is permitted')
+    allowed=set()
+    roots={current_root,Path(trial_binding['source_root']).resolve(strict=True)}
+    if any(not (root/'.git').exists() for root in roots):raise ValueError('Core provenance roots must be actual repositories')
+    if proof.get('legacy_repo_root'):
+        legacy=Path(proof['legacy_repo_root']).resolve(strict=True)
+        if not (legacy/'.git').exists():raise ValueError('Legacy provenance source root is not a repository')
+        roots.add(legacy)
+    possible={str(root/'scripts'/name) for root in roots for name in PROVENANCE_SOURCES}
+    possible|={str(root/'kwjd.py') for root in roots}
+    for path in proof.get('approved_repo_source_provenance_paths',[]):
+        if path not in possible:raise ValueError('Provenance exception is not an exact approved repo core source path')
+        allowed.add(path)
+    oldpins=trial_raw.get('file_sha256');newpins=production_raw.get('file_sha256')
+    if not isinstance(oldpins,dict) or not isinstance(newpins,dict):raise ValueError('Both raw file SHA maps required')
+    if ({p:h for p,h in oldpins.items() if p not in allowed}
+            !={p:h for p,h in newpins.items() if p not in allowed}):
+        raise ValueError('Model/asset/installed-package SHA pins changed')
+    differences=[]
+    for path in sorted(set(oldpins)|set(newpins)):
+        if oldpins.get(path)!=newpins.get(path):
+            differences.append(dict(key='file_sha256',path=path,trial=oldpins.get(path),production=newpins.get(path),
+                reason='Explicit repository provenance metadata only; actual used 17 core sources separately SHA-equal to trial'))
+    ignored={'benchmark_native_frame_sha256','file_sha256'}
+    for key in sorted((set(trial_raw)|set(production_raw))-ignored):
+        old=trial_raw.get(key);new=production_raw.get(key)
+        if key in ('resource_wait_poll_seconds','resource_wait_timeout_seconds') and key not in trial_raw:
+            default=1.5 if key=='resource_wait_poll_seconds' else 120
+            if type(new) in (int,float) and new==default:
+                differences.append(dict(key=key,trial='implicit default',production=new,reason='Explicit unchanged pipeline default'))
+                continue
+        if key not in trial_raw or key not in production_raw or type(old)!=type(new) or old!=new:
+            raise ValueError('Production configuration drift outside allowlist: '+key)
+    differences.append(dict(key='benchmark_native_frame_sha256',trial=True,production=False,
+        reason='Disable diagnostic BGR hashing only; no pixel/model/frame/clock change'))
+    return dict(trial_variant_path=str(variant),trial_variant_sha256=trial_binding['variant_sha256'],
+        actual_trial_backend_fingerprint=trial_binding['backend_fingerprint'],
+        actual_production_backend_fingerprint=proof['new_backend_fingerprint'],
+        used_core_source_sha256=aggregate,config_equivalence_differences=differences)
+
+
+def verify_production(proof,recipe):
+    config=bound(proof['new_config_path'],proof['new_config_sha256'])
+    if config.parent!=(Path(proof['post_root'])/'backend').resolve(strict=True):
+        raise ValueError('New config is outside the bound post/backend')
+    cfg,fp=new_config_identity(config)
+    binding={key:recipe[key] for key in ['master_sha256','srt_sha256','style_sha256','fonts','subtitle_timing','ass_sha256']}
+    if (fp!=proof['new_backend_fingerprint'] or cfg.get('restoration_backend')!='cuda_gfpgan_fused'
+            or Path(cfg['post_root']).resolve()!=Path(proof['post_root']).resolve()
+            or cfg.get('native_recipe_sha256')!=proof['recipe_sha256']
+            or Path(cfg['native_recipe']).resolve()!=Path(proof['recipe_path']).resolve()
+            or cfg.get('fused_subtitle_binding')!=binding
+            or cfg.get('segment_source_frames',250)!=proof['segment_source_frames']):
+        raise ValueError('New production config/fingerprint/recipe/clock differs')
+    trial=load(bound(proof['long_trial_path'],proof['long_trial_sha256']))
+    b=trial['binding'];segments=trial['segments'];union=trial['union']
+    if (trial.get('status')!='TECHNICAL_LONG_TRIAL_COMPLETE_VISUAL_REVIEW_PENDING'
+            or b.get('episode')!=proof['episode'] or b.get('master_sha256')!=proof['master_sha256']
+            or not re.fullmatch('[0-9a-f]{64}',b.get('backend_fingerprint','')) or b.get('recipe_sha256')!=proof['recipe_sha256']
+            or len(segments)<2
+            or union.get('lost_primary_frames')!=0 or union.get('duplicate_primary_frames')!=0):
+        raise ValueError('Long trial is incomplete or bound to another production context')
+    equivalence=verify_config_equivalence(proof,load(config),b)
+    primaries=[];last=None
+    for segment in segments:
+        count=integer(segment['input_frames'],1);start=integer(segment['source_start']);frames=output_count(count)
+        v=segment['validation'];err=v.get('max_video_grid_error')
+        if (segment.get('status')!='TECHNICALLY_CHECKED' or segment.get('output_frames')!=frames
+                or v.get('frames')!=frames or type(err) not in (int,float)
+                or not math.isfinite(err) or not 0<=err<=.0011):
+            raise ValueError('Long trial segment lacks full-decode/PTS acceptance')
+        media=bound(segment['output'],v['sha256'])
+        log=bound(media.with_name(media.name+'.face-frames.jsonl'),segment['frame_evidence']['sha256'])
+        rows=[json.loads(line) for line in log.read_text().splitlines()]
+        if (rows!=segment['frame_rows'] or [r['source_frame'] for r in rows]!=list(range(start,start+count+1))
+                or [r.get('lookahead') for r in rows]!=[i==count for i in range(count+1)]
+                or [r.get('restored_bgr_sha256') for r in rows]!=segment['frame_evidence']['raw_native_hashes']):
+            raise ValueError('Long trial native rows/hashes/order differ')
+        if last is not None and (last['source_frame']!=rows[0]['source_frame']
+                or last['restored_bgr_sha256']!=rows[0]['restored_bgr_sha256']):
+            raise ValueError('Long trial boundary lookahead equivalence failed')
+        last=rows[-1];primaries.extend(r['source_frame'] for r in rows[:-1])
+        from native_face_pipeline import validate_pipeline
+        validate_pipeline(media,cfg,start,count,proof['input_frames'])
+        audio=segment['mux_validation'];aerr=audio.get('max_video_grid_error')
+        if (audio.get('frames')!=frames or type(aerr) not in (int,float)
+                or not math.isfinite(aerr) or not 0<=aerr<=.0011
+                or segment.get('mixed_pcm_equal') is not True
+                or segment.get('source_pcm_sha256')!=segment.get('mux_pcm_sha256')):
+            raise ValueError('Long trial PCM/mux acceptance failed')
+        bound(segment['continuous_sample'],audio['sha256'])
+        source_pcm=bound(segment['source_pcm_evidence_path'],segment['source_pcm_evidence_sha256'])
+        if (source_pcm.read_text().strip()!=segment['source_pcm_sha256']
+                or regular(media.parent/'mux-pcm.sha256').read_text().strip()!=segment['mux_pcm_sha256']):
+            raise ValueError('Long trial PCM digest artifact changed')
+    if (not primaries or primaries!=list(range(primaries[0],primaries[0]+len(primaries)))
+            or union.get('unique_primary_count')!=len(primaries)):
+        raise ValueError('Long trial union count/order differs')
+    collection=load(bound(proof['physical_collection_path'],proof['physical_collection_sha256']))
+    if (not isinstance(collection.get('renderer'),str) or 'NVIDIA' not in collection['renderer']
+            or any(name in collection['renderer'].lower() for name in ('llvmpipe','lavapipe','swiftshader','software'))
+            or collection.get('hwdec') not in ('nvdec','nvdec-copy')
+            or collection.get('file_identity_unchanged') is not True or not collection.get('screenshots')):
+        raise ValueError('Actual physical NVIDIA playback collection required')
+    positions=collection.get('realtime_playback',{}).get('positions',[])
+    if len(positions)<2 or positions[-1]['position']<=positions[0]['position']:
+        raise ValueError('Physical collection lacks advancing actual playback evidence')
+    if collection.get('sha256') not in {s['mux_validation']['sha256'] for s in segments}:
+        raise ValueError('Physical playback collection belongs to another sample')
+    for shot in collection['screenshots']:bound(shot['image'],shot['sha256'])
+    review=load(bound(proof['production_quality_review_path'],proof['production_quality_review_sha256']))
+    if (review.get('issuer')!='root-controller' or review.get('scope')!='Guo only'
+            or review.get('passed') is not True or review.get('long_trial_sha256')!=proof['long_trial_sha256']
+            or review.get('physical_collection_sha256')!=proof['physical_collection_sha256']):
+        raise ValueError('Explicit actual Guo-only root review of this trial/collection required')
+    return dict(new_config_path=str(config),new_config_sha256=proof['new_config_sha256'],
+        long_trial_sha256=proof['long_trial_sha256'],physical_collection_sha256=proof['physical_collection_sha256'],
+        production_quality_review_sha256=proof['production_quality_review_sha256'],**equivalence)
+
+
+def verify_authorization(path,digest,*,allow_production=False):
     path=bound(path,digest);info=path.stat()
     if info.st_uid!=os.getuid() or info.st_mode&0o022:
         raise ValueError('Controller authorization must be same-user and not group/world writable')
     proof=load(path)
-    if (proof.get('schema_version')!=1 or proof.get('kind')!='native-checkpoint-migration-authorization'
+    production=proof.get('activation') is True
+    if production and not allow_production:raise ValueError('Explicit production migration CLI opt-in required')
+    kind='native-checkpoint-production-migration-authorization' if production else 'native-checkpoint-migration-authorization'
+    if (proof.get('schema_version')!=1 or proof.get('kind')!=kind
             or proof.get('issuer')!='root-controller' or proof.get('approved') is not True
-            or proof.get('activation') is not False or proof.get('quality_scope')!='Guo only'):
-        raise ValueError('External root-controller candidate-only authorization required')
+            or type(proof.get('activation')) is not bool or proof.get('quality_scope')!='Guo only'):
+        raise ValueError('External root-controller scoped migration authorization required')
     for key in ('old_backend_fingerprint','new_backend_fingerprint','master_sha256','recipe_sha256'):
         if not re.fullmatch('[0-9a-f]{64}',proof.get(key,'')):raise ValueError('Invalid fingerprint/SHA')
     if proof['old_backend_fingerprint']==proof['new_backend_fingerprint']:raise ValueError('Distinct fingerprints required')
@@ -130,14 +288,20 @@ def verify_authorization(path,digest):
     if not all(p.is_absolute() for p in (source,target,post)):raise ValueError('Absolute context paths required')
     logical_scratch=post/'cache/scratch';scratch=logical_scratch.resolve()
     resolved_target=target.resolve()
-    relative=(target.relative_to(logical_scratch) if target.is_relative_to(logical_scratch)
+    if production:
+        expected=post/'cache'/proof['episode']/(proof['episode']+'.segments')/(proof['master_sha256'][:16]+'-'+proof['new_backend_fingerprint'][:16])
+        if target!=expected:raise ValueError('Production target must be the exact new backend context')
+        base=(post/'cache').resolve();relative=target.relative_to(post/'cache');current=base
+    else:
+        relative=(target.relative_to(logical_scratch) if target.is_relative_to(logical_scratch)
               else target.relative_to(scratch) if target.is_relative_to(scratch) else None)
-    current=scratch;linked=False
+        base=scratch;current=scratch
+    linked=False
     for part in (() if relative is None else relative.parts):
         current=current/part;linked=linked or current.is_symlink()
     if (target.exists() or target.is_symlink() or '..' in target.parts
             or relative is None or linked
-            or not resolved_target.is_relative_to(scratch) or resolved_target==scratch):
+            or not resolved_target.is_relative_to(base) or resolved_target==base):
         raise ValueError('Target must be a NEW isolated candidate under post/cache/scratch')
     source=source.resolve(strict=True)
     if not source.is_relative_to((post/'cache').resolve(strict=True)):
@@ -161,6 +325,7 @@ def verify_authorization(path,digest):
             or recipe.get('scope')!='production' or recipe.get('program_origin_seconds')!=0):
         raise ValueError('Production master/recipe clock differs')
     evidence=verify_benchmark(proof)
+    if production:evidence.update(verify_production(proof,recipe))
     return proof,context,recipe,evidence
 
 
@@ -212,8 +377,9 @@ def verify_resolved_bindings(proof):
             raise ValueError('Authorized evidence symlink resolution changed: '+literal)
 
 
-def migrate(authorization,authorization_sha256):
-    proof,context,recipe,evidence=verify_authorization(authorization,authorization_sha256)
+def migrate(authorization,authorization_sha256,*,allow_production=False):
+    proof,context,recipe,evidence=verify_authorization(authorization,authorization_sha256,allow_production=allow_production)
+    production=proof['activation']
     pins=proof['segments']
     if not pins or [p['index'] for p in pins]!=list(range(len(pins))):
         raise ValueError('Explicit contiguous completed prefix required')
@@ -222,19 +388,21 @@ def migrate(authorization,authorization_sha256):
     # Verify one filesystem before any target creation; preserve original hardlinks.
     parent=target.parent
     while not parent.exists():parent=parent.parent
-    if any(media.stat().st_dev!=parent.stat().st_dev for media,*_ in records):
+    hardlinks=[row[index] for row in records for index in ((0,3,4) if production else (0,))]
+    if any(path.stat().st_dev!=parent.stat().st_dev for path in hardlinks):
         raise ValueError('Candidate hardlink migration requires the same filesystem')
     if sha(authorization)!=authorization_sha256:raise ValueError('Authorization raced verification')
     verify_resolved_bindings(proof)
     target.mkdir(parents=True,exist_ok=False)
-    root=dict(schema_version=1,kind='native-checkpoint-migration-candidate',activation=False,
+    root=dict(schema_version=1,kind='native-checkpoint-production-migration' if production else 'native-checkpoint-migration-candidate',activation=production,
         production_approval=False,authorization_path=str(authorization),authorization_sha256=authorization_sha256,
+        production_migration_authorized=production,backend_activation_performed=False,
         original_context_path=proof['source_context'],original_context_sha256=proof['source_context_sha256'],
         canonical_source_context=proof['_resolved_source_context'],canonical_target_context=str(target),
         canonical_master_path=proof['_resolved_master_path'],canonical_recipe_path=proof['_resolved_recipe_path'],
         producer_backend_fingerprint=proof['old_backend_fingerprint'],target_backend_fingerprint=proof['new_backend_fingerprint'],
         source_acceptance='Inherited producer full-decode/frame-count acceptance; media/receipt/pipeline/frame-log hashes and native frame order rechecked, no repeated prefix decode',
-        validator_adoption_supported=False,**evidence)
+        validator_adoption_supported=production,**evidence)
     root_path=target/'migration.provenance.json';publish(root_path,root);root_sha=sha(root_path)
     publish(target/'context.json',{**context,'backend_fingerprint':proof['new_backend_fingerprint']})
     for pin,(media,ready,record,pipeline,log) in zip(pins,records):
@@ -249,16 +417,24 @@ def migrate(authorization,authorization_sha256):
             'original_ready_literal_path':str(Path(proof['source_context'])/ready.name),
             'original_pipeline_literal_path':record['pipeline_receipt_path'],
             'original_frame_log_path':str(log),'original_frame_log_sha256':pin['frame_log_sha256'],
-            'candidate_only':True,'activation':False,'recomputed':False}
+            'candidate_only':not production,'activation':production,'recomputed':False}
+        if production:
+            for original in (pipeline,log):
+                copied=target/original.name;os.link(original,copied)
+                if sha(copied)!=sha(original):raise ValueError('Pipeline/log changed during hardlink publication')
+            migrated['pipeline_receipt_path']=str(Path(proof['target_context'])/pipeline.name)
         publish(target/ready.name,migrated)
     bound(authorization,authorization_sha256)
     verify_resolved_bindings(proof)
     bound(Path(proof['source_context'])/'context.json',proof['source_context_sha256'])
     from native_face_recipe import validate_recipe
     validate_recipe(proof['recipe_path'],proof['recipe_sha256'])
-    publish(target/'migration.complete.json',dict(activation=False,production_approval=False,
+    if production:bound(proof['new_config_path'],proof['new_config_sha256'])
+    publish(target/'migration.complete.json',dict(activation=production,production_approval=False,
         migrated_segments=len(records),migration_provenance_sha256=root_sha,
-        limitation='Candidate assets only. Existing validator must reject; no production/final approval or full-prefix new PTS/visual acceptance.'))
+        limitation=('Production migration explicitly authorized; launcher/profile unchanged; original producer retained. '
+            if production else 'Candidate assets only; existing validator must reject. ')
+            +'No final approval or full-prefix new PTS/visual acceptance.'))
     return target
 
 
@@ -266,8 +442,9 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--authorization',type=Path,required=True)
     parser.add_argument('--authorization-sha256',required=True)
+    parser.add_argument('--allow-production-migration',action='store_true',help='Requires separate root-controller production authorization and actual long trial/physical review')
     args=parser.parse_args()
-    print(migrate(args.authorization,args.authorization_sha256))
+    print(migrate(args.authorization,args.authorization_sha256,allow_production=args.allow_production_migration))
 
 
 if __name__=='__main__':main()
