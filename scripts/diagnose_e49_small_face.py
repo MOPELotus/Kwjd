@@ -27,7 +27,14 @@ def main():
     parser.add_argument('--work', type=Path, required=True)
     parser.add_argument('--weights', type=Path, required=True)
     parser.add_argument('--report', type=Path, required=True)
+    parser.add_argument('--roi', type=int, nargs=4, metavar=('X','Y','W','H'),
+                        help='Optional bounded original-pixel crop for detection only')
     args = parser.parse_args()
+    if args.roi:
+        x,y,width,height=args.roi
+        if not (0<=x<1920 and 0<=y<1080 and width>=32 and height>=32
+                and x+width<=1920 and y+height<=1080):
+            raise ValueError('ROI must be inside preserved native source frame')
     if args.report.exists():
         raise FileExistsError('Preserve the prior diagnostic report')
     unit = 'kwjd-face-rework-e49-20261028.service'
@@ -81,6 +88,7 @@ def main():
                   detector_code_sha256=digest(retinaface.__file__),
                   measured_free_after_context_bytes=free,allocator_budget_bytes=budget,
                   unallocated_headroom_bytes=free-budget,
+                  roi_xywh=args.roi,
                   samples=[], final_acceptance=False,
                   scope='Nine detection-only inferences. No GFPGAN, media edits or recipe changes. '
                         'Eye distance is measured after scaling landmarks to original coordinates.')
@@ -88,19 +96,28 @@ def main():
         image = cv2.imread(str(path))
         if image is None or image.shape != (1080, 1920, 3):
             raise ValueError('Expected preserved native1080p source PNG')
+        x,y=0,0
+        if args.roi:
+            x,y,width,height=args.roi
+            image=image[y:y+height,x:x+width]
         for resize in (640, 960, 1080):
             temperature = int(subprocess.check_output(['nvidia-smi', '--id=0',
                 '--query-gpu=temperature.gpu', '--format=csv,noheader,nounits'], text=True).strip())
             if temperature >= 95:
                 raise RuntimeError('WAIT_GPU: measured temperature reaches guard')
             scale = min(image.shape[:2]) / resize
-            resized = cv2.resize(image, (int(1920/scale), int(1080/scale)), interpolation=cv2.INTER_LANCZOS4)
+            height,width=image.shape[:2]
+            resized = cv2.resize(image, (int(width/scale), int(height/scale)), interpolation=cv2.INTER_LANCZOS4)
             started = time.monotonic()
             with torch.inference_mode():
-                boxes = model.detect_faces(resized, 0.97) * scale
+                boxes = model.detect_faces(resized, 0.97)
             torch.cuda.synchronize(0)
             faces = []
-            for box in boxes:
+            for raw in boxes:
+                box=raw.copy()
+                # Preserve confidence while mapping coordinates back to the original frame.
+                box[[0,2,5,7,9,11,13]]=box[[0,2,5,7,9,11,13]]*scale+x
+                box[[1,3,6,8,10,12,14]]=box[[1,3,6,8,10,12,14]]*scale+y
                 eye = float(np.linalg.norm([box[5]-box[7], box[6]-box[8]]))
                 faces.append(dict(box_and_landmarks=box.tolist(), eye_distance_original_pixels=eye,
                                   passes_original_eye_threshold=eye >= 5))
