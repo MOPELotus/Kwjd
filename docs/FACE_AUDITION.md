@@ -69,6 +69,8 @@ E49全长返工的2235.8167–2253.0833秒存在可见远景小脸但未检测�
 
 `scripts/publish_face_rework_handoff.py --experiment <上述实验目录>`先鲜查验收证据、保留旧源和新成片SHA，再以同文件系统硬链接发布`post/final/S01E49.face-reworked-1080p60.mkv`及独立`post/reports/S01E49.face-rework.json`。不覆盖旧`S01E49.final-1080p60.mkv`、旧报告或Worker READY状态；已存在不同内容立即拒绝，重跑相同内容可恢复。普通`fetch-final`仍指向旧版，不能误报已经取回返工版。Windows须下载独立路径至暂存，鲜验新SHA/技术/郭德纲效果后再原子替换本地成片，单独保留旧收据、新建返工回执；旧质量结论不继承。收到新回执前不删除服务器任何正式来源或成片。本交接清单不能触发旧路径的标准清理。
 
+发布器还会在worker明确inactive/MainPID0、完成SHA/指纹/帧数匹配后，将显示用`status.json`推进到`SERVER_READY_PENDING_WINDOWS`，保留`status.worker-completed.json`原始快照；历史`technical_result.json`不重写。再次物理播放诊断也接受绑定服务器验收SHA的新READY状态，不将READY当作Windows已接收。
+
 ### 已验证下游后的编码分段释放
 
 按`docs/LIFECYCLE.md`的用户阶段释放授权，最终片删除门禁不套用到所有中间物。`release_face_rework_segments.py --work <实验目录>`只计划；加`--execute`才释放352个已审计编码分段，保留两份完整成片、原混音、全部JSON/逐帧日志、PNG、未列明partial和环境。它要求完成的返工服务inactive/MainPID0且已取消开机重启，持返工/共享计算/Worker三把排他锁，鲜验完整来源/新片/服务器验收证据及完整分段/逐帧覆盖后，先持久化有界清单。每个分段须与服务器验收绑定的完整审计SHA相同；用既有同文件系统隔离、隔离后重哈希再释放和持久恢复日志，不按通配符删除。这样释放可再生编码块不伪造Windows回执，不释放唯一来源或任一完整成片，也不代表已允许下一集GPU开工。验收前的断点继续保留；最终片验证交接完成后的分段退役另由plan/result记录，不能再将旧worker当作待续任务自动重启。

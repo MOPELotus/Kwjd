@@ -8,7 +8,9 @@ import argparse
 import hashlib
 import json
 import os
+import subprocess
 from pathlib import Path
+from datetime import datetime
 
 
 def sha(path):
@@ -103,6 +105,39 @@ def publish(root, experiment, dry_run=False):
                 os.link(temporary, report)
             finally:
                 temporary.unlink(missing_ok=True)
+        status_path = experiment / 'status.json'
+        unit = subprocess.check_output(['systemctl', '--user', 'show',
+            'kwjd-face-rework-e49-20261028.service', '-p', 'ActiveState', '-p', 'MainPID'], text=True)
+        require('ActiveState=inactive' in unit and 'MainPID=0' in unit,
+                'Worker must be terminal before publishing its reviewed status')
+        state = json.loads(status_path.read_text())
+        require(state.get('sha256') == manifest['sha256']
+                and state.get('fingerprint') == technical['fingerprint']
+                and state.get('frames_completed') == technical['frames']
+                and state.get('stage') in ('TECHNICAL_PASS_PENDING_VISUAL',
+                                           'SERVER_READY_PENDING_WINDOWS'),
+                'Worker completion status differs; do not overwrite it')
+        if state['stage'] != 'SERVER_READY_PENDING_WINDOWS':
+            snapshot = experiment / 'status.worker-completed.json'
+            if snapshot.exists():
+                require(snapshot.read_bytes() == status_path.read_bytes(),
+                        'Worker status snapshot differs; reconcile explicitly')
+            else:
+                with snapshot.open('x') as stream:
+                    stream.write(status_path.read_text())
+            state.update(worker_stage_at_completion=state['stage'],
+                         stage='SERVER_READY_PENDING_WINDOWS',
+                         updated_at=datetime.now().astimezone().isoformat(),
+                         authoritative_ready_report=str(report),
+                         server_acceptance_sha256=manifest['server_acceptance_sha256'],
+                         windows_received=False, windows_quality_checked=False)
+            temporary = status_path.with_name(f'status.{os.getpid()}.tmp')
+            with temporary.open('x') as stream:
+                json.dump(state, stream, ensure_ascii=False, indent=2)
+                stream.write('\n')
+                stream.flush()
+                os.fsync(stream.fileno())
+            temporary.replace(status_path)
     return {'dry_run': dry_run, 'path': str(destination), 'report': str(report),
             'sha256': manifest['sha256'], 'windows_received': False}
 

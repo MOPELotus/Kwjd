@@ -69,9 +69,16 @@ def main():
     state=json.loads((work/'status.json').read_text())
     technical=json.loads((work/'technical_result.json').read_text())
     manifest=json.loads((work/'full.manifest.json').read_text())
-    if (state['stage']!='TECHNICAL_PASS_PENDING_VISUAL' or technical['frames']!=211054
+    if (state['stage'] not in ('TECHNICAL_PASS_PENDING_VISUAL', 'SERVER_READY_PENDING_WINDOWS') or technical['frames']!=211054
             or technical['fingerprint']!=state['fingerprint']):
         raise ValueError('Full technical acceptance has not been bound')
+    if state['stage']=='SERVER_READY_PENDING_WINDOWS':
+        approval=work/'server_acceptance.json'
+        approved=json.loads(approval.read_text())
+        if (digest(approval)!=state.get('server_acceptance_sha256')
+                or approved.get('server_accepted') is not True
+                or approved.get('sha256')!=state['sha256']):
+            raise ValueError('Reviewed READY state does not bind server acceptance')
     source=Path(manifest['source']);output=Path(state['output'])
     if output.parent.resolve()!=work or output.resolve()==source.resolve():
         raise ValueError('Separate rework output is required')
