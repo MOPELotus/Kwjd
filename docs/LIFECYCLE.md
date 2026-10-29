@@ -16,6 +16,8 @@
 
 ## 清理范围
 
+2026-10-29用户扩大持续清理授权：完整原视频在D盘第一季母盘时，已导出回目的去片头尾裁剪副本和背景切片都可重建、可释放；本次Windows明确包括E49–E52，不包括正在制作的E53。先验证完整原视频存在、时长/首中尾解码和SHA，保留原片/裁剪副本SHA、原manifest与背景split映射、回目命名和可重建参数，再只删精确副本。使用`release_working_copies.py --root <数据根> --original-root <完整原片目录> --episodes S01E49 S01E50 S01E51 S01E52 --include-background-slices --execute`。完整原片、长背景源、工程、母片/最终片、封存字幕和小型证据仍保留；用户接受旧达芬奇时间线重导前需重切和重新链接。服务器同样可阶段清理已无下游依赖的cut/OCR输入复制、过期测试/构建缓存等，但仍在使用或下一步时钟核验/优化需要的输入必须先留到依赖完成。不得将只有Windows存在的母盘说成云端备份，或因清理而让Windows离线时云端任务无法继续。
+
 用户最新持续授权：逐阶段校验交接后，清理上一步不再需要的产物，避免累积母片和缓存。只有服务器最终成片的删除必须等Windows接收验收；不要把这道门禁套到所有中间物。
 
 2026-10-28用户进一步授权：本地母片已完成技术检查、SHA锚定且确认导出结束后，可以在上传前先释放CacheClip，让Windows继续下一回Mask；本地母片必须保留到远端新鲜SHA匹配。使用`resolve_cache.py cleanup-local --root <数据根> --episode S01Exx --execute`，要求本地`.kwjd/cache-local-approvals/S01Exx.json`显式授权并绑定母片SHA、匹配的导出检查记录、时长通过或同SHA的用户例外批准；执行前重新哈希母片和两次比对缓存快照，拒绝链接/越界/变化。只清D:/ResolveWork/CacheClip内容，保留目录、.gallery和其他ResolveWork内容；正在生成新Mask缓存时不得清理。本地锚定不代表已上传或服务器接收，不能伪造上传收据。
