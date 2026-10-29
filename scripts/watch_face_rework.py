@@ -37,7 +37,7 @@ def snapshot(folder,service):
     if acceptance.exists() and handoff.exists():
         approval=json.loads(acceptance.read_text())
         publication=json.loads(handoff.read_text())
-        if (approval.get('server_accepted') is True
+        if (not state.get('windows_received') and approval.get('server_accepted') is True
                 and publication.get('sha256')==approval.get('sha256')
                 and publication.get('server_acceptance_sha256')==hashlib.sha256(acceptance.read_bytes()).hexdigest()
                 and publication.get('status')=='SERVER_READY_PENDING_WINDOWS'):

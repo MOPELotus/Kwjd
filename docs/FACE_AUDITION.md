@@ -79,6 +79,8 @@ E49全长返工的2235.8167–2253.0833秒存在可见远景小脸但未检测�
 
 第二回的预算按接收母片、原生GF/RIFE/ASS编码块与concat、保留混音和最终mux的各阶段峰值分别核算，同一时刻需要的副本不能漏计，非同时阶段取最大值；迁移canonical cache另计。接收容量通过不等于生产预算通过。没有达到实时各文件系统余量要求时，不得为显示“可开工”偷偷降低画质、删新final或修改25GiB底线。
 
+`retire_e49_generated.py --windows-receipt <Linux已收到的Windows新片回执> --execute`执行上述清单：须实际received/technical=true，匹配新SHA/bytes/原source/master/全混音PCM、READY报告SHA及新文件名。持三把锁，鲜验保留新final和所有仍存在的候选，再逐文件隔离重哈希释放；重跑只按精确journal恢复，不信文件缺失。另移除已退役native片段的唯一兼容链接，保持cache内无链接。脚本不修改Windows拥有的验收器，不会将quality=false变成true。真实Windows回执`post/receipts/S01E49.face-reworked.windows.json`通过后，591项实际退役已完成；结果见实验目录`generated-retirement-result.json`。显示状态为`WINDOWS_TECHNICAL_RECEIVED_QUALITY_PENDING`，不重写原READY清单及其已被Windows绑定的SHA。
+
 ### 已验证下游后的编码分段释放
 
 按`docs/LIFECYCLE.md`的用户阶段释放授权，最终片删除门禁不套用到所有中间物。`release_face_rework_segments.py --work <实验目录>`只计划；加`--execute`才释放352个已审计编码分段，保留两份完整成片、原混音、全部JSON/逐帧日志、PNG、未列明partial和环境。它要求完成的返工服务inactive/MainPID0且已取消开机重启，持返工/共享计算/Worker三把排他锁，鲜验完整来源/新片/服务器验收证据及完整分段/逐帧覆盖后，先持久化有界清单。每个分段须与服务器验收绑定的完整审计SHA相同；用既有同文件系统隔离、隔离后重哈希再释放和持久恢复日志，不按通配符删除。这样释放可再生编码块不伪造Windows回执，不释放唯一来源或任一完整成片，也不代表已允许下一集GPU开工。验收前的断点继续保留；最终片验证交接完成后的分段退役另由plan/result记录，不能再将旧worker当作待续任务自动重启。
