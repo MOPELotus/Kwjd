@@ -12,10 +12,10 @@ import socket
 import subprocess
 import time
 
-FRAMES = [2063,2064,2065,2066,2067,24256,24257,24258,24259,24260,
-          68399,134700,162000,167896,168430,181099,181100,181101,205800,211053]
-NORMAL = [34.1,403.8,1139.3,2235.5,2244.3,2251.8,2699.3,2797.7,
-          2806.7,3017.6,3429.3,3515.0]
+FRAMES = [2067,6000,68394,68399,68400,68409,134220,134700,135120,
+          161994,161999,162000,162009,167886,167896,167922,168430,205800,210600,211053]
+NORMAL = [34.45,99.5,1139.3,2235.5,2244.3,2251.8,2699.3,2797.7,
+          2806.7,3429.3,3509.3,3515.0]
 
 
 def digest(path):
@@ -87,14 +87,16 @@ def main():
     command=[str(args.mpv.resolve()),'--no-config','--load-scripts=no','--vo=gpu',
         '--gpu-api=opengl','--gpu-context=x11egl','--gpu-sw=no','--hwdec=nvdec-copy',
         '--cuda-decode-device=0','--vd-lavc-software-fallback=no','--opengl-swapinterval=0',
-        '--ao=null','--pause=yes','--keep-open=yes','--force-window=yes',
+        '--audio=no','--pause=yes','--keep-open=yes','--force-window=yes',
         '--geometry=1920x1080+0+0','--border=no','--sub-auto=no','--osd-level=0',
         f'--input-ipc-server={sock}',f'--log-file={dest/"mpv.log"}','--msg-level=all=v',str(source)]
     report=dict(at=datetime.now().astimezone().isoformat(),script_sha256=digest(__file__),
         command=command,display=args.display,source_sha256=manifest['source_sha256'],
         output_sha256=state['sha256'],samples=[],hardware_checks_passed=False,
+        quality_subject='Guo Degang only; human waived audience effects',
         visual_acceptance=False,final_acceptance=False,
-        limitations='Bounded playback only. Null audio output; no listening claim. '
+        limitations='Bounded playback only. Audio disabled; no listening claim. '
+                    'Half-second warmup drops are recorded separately from measured windows. '
                     'Screenshots must actually be viewed and visual judgments recorded separately.')
     process=None;ipc=None
     try:
@@ -129,14 +131,20 @@ def main():
                     if image.size!=(1920,1080):raise ValueError('Native window dimensions changed')
                 entry['captures'].append(dict(frame=frame,requested=round(frame/60,3),actual=actual,
                                               image=str(png),sha256=digest(png)))
-            for speed,starts in [(1.,NORMAL),(.25,[34.25,404.1,3018.1])]:
+            for speed,starts in [(1.,NORMAL),(.25,[1139.8,2699.8,2798.,2807.])]:
                 ipc.command(['set_property','speed',speed])
                 for start in starts:
-                    ipc.seek(start);before=ipc.get('time-pos')
+                    ipc.seek(max(0,start-.5*speed))
+                    warm_start=ipc.get('time-pos');warm_drops=ipc.get('frame-drop-count')
+                    warm_decoder_drops=ipc.get('decoder-frame-drop-count')
+                    ipc.command(['set_property','pause',False]);time.sleep(.5)
+                    ipc.command(['set_property','pause',True]);before=ipc.get('time-pos')
                     drops=ipc.get('frame-drop-count');decoder_drops=ipc.get('decoder-frame-drop-count')
                     ipc.command(['set_property','pause',False]);begin=time.monotonic();time.sleep(2)
                     ipc.command(['set_property','pause',True]);end=ipc.get('time-pos');wall=time.monotonic()-begin
-                    item=dict(start=before,end=end,speed=speed,wall=wall,
+                    item=dict(requested_measured_start=start,start=before,end=end,speed=speed,wall=wall,
+                        warmup=dict(start=warm_start,end=before,wall=.5,
+                            frame_drops=drops-warm_drops,decoder_frame_drops=decoder_drops-warm_decoder_drops),
                         frame_drops=ipc.get('frame-drop-count')-drops,
                         decoder_frame_drops=ipc.get('decoder-frame-drop-count')-decoder_drops)
                     entry['playback'].append(item)

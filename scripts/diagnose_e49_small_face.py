@@ -66,9 +66,10 @@ def main():
     if not torch.cuda.is_available() or torch.cuda.get_device_name(0) != 'NVIDIA RTX A4000':
         raise RuntimeError('Requires physical A4000 at CUDA0')
     free, total = torch.cuda.mem_get_info(0)
-    if free < 5.5 * 2**30:
+    if free < 4.5 * 2**30:
         raise RuntimeError('WAIT_GPU: insufficient measured headroom')
-    torch.cuda.set_per_process_memory_fraction(2.5 * 2**30 / total, 0)
+    budget=min(2.5 * 2**30,free-2 * 2**30)
+    torch.cuda.set_per_process_memory_fraction(budget / total, 0)
     torch.backends.cuda.matmul.allow_tf32 = False
     torch.backends.cudnn.allow_tf32 = False
     model = init_detection_model('retinaface_resnet50', half=False,
@@ -78,6 +79,8 @@ def main():
                   device_uuid=str(torch.cuda.get_device_properties(0).uuid),
                   torch=torch.__version__, facexlib=importlib.metadata.version('facexlib'),
                   detector_code_sha256=digest(retinaface.__file__),
+                  measured_free_after_context_bytes=free,allocator_budget_bytes=budget,
+                  unallocated_headroom_bytes=free-budget,
                   samples=[], final_acceptance=False,
                   scope='Nine detection-only inferences. No GFPGAN, media edits or recipe changes. '
                         'Eye distance is measured after scaling landmarks to original coordinates.')

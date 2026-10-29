@@ -603,6 +603,11 @@ and an independent persistent systemd service with segment-level recovery.
 
 ### Rework receipt audits and queue storage gate
 
+Human acceptance scope (2026-10-29): face-quality review concerns Guo Degang
+only. Audience/non-Guo restoration appearance, including composite ghosts, is
+waived and must not trigger extra correction work. Keep historical evidence;
+whole-media technical, audio, timing, provenance and delivery gates still apply.
+
 `audit_face_rework.py --work <rework-folder> --report <new-report.json>` audits
 completed segment hashes, contiguous frame coverage, processing/protection
 counters and face-log statistics without invoking models or changing media.
