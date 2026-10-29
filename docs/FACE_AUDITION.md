@@ -79,6 +79,8 @@ E49全长返工的2235.8167–2253.0833秒存在可见远景小脸但未检测�
 
 第二回的预算按接收母片、原生GF/RIFE/ASS编码块与concat、保留混音和最终mux的各阶段峰值分别核算，同一时刻需要的副本不能漏计，非同时阶段取最大值；迁移canonical cache另计。接收容量通过不等于生产预算通过。没有达到实时各文件系统余量要求时，不得为显示“可开工”偷偷降低画质、删新final或修改25GiB底线。
 
+`retire_e49_generated.py --windows-receipt <Linux已收到的Windows新片回执> --execute`执行上述清单：须实际received/technical=true，匹配新SHA/bytes/原source/master/全混音PCM、READY报告SHA及新文件名。持三把锁，鲜验保留新final和所有仍存在的候选，再逐文件隔离重哈希释放；重跑只按精确journal恢复，不信文件缺失。另移除已退役native片段的唯一兼容链接，保持cache内无链接。脚本不修改Windows拥有的验收器，不会将quality=false变成true。真实Windows回执`post/receipts/S01E49.face-reworked.windows.json`通过后，591项实际退役已完成；结果见实验目录`generated-retirement-result.json`。显示状态为`WINDOWS_TECHNICAL_RECEIVED_QUALITY_PENDING`，不重写原READY清单及其已被Windows绑定的SHA。
+
 ### 已验证下游后的编码分段释放
 
 按`docs/LIFECYCLE.md`的用户阶段释放授权，最终片删除门禁不套用到所有中间物。`release_face_rework_segments.py --work <实验目录>`只计划；加`--execute`才释放352个已审计编码分段，保留两份完整成片、原混音、全部JSON/逐帧日志、PNG、未列明partial和环境。它要求完成的返工服务inactive/MainPID0且已取消开机重启，持返工/共享计算/Worker三把排他锁，鲜验完整来源/新片/服务器验收证据及完整分段/逐帧覆盖后，先持久化有界清单。每个分段须与服务器验收绑定的完整审计SHA相同；用既有同文件系统隔离、隔离后重哈希再释放和持久恢复日志，不按通配符删除。这样释放可再生编码块不伪造Windows回执，不释放唯一来源或任一完整成片，也不代表已允许下一集GPU开工。验收前的断点继续保留；最终片验证交接完成后的分段退役另由plan/result记录，不能再将旧worker当作待续任务自动重启。
@@ -106,3 +108,7 @@ E49全长返工的2235.8167–2253.0833秒存在可见远景小脸但未检测�
 实际用A4000 OpenGL及NVDEC打开三份完整文件，每份在输出1、61、121和10.8秒各播放约1.5秒，时钟推进且零显示/解码掉帧。根代理实际查看每模型12张相邻帧截图。首次截图有一张疑似未刷新旧帧，保留原记录并在seek后增加250ms等待重新截图；v2抽检为最终证据。所查近/中景可辨认、嘴部随动作变化，未见明显面部破坏；生成皮肤/头发纹理、局部平滑和先前静帧可见的发际融合边界仍需用户比较。服务器使用空音频输出，没有听音声明，未人工逐帧审完180秒。
 
 本机数据根下的`post/reports/face_candidates_20261028/FINAL_COMPARISON.md`及JSON汇总六种候选路径、SHA、阶段计时、覆盖率和限制；`full_a4000_amp_f32_05936af/report.json`保持原始历史状态，`root_full_hardware_motion_v2/report.json`保存最终物理显卡播放证据。Windows已确认接收前三种滤镜与GFPGAN、CodeFormer0.5；Linux完工时尚待CodeFormer0.8的Windows回执，不能将可下载等同于已接收。正式E49质量验收、缓存保留规则独立，不因样片技术通过而删除正式资产。
+
+### Canonical缓存实际迁移
+
+`relocate_post_cache.py`在三把租约下将退役后剩余2502文件/475465868字节完整SHA复制、两次源/目的对账后，切换顶层`post/cache`到`post-home/cache`并同步两份storage声明，通过`episode_lifecycle.artifact_path`实际校验，再只删除清单中的旧副本和空目录。PNG/JSON/日志保留、逻辑路径不变、内部无链接，native验收目录和所有输入/成品不受影响。遗留自有mpv Unix socket须在`ss`确认无监听后按显式名称退役；未知非普通项立即停止。结果与全量迁移intent存在实验目录。迁移没有更改25GiB政策，第二回完整峰值不足仍需如实报告。

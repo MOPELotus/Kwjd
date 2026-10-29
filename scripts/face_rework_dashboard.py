@@ -28,7 +28,8 @@ def render(root):
                     and candidate.get('sha256')==approval.get('sha256')
                     and candidate.get('status')=='SERVER_READY_PENDING_WINDOWS'):
                 handoff=candidate
-        stage='SERVER_READY_PENDING_WINDOWS' if handoff else state.get('stage','UNKNOWN')
+        stage=('SERVER_READY_PENDING_WINDOWS' if handoff and not state.get('windows_received')
+               else state.get('stage','UNKNOWN'))
         lines=[
             'S01E49 全帧修脸返工 | 只读实时监测',
             f"阶段：{stage} | 服务：{service.get('ActiveState','unknown')}/{service.get('SubState','unknown')}",
@@ -43,7 +44,9 @@ def render(root):
             'GPU遥测：编号 / 设备 / 温度 / 显存已用 / 显存空闲 / 利用率',
             str(data.get('gpu','unknown')),
             '显卡0修脸；显卡1当前闲置正常。保护：显卡0温度95°C、空闲3GiB。',
-            ('服务器整片技术/混音与郭德纲有界视觉复核通过；Windows新版接收和质量回执待完成。'
+            ('Windows新SHA/媒体/PCM技术接收已通过；实际画面质量复核仍须单独确认。'
+             if state.get('windows_received') else
+             '服务器整片技术/混音与郭德纲有界视觉复核通过；Windows新版接收和质量回执待完成。'
              if handoff else '进度不是最终验收：整片解码、原混音一致性、视觉和Windows新版交付仍需完成。'),
             '', '近期日志：'
         ]

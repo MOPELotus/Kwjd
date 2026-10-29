@@ -15,6 +15,31 @@ import shutil
 
 
 GIB = 2**30
+MEDIA_AREAS = (
+    'post/cache/S01E49/S01E49.segments', 'post/cache/master-validation',
+    'post/reports/face_candidates_20261028',
+    'post-home/cache-relocated/master-validation',
+    'post-home/experiments/native_face_chain_20261028',
+    'post-home/experiments/face_rework_E49_20261028/smoke01',
+    'post-home/experiments/face_rework_E49_20261028/smoke02',
+)
+
+
+def allowed_media(root, path):
+    if path == root / 'post/final/S01E49.final-1080p60.mkv':
+        return True
+    if path.suffix.lower() not in ('.mkv', '.mp4', '.mov', '.ffv1'):
+        return False
+    for area in MEDIA_AREAS:
+        boundary = root / area
+        if path.is_relative_to(boundary):
+            current = path.parent
+            while current != boundary.parent:
+                if current.is_symlink():
+                    return False
+                current = current.parent
+            return True
+    return False
 
 
 def inventory(root):
@@ -24,14 +49,7 @@ def inventory(root):
     ready = json.loads((post / 'reports/S01E49.face-rework.json').read_text())
     new = Path(ready['final_path']).resolve()
     new_inode = (new.stat().st_dev, new.stat().st_ino)
-    directories = [
-        post / 'cache/S01E49/S01E49.segments',
-        post / 'cache/master-validation',
-        post / 'reports/face_candidates_20261028',
-        root / 'post-home/cache-relocated/master-validation',
-        root / 'post-home/experiments/native_face_chain_20261028',
-        work / 'smoke01', work / 'smoke02',
-    ]
+    directories = [root / area for area in MEDIA_AREAS]
     candidates = {post / 'final/S01E49.final-1080p60.mkv'}
     # Only media inside these explicit generated-E49 directories. Keep the
     # native backend acceptance directory and its small proof clip untouched.
@@ -51,6 +69,8 @@ def inventory(root):
             raise ValueError('New final was accidentally selected; refuse inventory')
         if path.is_symlink() or not path.is_file():
             raise ValueError('Non-regular retirement candidate')
+        if not allowed_media(root, path):
+            raise ValueError('Candidate escaped the explicit generated-media areas')
         # No linked parent below any selected directory may redirect inventory.
         boundary = next((d for d in directories if path.is_relative_to(d)), path.parent)
         current = path.parent
