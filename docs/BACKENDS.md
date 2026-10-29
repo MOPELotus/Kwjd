@@ -869,8 +869,14 @@ prefix neural recomputation. New readiness records retain original producer
 fingerprints and authorization provenance; ordinary pipeline validation adopted
 the linked media and original logs. The actual runtime fingerprint is
 `53e9852e99e3e7c27f8a0891531044daa919bcec72a58fc505a1b5a5804b6cab`.
-The worker was restarted for its own new-fingerprint current-master calibration;
-production resume and the first new segment are monitored separately. Idle
+The worker completed its own new-fingerprint current-master calibration with
+full sample decoding, then reused the 98 linked segments. Its first new segment
+(source 24500, 250 native→600 output frames) completed in 78.5015s, with 251/251
+restored frames including lookahead and zero failed frames. Media SHA and
+ordinary pipeline validation passed; the active fingerprint stayed unchanged
+after worker preparation. The 98 reused media inodes were also checked against
+the original context. Natural hot abort/retry and whole-episode completion
+remain under monitoring. Idle
 E50/E51 takeover owners were refreshed to avoid cached Python modules. E51
 continues waiting for E50 final acceptance and stage release.
 
