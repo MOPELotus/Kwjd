@@ -4,6 +4,7 @@
 Does not start/kill inference, clean media or declare visual acceptance.
 """
 import argparse
+import hashlib
 from datetime import datetime
 import json
 from pathlib import Path
@@ -30,7 +31,19 @@ def snapshot(folder,service):
     verified=sum(x.get('frames',0) for x in receipts)
     seconds=sum(x.get('pipeline_seconds',0) for x in receipts)
     speed=verified/seconds if seconds else None
+    reported_stage=state.get('stage','UNKNOWN')
+    acceptance=folder/'server_acceptance.json'
+    handoff=folder.parents[2]/'post/reports/S01E49.face-rework.json'
+    if acceptance.exists() and handoff.exists():
+        approval=json.loads(acceptance.read_text())
+        publication=json.loads(handoff.read_text())
+        if (approval.get('server_accepted') is True
+                and publication.get('sha256')==approval.get('sha256')
+                and publication.get('server_acceptance_sha256')==hashlib.sha256(acceptance.read_bytes()).hexdigest()
+                and publication.get('status')=='SERVER_READY_PENDING_WINDOWS'):
+            reported_stage='SERVER_READY_PENDING_WINDOWS'
     return dict(at=datetime.now().astimezone().isoformat(),state=state,service=unit,
+        reported_stage=reported_stage,
         gpu=gpu,free_gib=disk.free/2**30,verified_segments=len(receipts),verified_frames=verified,
         progress_percent=100*done/total if total else 0,pipeline_fps=speed,
         estimated_remaining_inference_seconds=(total-done)/speed if speed else None,
@@ -50,7 +63,7 @@ def main():
             temporary.write_text(json.dumps(data,ensure_ascii=False,indent=2)+'\n')
             temporary.replace(args.output/'monitor.json')
             with (args.output/'metrics.jsonl').open('a') as stream:stream.write(json.dumps(data,ensure_ascii=False)+'\n')
-            event=(data['state']['stage'],data['service'].get('ActiveState'),data['service'].get('NRestarts'))
+            event=(data['reported_stage'],data['service'].get('ActiveState'),data['service'].get('NRestarts'))
             if event!=previous or time.monotonic()-last_summary>300:
                 message=f"{data['at']} MONITOR stage={event[0]} service={event[1]} restarts={event[2]} progress={data['progress_percent']:.2f}% verified={data['verified_frames']} home_free={data['free_gib']:.2f}GiB fps={data['pipeline_fps']} GPU={data['gpu'].replace(chr(10),' | ')}"
                 with (args.output/'progress.log').open('a') as stream:stream.write(message+'\n')
