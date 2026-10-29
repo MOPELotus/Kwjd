@@ -108,3 +108,7 @@ E49全长返工的2235.8167–2253.0833秒存在可见远景小脸但未检测�
 实际用A4000 OpenGL及NVDEC打开三份完整文件，每份在输出1、61、121和10.8秒各播放约1.5秒，时钟推进且零显示/解码掉帧。根代理实际查看每模型12张相邻帧截图。首次截图有一张疑似未刷新旧帧，保留原记录并在seek后增加250ms等待重新截图；v2抽检为最终证据。所查近/中景可辨认、嘴部随动作变化，未见明显面部破坏；生成皮肤/头发纹理、局部平滑和先前静帧可见的发际融合边界仍需用户比较。服务器使用空音频输出，没有听音声明，未人工逐帧审完180秒。
 
 本机数据根下的`post/reports/face_candidates_20261028/FINAL_COMPARISON.md`及JSON汇总六种候选路径、SHA、阶段计时、覆盖率和限制；`full_a4000_amp_f32_05936af/report.json`保持原始历史状态，`root_full_hardware_motion_v2/report.json`保存最终物理显卡播放证据。Windows已确认接收前三种滤镜与GFPGAN、CodeFormer0.5；Linux完工时尚待CodeFormer0.8的Windows回执，不能将可下载等同于已接收。正式E49质量验收、缓存保留规则独立，不因样片技术通过而删除正式资产。
+
+### Canonical缓存实际迁移
+
+`relocate_post_cache.py`在三把租约下将退役后剩余2502文件/475465868字节完整SHA复制、两次源/目的对账后，切换顶层`post/cache`到`post-home/cache`并同步两份storage声明，通过`episode_lifecycle.artifact_path`实际校验，再只删除清单中的旧副本和空目录。PNG/JSON/日志保留、逻辑路径不变、内部无链接，native验收目录和所有输入/成品不受影响。遗留自有mpv Unix socket须在`ss`确认无监听后按显式名称退役；未知非普通项立即停止。结果与全量迁移intent存在实验目录。迁移没有更改25GiB政策，第二回完整峰值不足仍需如实报告。
