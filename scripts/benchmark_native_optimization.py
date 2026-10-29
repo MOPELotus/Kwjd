@@ -59,21 +59,22 @@ def new_output(path, post):
     return path
 
 
-def selected_cases(names=None):
+def selected_cases(names=None, external=False):
     names=[item[0] for item in CASES] if names is None else list(names)
     allowed={item[0] for item in CASES}
-    if not names or names[0]!='serial' or len(set(names))!=len(names) or not set(names)<=allowed:
-        raise ValueError('Cases must be unique known modes, with serial baseline first')
+    if (not names or (not external and names[0]!='serial') or (external and 'serial' in names)
+            or len(set(names))!=len(names) or not set(names)<=allowed):
+        raise ValueError('Cases must be unique known modes; serial first unless an external serial baseline is provided')
     return names
 
 
-def variant_configs(active, output, runid, names=None):
+def variant_configs(active, output, runid, names=None, external=False):
     if not re.fullmatch(r'[A-Za-z0-9_-]{1,64}', runid):
         raise ValueError('Unsafe run ID')
     raw = json.loads(Path(active).read_text())
     result = []
     modes={item[0]:item for item in CASES}
-    for case_name in selected_cases(names):
+    for case_name in selected_cases(names,external):
         name,overlap,gate,depth=modes[case_name]
         cfg = dict(raw, pipeline_prefetch=overlap, resource_wait_in_process=gate,
                    pipeline_prefetch_frames=depth, benchmark_native_frame_sha256=True)
@@ -306,6 +307,95 @@ def compare(base, candidate):
                 pcm_equal=base.get('pcm_sha256')==candidate.get('pcm_sha256') if base.get('pcm_sha256') else None)
 
 
+
+def external_baseline(args, expected_binding, active, engine, fingerprint):
+    """Borrow one previously checked serial case, verifying immutable byte evidence.
+
+    This rechecks retained bytes and receipts, and does not rerun the serial job.
+    Its historical wall and model loads are excluded from the current suite.
+    """
+    case_path=Path(args.external_serial_baseline).resolve()
+    binding_path=Path(args.external_baseline_binding).resolve()
+    for path,expected in ((case_path,args.external_baseline_sha256),(binding_path,args.external_binding_sha256)):
+        if not re.fullmatch('[0-9a-f]{64}',expected) or digest(path)!=expected:
+            raise ValueError('External baseline/binding SHA differs')
+    if binding_path.parent!=case_path.parent:
+        raise ValueError('External serial case and input binding must share retained suite directory')
+    bound=json.loads(binding_path.read_text());case=json.loads(case_path.read_text())
+    if bound!=expected_binding:raise ValueError('External baseline master/config/recipe/source clocks differ')
+    attempts=case.get('attempts',[])
+    if case.get('name')!='serial' or len(attempts)!=1 or attempts[0].get('status')!='CHECKED':
+        raise ValueError('External baseline must have one unique CHECKED serial attempt')
+    attempt=attempts[0];root=case_path.parent
+    def artifact(value, expected_sha):
+        path=Path(value).resolve()
+        if not path.is_relative_to(root) or digest(path)!=expected_sha:
+            raise ValueError('External baseline artifact missing/changed/outside suite')
+        return path
+    config_path=Path(case['config'])
+    if config_path.resolve().parent!=Path(active).resolve().parent or digest(config_path)!=case['config_sha256']:
+        raise ValueError('External serial config changed/location differs')
+    wanted=dict(json.loads(Path(active).read_text()),pipeline_prefetch=False,
+                resource_wait_in_process=False,pipeline_prefetch_frames=1,benchmark_native_frame_sha256=True)
+    if json.loads(config_path.read_text())!=wanted or fingerprint(engine.config(config_path))!=case['backend_fingerprint']:
+        raise ValueError('External serial native config/source fingerprint differs')
+    sample=artifact(attempt['output'],case['validation']['sha256'])
+    receipt=artifact(attempt['pipeline_binding']['pipeline_receipt_path'],attempt['pipeline_binding']['pipeline_receipt_sha256'])
+    pipeline=json.loads(receipt.read_text())
+    clocks=expected_binding['clocks'];start=clocks['audio_start_sample']//1920
+    if (pipeline!=case['pipeline'] or pipeline.get('episode')!='S01E50'
+            or pipeline.get('source_start')!=start or pipeline.get('input_frames')!=clocks['input_frames']
+            or pipeline.get('output_frames')!=clocks['output_frames'] or pipeline.get('lookahead_frames')!=clocks['lookahead_frames']
+            or pipeline.get('native_recipe_sha256')!=expected_binding['recipe_sha256']
+            or pipeline.get('ass_sha256')!=expected_binding['recipe']['ass_sha256']
+            or pipeline.get('pipeline_prefetch') is not False or pipeline.get('resource_wait_in_process') is not False
+            or pipeline.get('video_encodes')!=1 or pipeline.get('ass_after_rife') is not True
+            or pipeline['coverage']['failed_frames']!=0
+            or pipeline['coverage']['processed_frames']!=clocks['input_frames']+clocks['lookahead_frames']
+            or pipeline['coverage']['restored_frames']+pipeline['coverage']['no_detection_frames']!=pipeline['coverage']['processed_frames']
+            or not case.get('gfpgan_exercised')):
+        raise ValueError('External serial pipeline coverage/recipe differs')
+    frames=sample.with_name(sample.name+'.face-frames.jsonl')
+    artifact(frames,pipeline['frame_log_sha256'])
+    actual_frames=frame_evidence(frames,start,clocks)
+    if actual_frames!=case['frame_evidence'] or actual_frames['raw_native_hashes'] is None:
+        raise ValueError('External serial restored native frame evidence differs')
+    hashes=case['video_hashes'];hash_path=artifact(hashes['path'],hashes['sha256'])
+    rows=[line for line in hash_path.read_text().splitlines() if line and not line.startswith('#')]
+    if (hashes['frames']!=clocks['output_frames'] or len(rows)!=clocks['output_frames']
+            or [line.rsplit(',',1)[-1].strip() for line in rows]!=hashes['frame_hashes']
+            or case['validation']['frames']!=clocks['output_frames']
+            or case['validation']['max_video_grid_error']>.0011):
+        raise ValueError('External serial decoded video evidence differs')
+    if args.with_audio:
+        artifact(case['continuous_sample'],case['audio_validation']['sha256'])
+        if ((sample.parent/'mux-pcm.sha256').read_text().strip()!=case.get('pcm_sha256')
+                or case['audio_validation']['frames']!=clocks['output_frames']):
+            raise ValueError('External serial mixed PCM evidence differs')
+    telemetry=attempt['telemetry'];telemetry_path=artifact(telemetry['path'],telemetry['sha256'])
+    rows=[json.loads(line) for line in telemetry_path.read_text().splitlines()]
+    expected_devices={0:'NVIDIA RTX A4000',1:'Tesla T10'}
+    peaks=telemetry['peaks']
+    if (telemetry['errors'] or len(rows)!=telemetry['samples'] or not rows
+            or {value['index']:value['name'] for value in peaks.values()}!=expected_devices
+            or any(row.get('error') or {gpu['uuid'] for gpu in row['gpus']}!=set(peaks) for row in rows)):
+        raise ValueError('External serial physical GPU telemetry differs/incomplete')
+    if getattr(args,'cold_start_each_case',False):
+        cooling=case.get('cold_start_wait',{})
+        if cooling.get('status')!='READY':raise ValueError('External serial baseline lacks successful cold-start evidence')
+        cold_telemetry=cooling['telemetry']
+        artifact(cold_telemetry['path'],cold_telemetry['sha256'])
+        temperatures={gpu['index']:gpu for gpu in cooling['last_raw_sample']['gpus']}
+        if (temperatures[0]['temperature_c']>85 or temperatures[1]['temperature_c']>78
+                or {gpu['uuid'] for gpu in temperatures.values()}!=set(peaks)):
+            raise ValueError('External serial baseline was not physically cold on the same devices')
+    case.update(borrowed=True,externally_completed=True,not_executed_this_suite=True,
+                external_serial_baseline=str(case_path),external_baseline_sha256=args.external_baseline_sha256,
+                external_baseline_binding=str(binding_path),external_binding_sha256=args.external_binding_sha256,
+                borrowed_timing_scope='Historical wall/model loads retained for comparison, excluded from current suite wall/load totals')
+    return case
+
+
 def execute(args):
     import enhance_backend as engine
     from segmented_backend import fingerprint
@@ -315,7 +405,11 @@ def execute(args):
     from enhance_stage import WaitGPU, check_space
     from storage_policy import minimum_free_gib
     suite_start=time.monotonic()
-    names=selected_cases(getattr(args,'cases',None))
+    external=bool(getattr(args,'external_serial_baseline',None))
+    external_fields=[getattr(args,name,None) for name in ('external_serial_baseline','external_baseline_sha256','external_baseline_binding','external_binding_sha256')]
+    if any(external_fields) and not all(external_fields):
+        raise ValueError('All four external baseline/binding path and SHA arguments required')
+    names=selected_cases(getattr(args,'cases',None),external)
     cold=bool(getattr(args,'cold_start_each_case',False))
     active=args.config.resolve();active_sha=digest(active);post=active.parent.parent
     if active.name!='runtime.native-active.json':
@@ -352,12 +446,16 @@ def execute(args):
         recovery_scope='Reports actual gate waits/OOM/failures only; absent real recovery events does not prove recovery; no injected GPU pressure or thermal workload')
     stat=master.stat();prepared=dict(sha256=master_sha,count=full,info=info,
         stat=(stat.st_ino,stat.st_size,stat.st_mtime_ns))
+    binding=dict(master_sha256=master_sha,active_config_sha256=active_sha,
+        recipe_sha256=cfg['native_recipe_sha256'],recipe=recipe,prepared_frame_count=full,clocks=clocks)
     processor=None;total_loads=0;failure=None
     try:
         with exclusive(post/'jobs/.worker.lock'):
-            variants=variant_configs(active,output,args.run_id,names)
-            save(output/'input-binding.json',dict(master_sha256=master_sha,active_config_sha256=active_sha,
-                recipe_sha256=cfg['native_recipe_sha256'],recipe=recipe,prepared_frame_count=full,clocks=clocks))
+            if external:
+                report['cases'].append(external_baseline(args,binding,active,engine,fingerprint))
+                report['external_baseline_scope']='Current suite wall and model-load totals exclude the borrowed serial run; its historical timings remain only in the borrowed case'
+            variants=variant_configs(active,output,args.run_id,names,external)
+            save(output/'input-binding.json',binding)
             audio,pcm=(audio_slice(master,output,clocks) if args.with_audio else (None,None))
             for name,path in variants:
                 case_start=time.monotonic()
@@ -433,6 +531,9 @@ def execute(args):
                         names={gpu['name'] for gpu in item['telemetry']['peaks'].values()}
                         if not {'Tesla T10','NVIDIA RTX A4000'}.issubset(names) or telemetry.errors:
                             raise ValueError('Physical GPU telemetry missing/incomplete')
+                        if external and ({uuid:(gpu['index'],gpu['name']) for uuid,gpu in item['telemetry']['peaks'].items()}
+                                !={uuid:(gpu['index'],gpu['name']) for uuid,gpu in report['cases'][0]['attempts'][0]['telemetry']['peaks'].items()}):
+                            raise ValueError('Current physical GPU UUIDs differ from external serial baseline')
                         break
                     except Exception as error:
                         item['status']='FAILED';item['error']=repr(error)
@@ -488,8 +589,12 @@ def main():
     parser.add_argument('--source-frames',type=int,required=True)
     parser.add_argument('--max-retries',type=int,choices=(0,1),default=0)
     parser.add_argument('--with-audio',action='store_true')
+    parser.add_argument('--external-serial-baseline',type=Path)
+    parser.add_argument('--external-baseline-sha256')
+    parser.add_argument('--external-baseline-binding',type=Path)
+    parser.add_argument('--external-binding-sha256')
     parser.add_argument('--cold-start-each-case',action='store_true',help='Release/reload models each case; wait at most120s for physical GPU0<=85C and GPU1<=78C')
-    parser.add_argument('--cases',nargs='+',choices=[item[0] for item in CASES],help='Selected modes in requested order; serial must be first')
+    parser.add_argument('--cases',nargs='+',choices=[item[0] for item in CASES],help='Selected modes in requested order; serial first, or omit serial when borrowing an external baseline')
     args=parser.parse_args()
     execute(args)
 

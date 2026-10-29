@@ -110,6 +110,38 @@ class BenchTests(unittest.TestCase):
         for names in ([],['overlap1-gate'],['serial','serial'],['serial','bogus']):
             with self.assertRaises(ValueError):b.selected_cases(names)
 
+    def test_external_baseline_pins_media_receipts_and_config(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);backend=root/'backend';backend.mkdir();suite=root/'suite';suite.mkdir()
+            active=backend/'runtime.native-active.json';active.write_text('{}')
+            config=b.variant_configs(active,None,'external')[0][1]
+            clocks=b.clock_bounds(0,5,10)
+            binding=dict(master_sha256='master',active_config_sha256=b.digest(active),recipe_sha256='recipe',recipe=dict(ass_sha256='ass'),prepared_frame_count=10,clocks=clocks)
+            binding_path=suite/'input-binding.json';b.save(binding_path,binding)
+            sample=suite/'sample.mkv';sample.write_bytes(b'original encoded bytes')
+            frames=sample.with_name(sample.name+'.face-frames.jsonl')
+            frames.write_text('\n'.join(json.dumps(dict(source_frame=i,lookahead=i==5,restored_bgr_sha256='a'*64)) for i in range(6)))
+            pipeline=dict(episode='S01E50',source_start=0,input_frames=5,output_frames=12,lookahead_frames=1,native_recipe_sha256='recipe',ass_sha256='ass',pipeline_prefetch=False,resource_wait_in_process=False,video_encodes=1,ass_after_rife=True,coverage=dict(failed_frames=0,processed_frames=6,restored_frames=6,no_detection_frames=0),frame_log_sha256=b.digest(frames),cuts=[])
+            receipt=suite/'pipeline.json';b.save(receipt,pipeline)
+            decoded=suite/'decoded.sha256';decoded.write_text('\n'.join('0, 0, 0, 1, 12, '+('b'*64) for _ in range(12)))
+            peaks={'GPU-A':dict(index=0,name='NVIDIA RTX A4000'),'GPU-B':dict(index=1,name='Tesla T10')}
+            telemetry=suite/'gpu.jsonl';telemetry.write_text(json.dumps(dict(gpus=[dict(uuid=k,**v) for k,v in peaks.items()])))
+            case=dict(name='serial',config=str(config),config_sha256=b.digest(config),backend_fingerprint='fp',gfpgan_exercised=True,pipeline=pipeline,
+                validation=dict(sha256=b.digest(sample),frames=12,max_video_grid_error=0),frame_evidence=b.frame_evidence(frames,0,clocks),
+                video_hashes=dict(path=str(decoded),sha256=b.digest(decoded),frames=12,frame_hashes=['b'*64]*12),
+                attempts=[dict(status='CHECKED',output=str(sample),pipeline_binding=dict(pipeline_receipt_path=str(receipt),pipeline_receipt_sha256=b.digest(receipt)),telemetry=dict(path=str(telemetry),sha256=b.digest(telemetry),samples=1,errors=[],peaks=peaks))])
+            case_path=suite/'serial.result.json';b.save(case_path,case)
+            args=SimpleNamespace(external_serial_baseline=case_path,external_baseline_sha256=b.digest(case_path),external_baseline_binding=binding_path,external_binding_sha256=b.digest(binding_path),with_audio=False)
+            engine=SimpleNamespace(config=lambda p:{})
+            borrowed=b.external_baseline(args,binding,active,engine,lambda c:'fp')
+            self.assertTrue(borrowed['borrowed']);self.assertTrue(borrowed['not_executed_this_suite'])
+            self.assertEqual(b.selected_cases(['overlap1-gate'],True),['overlap1-gate'])
+            with self.assertRaises(ValueError):b.selected_cases(['serial','overlap1-gate'],True)
+            changed=dict(binding,master_sha256='changed')
+            with self.assertRaises(ValueError):b.external_baseline(args,changed,active,engine,lambda c:'fp')
+            sample.write_bytes(b'tampered')
+            with self.assertRaises(ValueError):b.external_baseline(args,binding,active,engine,lambda c:'fp')
+
     def test_cold_wait_captures_raw_temperatures_and_bounded_failure(self):
         def row(a,t):return dict(gpus=[dict(index=0,name='NVIDIA RTX A4000',temperature_c=a),dict(index=1,name='Tesla T10',temperature_c=t)],unix=123)
         class FakeTelemetry:
@@ -151,7 +183,7 @@ class BenchTests(unittest.TestCase):
                 def __init__(self,path):self.errors=[]
                 def __enter__(self):return self
                 def __exit__(self,*args):pass
-                def summary(self):return dict(peaks={'a':dict(name='NVIDIA RTX A4000'),'b':dict(name='Tesla T10')})
+                def summary(self):return dict(peaks={'a':dict(index=0,name='NVIDIA RTX A4000'),'b':dict(index=1,name='Tesla T10')})
             restorers=[]
             def run(master,sample,episode,c,**kwargs):
                 restorers.append(kwargs['restorer']);sample.write_bytes(b'encoded')
@@ -185,6 +217,21 @@ class BenchTests(unittest.TestCase):
             self.assertEqual([c['attempts'][0]['model_loads_this_attempt'] for c in cold_report['cases']],[2,2])
             self.assertTrue(all(not c['attempts'][0]['model_reused'] for c in cold_report['cases']))
             self.assertTrue(all(c['cold_start_wait']['status']=='READY' for c in cold_report['cases']))
+            # A fresh-process overlap borrows the pinned serial; its loads/wall stay historical.
+            args.output=post/'cache/scratch/external';args.run_id='cpu-external';args.cases=['overlap1-gate']
+            args.external_serial_baseline='serial.json';args.external_baseline_sha256='sha'
+            args.external_baseline_binding='binding.json';args.external_binding_sha256='binding-sha'
+            borrowed=json.loads(json.dumps(cold_report['cases'][0]))
+            borrowed.update(borrowed=True,externally_completed=True,not_executed_this_suite=True)
+            with patch.dict(sys.modules,modules),patch.object(b,'validate_token',return_value={}),patch.object(b,'probe_compute'),patch.object(b,'release_models'),patch.object(b,'wait_cold_start',side_effect=cold_wait),patch.object(b,'external_baseline',return_value=borrowed),patch.object(b,'Telemetry',FakeTelemetry),patch.object(b,'media_hash',return_value=dict(frames=12,frame_hashes=['x']*12)):
+                external_report=b.execute(args)
+            self.assertEqual([c['name'] for c in external_report['cases']],['serial','overlap1-gate'])
+            self.assertTrue(external_report['cases'][0]['not_executed_this_suite'])
+            self.assertEqual(external_report['total_successful_model_loads'],2)
+            self.assertEqual(external_report['cases'][1]['attempts'][0]['model_loads_this_attempt'],2)
+            self.assertIn('exclude',external_report['external_baseline_scope'])
+            args.external_serial_baseline=None;args.external_baseline_sha256=None
+            args.external_baseline_binding=None;args.external_binding_sha256=None
             args.cases=None;args.cold_start_each_case=False
             # Explicit bounded retry retains both failures and records wasted wall.
             args.output=post/'cache/scratch/failed';args.run_id='cpu-failed';args.max_retries=1
