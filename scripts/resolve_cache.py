@@ -115,7 +115,7 @@ def delete_uploaded_master(root, ep):
     return {'state': 'UPLOADED_LOCAL_MASTER_DELETED', 'episode': ep, 'sha256': receipt['sha256']}
 
 
-def cleanup_local_anchor(root, ep, execute=False):
+def cleanup_local_anchor(root, ep, execute=False, expected_snapshot=None):
     """Release only CacheClip while retaining the verified, authorized local master."""
     import re
     root = Path(root).resolve()
@@ -145,6 +145,8 @@ def cleanup_local_anchor(root, ep, execute=False):
     if CACHE.resolve() != CACHE.absolute() or CACHE.parent.resolve() != Path('D:/ResolveWork').absolute():
         raise ValueError('CacheClip resolves outside the exact authorized directory')
     baseline = snapshot(CACHE)
+    if expected_snapshot is not None and baseline != expected_snapshot:
+        raise ValueError('CacheClip changed since the queued cleanup request; retain newer cache')
     report = {'episode': ep, 'state': 'LOCAL_ANCHORED_CACHE_PLAN', 'checked_at': now(),
               'master_sha256': expected, 'master_retained': True, 'cache_path': str(CACHE),
               'bytes': sum(v['bytes'] for v in baseline['entries'])}
