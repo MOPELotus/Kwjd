@@ -31,6 +31,8 @@ class ResourceWaitGPU(WaitGPU):
         self.stage = stage
         self.detail = detail
         self.release_required = True
+        self.recovery_errors = []
+        self.recovery_exceptions = []
         self.preserve_verified_segments = True
         self.max_redo_native_frames = 250
         self.max_redo_source_seconds = 10
@@ -291,15 +293,31 @@ class NativeResourceGate:
         if not is_oom:
             raise error
         failure = ResourceWaitGPU('oom', stage, str(error))
+        # Publish the original cause before another waiting stage can observe it.
+        failure.__cause__ = error
         self._publish_failure(failure)
         # Caller must leave work() before invoking oom; release callbacks must
         # never race another thread's GPU operation.
         quiescent = self._quiesce_for_release()
         if quiescent:
-            if self._sync:
-                self._sync()
-            if self._empty:
-                self._empty()
+            for name, callback in (('synchronize', self._sync), ('empty_cache', self._empty)):
+                if callback is None:
+                    continue
+                try:
+                    callback()
+                except Exception as callback_error:
+                    # Recovery is best-effort after a primary CUDA OOM. Keep
+                    # that structured release result and original cause, while
+                    # reporting the exact callback error instead of hiding it.
+                    # A failed synchronizer also forbids attempting cache work.
+                    report = dict(callback=name, type=type(callback_error).__name__,
+                                  message=str(callback_error))
+                    with self._cv:
+                        failure.recovery_errors.append(report)
+                        failure.recovery_exceptions.append(callback_error)
+                        failure.detail += f'; recovery {name} failed: {type(callback_error).__name__}: {callback_error}'
+                        failure.args = (f'Native resource release (oom, stage={stage}): {failure.detail}',)
+                    break
         raise failure from error
 
     def _quiesce_for_release(self):
@@ -336,6 +354,8 @@ class NativeResourceGate:
         with self._cv:
             result = dict(self._metrics)
             result['release_counts'] = dict(result['release_counts'])
+            result['recovery_errors'] = ([dict(item) for item in self._failure.recovery_errors]
+                                         if isinstance(self._failure, ResourceWaitGPU) else [])
             if self._thermal_since is not None:
                 result['thermal_wait_seconds'] += self._clock() - self._thermal_since
             result.update(last_snapshot={i: dict(temperature_celsius=row.temperature, free_mib=row.free_mib)

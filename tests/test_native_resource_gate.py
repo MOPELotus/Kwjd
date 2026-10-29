@@ -152,6 +152,40 @@ class NativeResourceGateTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             gate.reset_cancel()
 
+    def test_oom_callback_failures_preserve_primary_cause_and_report_error(self):
+        for failed_callback in ('synchronize', 'empty_cache'):
+            with self.subTest(callback=failed_callback):
+                calls = []
+                callback_error = RuntimeError('CUDA recovery callback failed')
+                def callback(name):
+                    def run():
+                        calls.append(name)
+                        if name == failed_callback:
+                            raise callback_error
+                    return run
+                gate, _ = self.make([snapshot()],
+                    synchronize=callback('synchronize'), empty_cache=callback('empty_cache'))
+                original_oom = RuntimeError('CUDA out of memory. original allocation')
+                with self.assertRaises(ResourceWaitGPU) as raised:
+                    gate.oom(original_oom, 'native-rife')
+                failure = raised.exception
+                self.assertEqual(failure.reason, 'oom')
+                self.assertIs(failure.__cause__, original_oom)
+                self.assertEqual(failure.recovery_exceptions, [callback_error])
+                expected = [dict(callback=failed_callback, type='RuntimeError',
+                                 message='CUDA recovery callback failed')]
+                self.assertEqual(failure.recovery_errors, expected)
+                self.assertEqual(gate.summary()['recovery_errors'], expected)
+                self.assertIn('original allocation', str(failure))
+                self.assertIn(f'recovery {failed_callback} failed', str(failure))
+                self.assertEqual(calls, ['synchronize'] if failed_callback == 'synchronize'
+                                 else ['synchronize', 'empty_cache'])
+                # Other stages receive the same classified failure and cause.
+                with self.assertRaises(ResourceWaitGPU) as other:
+                    gate.check()
+                self.assertIs(other.exception, failure)
+                self.assertIs(other.exception.__cause__, original_oom)
+
     def test_default_query_is_single_bounded_physical_snapshot(self):
         with patch('native_resource_gate.subprocess.check_output', return_value=(
                 '0, GPU-A, NVIDIA RTX A4000, 93, 6000\n1, GPU-B, Tesla T10, 84, 4000\n')) as query:
