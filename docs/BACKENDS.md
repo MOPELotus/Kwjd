@@ -875,8 +875,14 @@ full sample decoding, then reused the 98 linked segments. Its first new segment
 restored frames including lookahead and zero failed frames. Media SHA and
 ordinary pipeline validation passed; the active fingerprint stayed unchanged
 after worker preparation. The 98 reused media inodes were also checked against
-the original context. Natural hot abort/retry and whole-episode completion
-remain under monitoring. Idle
+the original context. A natural T10 85C exit at segment 101 startup was subsequently observed:
+the worker had no child and its task GPU allocations were released during
+WAIT_GPU, then the same parent worker automatically retried and completed that
+250-native/600-output segment in 79.0633s of pipeline time. All 101 previously
+accepted media and readiness SHA values were rechecked unchanged. The failed
+partial was empty and had a matching verified release journal, so this proves
+startup release/retry, not mid-segment progress preservation or an OOM test.
+Whole-episode completion remains under monitoring. Idle
 E50/E51 takeover owners were refreshed to avoid cached Python modules. E51
 continues waiting for E50 final acceptance and stage release.
 
