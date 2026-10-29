@@ -718,3 +718,16 @@ E51 GPU admission additionally requires E50's real final report, SHA-bound
 must be written from actual review/release evidence by the active Linux goal;
 technical READY alone cannot bypass review or stage release. This gate does not
 wait for Windows to be online or invent a final quality receipt.
+
+Read-only production evidence helpers: `scripts/audit_native_prefix.py --context
+<native segment context> --report <new JSON>` verifies existing completed segment,
+pipeline and frame-log hashes without inference or repeated decode. Primary native
+frames and intentional lookahead are counted separately. Use it before legitimate
+stage release removes segment media; its prefix result is not final acceptance.
+`scripts/capture_master_review.py --episode S01E50 --destination <new reports dir>`
+(also E51) binds native reference PNGs to the real upload receipt and actual decoded
+PTS before the exported master is released. Existing destinations are refused.
+Neither helper changes the active backend fingerprint or approves visual quality.
+Human visual scope is Guo Degang only; audience/other-person restoration quality
+does not block acceptance or justify new enhancement jobs. Subtitle, audio and
+whole-file technical checks still apply.
