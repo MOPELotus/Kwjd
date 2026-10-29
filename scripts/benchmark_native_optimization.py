@@ -59,12 +59,22 @@ def new_output(path, post):
     return path
 
 
-def variant_configs(active, output, runid):
+def selected_cases(names=None):
+    names=[item[0] for item in CASES] if names is None else list(names)
+    allowed={item[0] for item in CASES}
+    if not names or names[0]!='serial' or len(set(names))!=len(names) or not set(names)<=allowed:
+        raise ValueError('Cases must be unique known modes, with serial baseline first')
+    return names
+
+
+def variant_configs(active, output, runid, names=None):
     if not re.fullmatch(r'[A-Za-z0-9_-]{1,64}', runid):
         raise ValueError('Unsafe run ID')
     raw = json.loads(Path(active).read_text())
     result = []
-    for name, overlap, gate, depth in CASES:
+    modes={item[0]:item for item in CASES}
+    for case_name in selected_cases(names):
+        name,overlap,gate,depth=modes[case_name]
         cfg = dict(raw, pipeline_prefetch=overlap, resource_wait_in_process=gate,
                    pipeline_prefetch_frames=depth, benchmark_native_frame_sha256=True)
         path = Path(active).parent/f'runtime.optimization-{runid}-{name}.json'
@@ -120,7 +130,7 @@ class Telemetry:
     """Bounded append-only physical NVIDIA samples; no device mutation."""
     def __init__(self, path, interval=1):
         self.path=Path(path);self.interval=interval;self.stop=threading.Event()
-        self.peaks={};self.errors=[];self.samples=0;self.ready=threading.Event()
+        self.peaks={};self.errors=[];self.samples=0;self.ready=threading.Event();self.latest=None
 
     def collect(self):
         with self.path.open('x') as stream:
@@ -142,7 +152,7 @@ class Telemetry:
                 except Exception as error:
                     row['error']=repr(error);self.errors.append(repr(error))
                 row['query_seconds']=time.monotonic()-began
-                stream.write(json.dumps(row)+'\n');stream.flush();self.ready.set()
+                stream.write(json.dumps(row)+'\n');stream.flush();self.latest=row;self.ready.set()
                 self.stop.wait(self.interval)
 
     def __enter__(self):
@@ -161,6 +171,41 @@ class Telemetry:
     def summary(self):
         return dict(samples=self.samples,peaks=self.peaks,errors=self.errors,
                     path=str(self.path),sha256=digest(self.path))
+
+
+
+def wait_cold_start(path, result, timeout=120):
+    """Observe unloaded physical GPUs; never change fans/power or wait forever."""
+    began=time.monotonic()
+    result.update(status='WAITING',timeout_seconds=timeout,
+                  thresholds_c={'0':85,'1':78},samples_path=str(path))
+    telemetry=Telemetry(path)
+    try:
+        with telemetry:
+            while True:
+                latest=telemetry.latest
+                if latest is None or latest.get('error') or telemetry.errors:
+                    raise RuntimeError('Cold-start physical telemetry failed')
+                gpus={gpu['index']:gpu for gpu in latest['gpus']}
+                if (gpus.get(0,{}).get('name')!='NVIDIA RTX A4000'
+                        or gpus.get(1,{}).get('name')!='Tesla T10'):
+                    raise RuntimeError('Cold-start physical GPU indices differ')
+                result['last_raw_sample']=latest
+                result.setdefault('first_raw_sample',latest)
+                if gpus[0]['temperature_c']<=85 and gpus[1]['temperature_c']<=78:
+                    result['status']='READY';break
+                remaining=timeout-(time.monotonic()-began)
+                if remaining<=0:
+                    result['status']='TIMEOUT'
+                    raise TimeoutError('Physical GPUs did not reach cold-start thresholds within120s')
+                time.sleep(min(1,remaining))
+    except Exception as error:
+        result['error']=repr(error)
+        if result['status']=='WAITING':result['status']='FAILED'
+        raise
+    finally:
+        result['wait_seconds']=time.monotonic()-began
+        result['telemetry']=telemetry.summary()
 
 
 def media_hash(path, output, *, audio=False):
@@ -270,6 +315,8 @@ def execute(args):
     from enhance_stage import WaitGPU, check_space
     from storage_policy import minimum_free_gib
     suite_start=time.monotonic()
+    names=selected_cases(getattr(args,'cases',None))
+    cold=bool(getattr(args,'cold_start_each_case',False))
     active=args.config.resolve();active_sha=digest(active);post=active.parent.parent
     if active.name!='runtime.native-active.json':
         raise ValueError('Explicit existing runtime.native-active.json required')
@@ -298,8 +345,8 @@ def execute(args):
     report=dict(schema_version=1,episode=args.episode,master=str(master),master_sha256=master_sha,
         active_config_sha256=active_sha,backend_fingerprint=fp,source_start=args.source_start,
         source_total_frames=full,clocks=clocks,isolation_token=token,cases=[],status='FAILED',
-        production_approval=False,final_approval=False,
-        timing_scope='Complete suite includes preparation/shared audio/model teardown; case complete wall includes init/run/decode/PTS/hash/mux. Shared gate modes run warm after serial-gate; compare both init-inclusive and run-only timings.',
+        production_approval=False,final_approval=False,cold_start_each_case=cold,selected_cases=names,
+        timing_scope=('Complete suite includes preparation/shared audio/final model teardown; each case complete wall includes prior-model release, cooling, init/run/decode/PTS/hash/mux. Cold mode releases/reloads every case and waits for GPU0<=85C/T10<=78C (maximum120s).' if cold else 'Complete suite includes preparation/shared audio/model teardown; case complete wall includes prior-model release, init/run/decode/PTS/hash/mux. Gate modes share a warm instance; compare both init-inclusive and run-only timings.'),
         visual_review=dict(status='PENDING',continuous_samples='Each case sample.mkv covers the entire bounded native interval',
             requirement='Controller must play each sample on physical GPU, operate player and inspect screenshots; decode/hash checks do not establish visual quality'),
         recovery_scope='Reports actual gate waits/OOM/failures only; absent real recovery events does not prove recovery; no injected GPU pressure or thermal workload')
@@ -308,22 +355,29 @@ def execute(args):
     processor=None;total_loads=0;failure=None
     try:
         with exclusive(post/'jobs/.worker.lock'):
-            variants=variant_configs(active,output,args.run_id)
+            variants=variant_configs(active,output,args.run_id,names)
             save(output/'input-binding.json',dict(master_sha256=master_sha,active_config_sha256=active_sha,
                 recipe_sha256=cfg['native_recipe_sha256'],recipe=recipe,prepared_frame_count=full,clocks=clocks))
             audio,pcm=(audio_slice(master,output,clocks) if args.with_audio else (None,None))
             for name,path in variants:
+                case_start=time.monotonic()
                 validate_token(args.isolation_token,args.episode,master_sha,fp)
                 case_cfg=engine.config(path);case_fp=fingerprint(case_cfg)
                 if case_cfg['post_root']!=str(post):raise ValueError('Variant post_root changed')
                 case=dict(name=name,config=str(path),config_sha256=digest(path),backend_fingerprint=case_fp,attempts=[])
                 report['cases'].append(case)
-                if name=='serial-gate' and processor is not None:
+                if processor is not None and (cold or bool(processor.gate)!=case_cfg.get('resource_wait_in_process',False)):
+                    release_start=time.monotonic()
                     try:release_models(processor)
                     except Exception as error:
                         report['cleanup_error']=repr(error);report['requires_process_exit']=True
                         raise
-                    finally:processor=None
+                    finally:
+                        processor=None;case['prior_model_release_seconds']=time.monotonic()-release_start
+                if cold:
+                    case['cold_start_wait']={}
+                    try:wait_cold_start(output/f'{name}.cold-start-gpu.jsonl',case['cold_start_wait'])
+                    finally:case['complete_wall_seconds']=time.monotonic()-case_start
                 for attempt in range(args.max_retries+1):
                     folder=output/f'{name}-attempt{attempt}';folder.mkdir()
                     sample=folder/'sample.mkv';began=time.monotonic()
@@ -398,7 +452,8 @@ def execute(args):
                         if not retry:raise
                     finally:
                         item['complete_attempt_wall_seconds']=time.monotonic()-began
-                case['complete_wall_seconds']=sum(x['complete_attempt_wall_seconds'] for x in case['attempts'])
+                case['complete_attempts_wall_seconds']=sum(x['complete_attempt_wall_seconds'] for x in case['attempts'])
+                case['complete_wall_seconds']=time.monotonic()-case_start
                 case['comparison_to_serial']=compare(report['cases'][0],case)
                 if not case['comparison_to_serial']['cuts_equal']:raise ValueError('Cut decisions changed')
                 if digest(active)!=active_sha or digest(master)!=master_sha:
@@ -433,6 +488,8 @@ def main():
     parser.add_argument('--source-frames',type=int,required=True)
     parser.add_argument('--max-retries',type=int,choices=(0,1),default=0)
     parser.add_argument('--with-audio',action='store_true')
+    parser.add_argument('--cold-start-each-case',action='store_true',help='Release/reload models each case; wait at most120s for physical GPU0<=85C and GPU1<=78C')
+    parser.add_argument('--cases',nargs='+',choices=[item[0] for item in CASES],help='Selected modes in requested order; serial must be first')
     args=parser.parse_args()
     execute(args)
 

@@ -105,6 +105,35 @@ class BenchTests(unittest.TestCase):
             samples=b.clock_bounds(0,count,250)['audio_sample_count']
             self.assertEqual(samples*b.Fraction('1/48000')*48000,samples)
 
+    def test_case_selection_requires_serial_first_and_no_duplicates(self):
+        self.assertEqual(b.selected_cases(['serial','overlap1-gate']),['serial','overlap1-gate'])
+        for names in ([],['overlap1-gate'],['serial','serial'],['serial','bogus']):
+            with self.assertRaises(ValueError):b.selected_cases(names)
+
+    def test_cold_wait_captures_raw_temperatures_and_bounded_failure(self):
+        def row(a,t):return dict(gpus=[dict(index=0,name='NVIDIA RTX A4000',temperature_c=a),dict(index=1,name='Tesla T10',temperature_c=t)],unix=123)
+        class FakeTelemetry:
+            errors=[]
+            rows=[]
+            def __init__(self,path):pass
+            def __enter__(self):return self
+            def __exit__(self,*args):pass
+            @property
+            def latest(self):return self.rows.pop(0) if len(self.rows)>1 else self.rows[0]
+            def summary(self):return dict(samples=2)
+        FakeTelemetry.rows=[row(86,79),row(85,78)]
+        result={}
+        with patch.object(b,'Telemetry',FakeTelemetry),patch.object(b.time,'sleep') as sleep:
+            b.wait_cold_start('unused.jsonl',result)
+        self.assertEqual(result['status'],'READY');sleep.assert_called_once()
+        self.assertEqual(result['first_raw_sample']['gpus'][0]['temperature_c'],86)
+        self.assertEqual(result['last_raw_sample']['gpus'][1]['temperature_c'],78)
+        FakeTelemetry.rows=[row(86,79)];result={}
+        with patch.object(b,'Telemetry',FakeTelemetry),patch.object(b.time,'monotonic',side_effect=[0,120,120]),patch.object(b.time,'sleep') as sleep:
+            with self.assertRaises(TimeoutError):b.wait_cold_start('unused.jsonl',result)
+        self.assertEqual(result['status'],'TIMEOUT');self.assertEqual(result['wait_seconds'],120)
+        sleep.assert_not_called()
+
     def test_suite_loads_baseline_then_reuses_three_gate_cases(self):
         with tempfile.TemporaryDirectory() as temp:
             post=Path(temp)/'post';(post/'backend').mkdir(parents=True);(post/'jobs').mkdir();(post/'cache/scratch').mkdir(parents=True)
@@ -145,6 +174,18 @@ class BenchTests(unittest.TestCase):
             self.assertFalse(report['production_approval'])
             self.assertGreaterEqual(report['complete_suite_wall_seconds'],sum(c['complete_wall_seconds'] for c in report['cases']))
             self.assertEqual(master.read_bytes(),b'original master');self.assertEqual(active.read_text(),'{}')
+            # Selected cold cases each wait before a fresh initialization.
+            args.output=post/'cache/scratch/cold';args.run_id='cpu-cold'
+            args.cases=['serial','overlap1-gate'];args.cold_start_each_case=True
+            def cold_wait(path,result):result.update(status='READY',wait_seconds=.1,last_raw_sample=dict(temperatures=[85,78]))
+            with patch.dict(sys.modules,modules),patch.object(b,'validate_token',return_value={}),patch.object(b,'probe_compute'),patch.object(b,'release_models') as cleanup,patch.object(b,'wait_cold_start',side_effect=cold_wait) as cooling,patch.object(b,'Telemetry',FakeTelemetry),patch.object(b,'media_hash',return_value=dict(frames=12,frame_hashes=['x']*12)):
+                cold_report=b.execute(args)
+            self.assertEqual(cooling.call_count,2);self.assertEqual(cleanup.call_count,2)
+            self.assertEqual([c['name'] for c in cold_report['cases']],['serial','overlap1-gate'])
+            self.assertEqual([c['attempts'][0]['model_loads_this_attempt'] for c in cold_report['cases']],[2,2])
+            self.assertTrue(all(not c['attempts'][0]['model_reused'] for c in cold_report['cases']))
+            self.assertTrue(all(c['cold_start_wait']['status']=='READY' for c in cold_report['cases']))
+            args.cases=None;args.cold_start_each_case=False
             # Explicit bounded retry retains both failures and records wasted wall.
             args.output=post/'cache/scratch/failed';args.run_id='cpu-failed';args.max_retries=1
             wait=modules['enhance_stage'].WaitGPU
