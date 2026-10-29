@@ -881,7 +881,14 @@ WAIT_GPU, then the same parent worker automatically retried and completed that
 250-native/600-output segment in 79.0633s of pipeline time. All 101 previously
 accepted media and readiness SHA values were rechecked unchanged. The failed
 partial was empty and had a matching verified release journal, so this proves
-startup release/retry, not mid-segment progress preservation or an OOM test.
+startup release/retry. A second natural T10 85C exit interrupted segment 104
+after 90 processed native-frame rows. The incomplete log was saved before retry;
+its 5MiB partial was released with the matching SHA journal. The same parent
+worker reran only that incomplete segment, completing 250 native/600 output
+frames in 81.2502s with zero failures. All 104 earlier accepted media and readiness
+hashes were rechecked unchanged. This additionally verifies mid-segment
+abort/retry; it does not preserve the 90 incomplete computations and is not an
+OOM test. No artificial heating or GPU setting changes were used.
 Whole-episode completion remains under monitoring. Idle
 E50/E51 takeover owners were refreshed to avoid cached Python modules. E51
 continues waiting for E50 final acceptance and stage release.
