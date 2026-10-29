@@ -638,3 +638,34 @@ are forbidden. Defer any cache migration that would consume the running E49
 rework's peak reserve; complete the verified handoff/authorized cleanup and
 recalculate the whole next-episode peak first. Backend short acceptance is not
 proof that deployment storage and queue reload have already been completed.
+
+
+### E50 persistent receipt takeover (2026-10-29)
+
+`follow_e50_receipt.py` is the scoped E50 owner, installed as the enabled user
+unit `kwjd-e50-takeover.service`. It waits for real atomic master publication
+and the matching upload/local-release receipt, never hashes or changes an
+in-flight upload. It freshly validates the exact master, reuses only its explicit
+human-approved tail exception, preserves the reviewed SRT, checks packaged fonts,
+and copies the unchanged approved MiSans84 defaults to a separate master-bound
+style. This is standing-authorized technical inheritance, not a fabricated new
+human playback approval. Four source/master audio windows plus stream origins
+must pass strict clock checks before writing the derived ASS timing mapping;
+uncertain alignment is a genuine attention state, never a guessed correction.
+
+The owner then performs actual bounded current-master native calibration and
+persists a real SHA-bound queue entry. It checks the larger of AI segment/concat
+and final mux phase requirements, including retained mixed audio and25GiB floor,
+before starting `kwjd-native-production-e50.service` (`stage all`, E50 only).
+That production unit is admission-started, not blindly boot-enabled; the owner
+is boot-enabled and observes an already active Worker without launching another.
+Status/alerts/commands and quiet progress live in `post/reports/S01E50-takeover`.
+No new paid API, Windows polling, E51 upload, quality downgrade or reserve policy
+change is involved. The old idle E49-only Worker was retired under its queue lock.
+
+A separate one-shot observation accepts only the exact E51 SHA and actual
+`LOCAL_ANCHORED_CACHE_CLEANED`/master-retained receipt. It writes a durable pending
+notification and Chinese SSH log message. This environment exposes no cross-thread
+chat-send tool; a queued notice explicitly remains undelivered until an actual
+chat-capable peer sends it. Absence of that cache receipt is normal, never an E50
+failure or authority to clean any Windows path.
