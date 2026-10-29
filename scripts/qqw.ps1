@@ -48,7 +48,7 @@ function DiscoverEpisodes {
 }
 function RemoteHash([string]$p) {
  if($p -notmatch '^[A-Za-z0-9_./-]+$'){ throw "Unsafe remote path: $p" }
- $v=@(& ssh.exe -o BatchMode=yes $SshAlias "sha256sum '$p' 2>/dev/null || true")
+ $v=@(& ssh.exe -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=3 $SshAlias "sha256sum '$p' 2>/dev/null || true")
  AssertExit 'remote hash'
  $line=@($v | Where-Object {$_ -match '^[0-9a-fA-F]{64}\s+'} | Select-Object -First 1)
  if($line.Count -eq 0){return ''}
@@ -62,16 +62,16 @@ function Upload([string]$from,[string]$to,[switch]$ReplaceStyle){
  if($ReplaceStyle -and $to -notmatch '^qingqingwu/post/styles/(template[.]ass([.]ready[.]json)?|fonts/[A-Za-z0-9_.-]+[.](ttf|otf|ttc))$'){throw 'Replacement is limited to current style assets'}
  if($old -and -not $ReplaceStyle){throw "Remote file differs, refusing overwrite: $to"}
  $parent=$to.Substring(0,$to.LastIndexOf('/'))
- & ssh.exe -o BatchMode=yes $SshAlias "mkdir -p '$parent'"; AssertExit 'mkdir'
+ & ssh.exe -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=3 $SshAlias "mkdir -p '$parent'"; AssertExit 'mkdir'
  $partial="$to.uploading"
  $address=$SshAlias+':'+$partial
- & scp.exe -O -o Compression=no -- $from $address; AssertExit 'scp upload'
+ & scp.exe -O -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o Compression=no -- $from $address; AssertExit 'scp upload'
  if((RemoteHash $partial) -ne $hash){throw "Upload SHA mismatch: $to"}
  if($old -and $ReplaceStyle){
   # Compare-and-replace: never replace a concurrently changed style asset.
-  & ssh.exe -o BatchMode=yes $SshAlias "test `"`$(sha256sum '$to' | cut -d ' ' -f 1)`" = '$old' && mv '$partial' '$to'"
+  & ssh.exe -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=3 $SshAlias "test `"`$(sha256sum '$to' | cut -d ' ' -f 1)`" = '$old' && mv '$partial' '$to'"
  }else{
-  & ssh.exe -o BatchMode=yes $SshAlias "test ! -e '$to' && mv '$partial' '$to'"
+  & ssh.exe -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=3 $SshAlias "test ! -e '$to' && mv '$partial' '$to'"
  }
  AssertExit 'publish'
  Write-Host "Verified upload $to" -ForegroundColor Green
@@ -92,7 +92,7 @@ function Download([string]$from,[string]$to){
  $staging=Join-Path $RootDir '.kwjd/downloads'
  New-Item -ItemType Directory -Force $staging | Out-Null
  $part=Join-Path $staging "$hash.downloading"
- & scp.exe -O -o Compression=no -- ($SshAlias+':'+$from) $part; AssertExit 'scp download'
+ & scp.exe -O -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o Compression=no -- ($SshAlias+':'+$from) $part; AssertExit 'scp download'
  if((Get-FileHash -Algorithm SHA256 -LiteralPath $part).Hash.ToLowerInvariant() -ne $hash){throw 'Download SHA mismatch'}
  Move-Item -LiteralPath $part -Destination $to
  Write-Host "Verified download $to" -ForegroundColor Green
@@ -125,14 +125,14 @@ if($Command -in @('adopt','status','doctor')){
  return
 }
 if($Command -eq 'remote-status'){
- & ssh.exe -o BatchMode=yes $SshAlias 'python3 ~/qingqingwu/repo/kwjd.py status --role linux'
+ & ssh.exe -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=3 $SshAlias 'python3 ~/qingqingwu/repo/kwjd.py status --role linux'
  AssertExit 'remote status'
  return
 }
 if($Command -eq 'sync-style'){
  $folder=Join-Path $RootDir 'styles'
  if(-not(Test-Path (Join-Path $folder 'template.ass'))){throw 'Aegisub template missing'}
- & ssh.exe -o BatchMode=yes $SshAlias 'mkdir -p ~/qingqingwu/post/styles/fonts'
+ & ssh.exe -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=3 $SshAlias 'mkdir -p ~/qingqingwu/post/styles/fonts'
  AssertExit 'style mkdir'
  Upload (Join-Path $folder 'template.ass') 'qingqingwu/post/styles/template.ass' -ReplaceStyle | Out-Null
  foreach($font in (Get-ChildItem -LiteralPath (Join-Path $folder 'fonts') -File)){
@@ -269,7 +269,7 @@ foreach($n in $numbers){
    AssertExit 'final quality check receipt'
    $receipt=Join-Path $RootDir ".kwjd\receipts\$id.json"
    Upload $receipt "qingqingwu/post/receipts/$id.json" | Out-Null
-   & ssh.exe -o BatchMode=yes $SshAlias "python3 ~/qingqingwu/repo/scripts/episode_lifecycle.py cleanup --root ~/qingqingwu --episode $id --role linux --receipt ~/qingqingwu/post/receipts/$id.json --execute"
+   & ssh.exe -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=3 $SshAlias "python3 ~/qingqingwu/repo/scripts/episode_lifecycle.py cleanup --root ~/qingqingwu --episode $id --role linux --receipt ~/qingqingwu/post/receipts/$id.json --execute"
    AssertExit 'Linux receipt-gated episode cleanup'
    & python -X utf8 $lifecycle cleanup --root $RootDir --episode $id --role windows --execute
    AssertExit 'Windows receipt-gated episode cleanup'
