@@ -18,6 +18,7 @@ from cuda_trt import validate_assets
 
 SOURCES=['enhance_backend.py','enhance_stage.py','segmented_backend.py','concat_transfer.py',
     'linux_stage_handoff.py','cuda_trt.py','native_face_pipeline.py','native_face_recipe.py',
+    'native_frame_queue.py','native_resource_gate.py',
     'native_face_job.py','benchmark_native_face.py','face_frame_processor.py',
     'render_face_samples.py','server_worker.py','subtitle_timing.py','font_preflight.py','prepare_native_face_backend.py','storage_policy.py','stage_storage.py']
 

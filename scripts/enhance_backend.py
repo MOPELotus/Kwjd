@@ -51,8 +51,16 @@ def is_cut(left, right, threshold=.05, center_threshold=.10):
             or float(difference[5:50,24:72].mean())>=center_threshold)
 
 
+def validate_native_scheduling(data):
+    """Reject malformed opt-in scheduling before loading CUDA/models."""
+    from native_face_pipeline import pipeline_options
+    pipeline_options(data)
+
+
 def config(path):
     data = json.loads(Path(path).read_text())
+    if data.get('restoration_backend')=='cuda_gfpgan_fused':
+        validate_native_scheduling(data)
     if type(data.get('gpu')) is not int or data['gpu'] < 0:
         raise ValueError('Explicit nonnegative physical Vulkan GPU index required; no CPU fallback')
     if data.get('gpu_name') not in ('Tesla T10','NVIDIA RTX A4000'):
@@ -103,7 +111,8 @@ def config(path):
     if data.get('restoration_backend') == 'cuda_srvgg':
         data['fingerprint']=hashlib.sha256((data['fingerprint']+sha256(Path(__file__).with_name('cuda_restore.py'))).encode()).hexdigest()
     if data.get('restoration_backend')=='cuda_gfpgan_fused':
-        for name in ['native_face_pipeline.py','native_face_recipe.py','face_frame_processor.py','render_face_samples.py']:
+        for name in ['native_face_pipeline.py','native_face_recipe.py','face_frame_processor.py',
+                     'render_face_samples.py','native_frame_queue.py','native_resource_gate.py']:
             data['fingerprint']=hashlib.sha256((data['fingerprint']+sha256(Path(__file__).with_name(name))).encode()).hexdigest()
     if data.get('rife_backend') in ('cuda_onnx','cuda_trt','cuda_trt_sm86'):
         helper={'cuda_trt':'cuda_trt.py','cuda_trt_sm86':'cuda_trt_sm86.py','cuda_onnx':'cuda_rife.py'}[data['rife_backend']]

@@ -4,9 +4,13 @@ Uses the common segmented backend for recovery and existing source/audio handoff
 No worker may treat this styled checkpoint as a subtitle-free enhancement.
 """
 from collections import defaultdict
+from contextlib import contextmanager, ExitStack, nullcontext
+import threading
 from pathlib import Path
 from storage_policy import minimum_free_gib
 import json
+import hashlib
+import math
 import subprocess
 import time
 
@@ -35,31 +39,81 @@ def validate_pipeline(path,cfg,source_start,count,full):
     return dict(pipeline_receipt_path=str(receipt),pipeline_receipt_sha256=sha256(receipt))
 
 
+def pipeline_options(cfg):
+    """Validate candidate knobs before any GPU-runtime import or allocation."""
+    for flag in ('pipeline_prefetch','resource_wait_in_process','benchmark_native_frame_sha256'):
+        if type(cfg.get(flag,False)) is not bool:raise ValueError(flag+' must be boolean')
+    capacity=cfg.get('pipeline_prefetch_frames',1)
+    if type(capacity) is not int or capacity not in (1,2):
+        raise ValueError('pipeline_prefetch_frames must be 1 or 2')
+    poll=cfg.get('resource_wait_poll_seconds',1.5)
+    timeout=cfg.get('resource_wait_timeout_seconds',120.)
+    for name,value,low,high in (('resource_wait_poll_seconds',poll,1,2),
+                               ('resource_wait_timeout_seconds',timeout,1,300)):
+        if type(value) not in (int,float) or not math.isfinite(value) or not low<=value<=high:
+            raise ValueError(f'{name} must be finite and within {low}–{high} seconds')
+    return dict(capacity=capacity,poll_seconds=float(poll),thermal_timeout=float(timeout))
+
+
 class NativeFrames:
     """Persistent GF(A4000) and RIFE(T10), with CPU face fusion between them."""
     def __init__(self,cfg):
+        options=pipeline_options(cfg)
         from face_frame_processor import GFPGANProcessor
         from cuda_trt import CudaRife
         import torch
         import cv2
         self.torch=torch;self.cv2=cv2;self.cfg=cfg
         torch.set_num_threads(4);cv2.setNumThreads(4)
+        self.model_load_count=0;self.model_load_seconds={}
+        self.gate=None
+        if cfg.get('resource_wait_in_process',False):
+            from native_resource_gate import NativeResourceGate
+            self.gate=NativeResourceGate(poll_seconds=options['poll_seconds'],
+                thermal_timeout=options['thermal_timeout'],synchronize=self.synchronize_devices,
+                empty_cache=self.empty_device_caches)
         self.check_resources(initial=True)
         try:
-            self.face=GFPGANProcessor(Path(cfg['face_weights']))
+            with self.work('face-load'):
+                load_start=time.monotonic();self.face=GFPGANProcessor(Path(cfg['face_weights']))
+                self.model_load_seconds['face']=time.monotonic()-load_start
+            self.model_load_count+=1
         except RuntimeError as error:
             if 'WAIT_GPU' in str(error) or 'headroom' in str(error) or error.__class__.__name__=='OutOfMemoryError':
                 raise WaitGPU('Shared face initialization must wait: '+str(error)) from error
             raise
         self.check_resources()
-        try:self.rife=CudaRife(cfg)
+        try:
+            with self.work('rife-load'):
+                load_start=time.monotonic();self.rife=CudaRife(cfg)
+                self.model_load_seconds['rife']=time.monotonic()-load_start
+            self.model_load_count+=1
         except torch.cuda.OutOfMemoryError as error:
             raise WaitGPU('Shared RIFE initialization must wait') from error
         self.device=self.rife.device
         self.stream=torch.cuda.Stream(device=self.device)
         self.check_resources()
 
-    def check_resources(self,initial=False):
+    def synchronize_devices(self):
+        # Admission can cool already-hot physical hardware before CUDA is loaded.
+        # Do not create CUDA contexts merely to wait at that first admission.
+        if not self.torch.cuda.is_initialized():return
+        for index in (0,1):
+            with self.torch.cuda.device(index):self.torch.cuda.synchronize(index)
+
+    def empty_device_caches(self):
+        # Gate invokes this only after GPU leases quiesce. Live models/TRT state
+        # remain owned by this object; allocator cache release is not teardown.
+        if not self.torch.cuda.is_initialized():return
+        for index in (0,1):
+            with self.torch.cuda.device(index):self.torch.cuda.empty_cache()
+
+    def work(self,stage):
+        return self.gate.work(stage=stage) if self.gate is not None else nullcontext()
+
+    def check_resources(self,initial=False,cancel=None):
+        if self.gate is not None:
+            return self.gate.check(initial=initial,stage='native-resource-check',cancel=cancel)
         rows=subprocess.check_output(['nvidia-smi','--query-gpu=index,temperature.gpu,memory.free',
             '--format=csv,noheader,nounits'],text=True)
         for line in rows.splitlines():
@@ -92,9 +146,16 @@ def run(master,output,episode,cfg,*,source_start=0,source_frames=None,prepared=N
     if prepared is not None and recipe['master_sha256']!=prepared['sha256']:
         raise ValueError('Fused ASS recipe belongs to another native master')
     if prepared is None and recipe['master_sha256']!=sha256(master):raise ValueError('Fused recipe master differs')
-    model_start=time.monotonic();restorer=restorer or NativeFrames(cfg)
+    options=pipeline_options(cfg);capacity=options['capacity']
+    model_start=time.monotonic();loaded_this_run=restorer is None
+    restorer=restorer or NativeFrames(cfg)
     torch=restorer.torch;rife=restorer.rife;device=rife.device
+    gate=getattr(restorer,'gate',None)
+    def gpu_work(stage):
+        return gate.work(stage=stage,cancel=cancel) if gate is not None else nullcontext()
     times=defaultdict(float);times['initialization']=time.monotonic()-model_start
+    prefetch=cfg.get('pipeline_prefetch',False)
+    handoff=None;cancel=threading.Event()
     available=min(count+1,full-source_start);needed=1920*1080*3
     light=cfg.get('light_filter')
     if light not in ['none','clarity']:raise ValueError('Explicit tested lightweight filter required')
@@ -122,29 +183,67 @@ def run(master,output,episode,cfg,*,source_start=0,source_frames=None,prepared=N
     coverage=dict(processed_frames=0,restored_frames=0,no_detection_frames=0,faces_restored=0,failed_frames=0)
     emitted=generated=0;cuts=[];decoder=encoder=None;last_guard=0
     try:
-        with output.with_name(output.name+'.decoder.log').open('w') as dl,output.with_name(output.name+'.encoder.log').open('w') as el,frame_log.open('w') as fl:
+        with output.with_name(output.name+'.decoder.log').open('w') as dl,output.with_name(output.name+'.encoder.log').open('w') as el,frame_log.open('w') as fl,ExitStack() as cleanup:
             decoder=subprocess.Popen(decoder_command,stdout=subprocess.PIPE,stderr=dl)
             encoder=subprocess.Popen(encoder_command,stdin=subprocess.PIPE,stderr=el)
-            def read():
+            def read_cpu(index):
                 nonlocal last_guard
-                if time.monotonic()-last_guard>=2:restorer.check_resources();last_guard=time.monotonic()
+                if time.monotonic()-last_guard>=2:
+                    restorer.check_resources(cancel=cancel);last_guard=time.monotonic()
                 start=time.monotonic();raw=decoder.stdout.read(needed)
                 if len(raw)!=needed:raise ValueError('Truncated native25 frame')
                 image=np.frombuffer(raw,dtype=np.uint8).reshape(1080,1920,3).copy();times['decode_read']+=time.monotonic()-start
-                start=time.monotonic()
-                try:result,detail=restorer.face.process_bgr(image)
+                return image
+            def process_cpu(image,index):
+                try:
+                    with gpu_work('native-face'):
+                        start=time.monotonic();result,detail=restorer.face.process_bgr(image)
+                        times['face']+=time.monotonic()-start
                 except torch.cuda.OutOfMemoryError as error:
+                    if gate is not None:gate.oom(error,stage='native-face')
                     raise WaitGPU('Shared face inference memory changed; retain segment for retry') from error
-                times['face']+=time.monotonic()-start
+                for name,seconds in detail.get('times',{}).items():times['face_'+name]+=seconds
                 coverage['processed_frames']+=1;coverage['faces_restored']+=detail['faces_restored']
                 coverage['restored_frames' if detail['faces_detected'] else 'no_detection_frames']+=1
-                fl.write(json.dumps({'source_frame':source_start+coverage['processed_frames']-1,**detail})+'\n')
-                start=time.monotonic()
-                pixels=np.ascontiguousarray(result[:,:,::-1])
-                tensor=torch.from_numpy(pixels).permute(2,0,1).unsqueeze(0).to(device,dtype=torch.float32)/255
-                restorer.stream.synchronize();times['upload_to_rife']+=time.monotonic()-start
+                if not isinstance(result,np.ndarray) or result.dtype!=np.uint8 or result.shape!=(1080,1920,3):
+                    raise ValueError('Native handoff requires CPU BGR8 frames')
+                record={'source_frame':source_start+index,'lookahead':index>=count,**detail}
+                if cfg.get('benchmark_native_frame_sha256',False):
+                    start=time.monotonic()
+                    record['restored_bgr_sha256']=hashlib.sha256(memoryview(np.ascontiguousarray(result))).hexdigest()
+                    times['native_frame_sha256']+=time.monotonic()-start
+                fl.write(json.dumps(record)+'\n')
+                return image,result
+            @contextmanager
+            def producer_context():
+                with torch.inference_mode(),torch.cuda.device(restorer.face.device):
+                    yield
+            def cancel_reader():
+                if gate is not None:gate.wake()
+                if decoder.poll() is None:
+                    decoder.terminate()
+                    try:decoder.wait(timeout=3)
+                    except subprocess.TimeoutExpired:decoder.kill();decoder.wait()
+            if prefetch:
+                from native_frame_queue import NativeFrameQueue
+                handoff=NativeFrameQueue(read_cpu,process_cpu,primary_count=count,available=available,
+                    capacity=capacity,context=producer_context,cancel_reader=cancel_reader,stop=cancel)
+                cleanup.callback(handoff.close)
+            serial_index=0
+            def read():
+                nonlocal serial_index
+                if handoff is not None:image,result=handoff.get().value
+                else:
+                    image,result=process_cpu(read_cpu(serial_index),serial_index);serial_index+=1
+                start=time.monotonic();pixels=np.ascontiguousarray(result[:,:,::-1])
+                times['prepare_rife_cpu']+=time.monotonic()-start
+                with gpu_work('native-rife-upload'):
+                    start=time.monotonic()
+                    tensor=torch.from_numpy(pixels).permute(2,0,1).unsqueeze(0).to(device,dtype=torch.float32)/255
+                    restorer.stream.synchronize()
+                    times['upload_to_rife']+=time.monotonic()-start
                 return Image.fromarray(image[:,:,::-1]),tensor
-            with torch.inference_mode(),torch.cuda.stream(restorer.stream):
+            with torch.inference_mode(),torch.cuda.device(device),torch.cuda.stream(restorer.stream):
                 previous,a=read()
                 for index in range(count):
                     if index+1<available:
@@ -155,13 +254,14 @@ def run(master,output,episode,cfg,*,source_start=0,source_frames=None,prepared=N
                     while emitted<engine.output_count(count):
                         left,alpha=engine.frame_position(emitted)
                         if left!=index:break
-                        start=time.monotonic()
-                        if alpha and not cut and index+1<available:
-                            result=rife.interpolate(a,b,float(alpha));generated+=1
-                        else:result=a
-                        restorer.stream.synchronize();times['rife']+=time.monotonic()-start
-                        start=time.monotonic();pixels=(result[0].permute(1,2,0)*255).round().clamp_(0,255).to(torch.uint8).contiguous().cpu().numpy()
-                        times['output_transfer']+=time.monotonic()-start
+                        with gpu_work('native-rife'):
+                            start=time.monotonic()
+                            if alpha and not cut and index+1<available:
+                                result=rife.interpolate(a,b,float(alpha));generated+=1
+                            else:result=a
+                            restorer.stream.synchronize();times['rife']+=time.monotonic()-start
+                            start=time.monotonic();pixels=(result[0].permute(1,2,0)*255).round().clamp_(0,255).to(torch.uint8).contiguous().cpu().numpy()
+                            times['output_transfer']+=time.monotonic()-start
                         start=time.monotonic();encoder.stdin.write(pixels.tobytes());times['encode_pipe']+=time.monotonic()-start
                         emitted+=1
                     previous,a=following,b
@@ -169,6 +269,7 @@ def run(master,output,episode,cfg,*,source_start=0,source_frames=None,prepared=N
                         check_space(output.parent,16*1024**2,minimum_free_gib(cfg))
                         print(json.dumps(dict(episode=episode,source_start=source_start,processed=index+1,total=count,
                             output_frames=emitted,elapsed=time.monotonic()-began)),flush=True)
+            if handoff is not None:handoff.finish()
             start=time.monotonic();encoder.stdin.close()
             if decoder.stdout.read(1) or decoder.wait() or encoder.wait():raise RuntimeError('Native decode/final encode failed')
             times['encode_flush']=time.monotonic()-start
@@ -182,10 +283,24 @@ def run(master,output,episode,cfg,*,source_start=0,source_frames=None,prepared=N
             cuts=cuts,coverage=coverage,pipeline_seconds=time.monotonic()-began,times=dict(times),
             native_recipe_sha256=cfg['native_recipe_sha256'],ass_sha256=recipe['ass_sha256'],
             frame_log_sha256=sha256(frame_log),decode_command=decoder_command,encode_command=encoder_command,
-            video_encodes=1,ass_after_rife=True)
+            video_encodes=1,ass_after_rife=True,pipeline_prefetch=prefetch,
+            resource_wait_in_process=gate is not None,
+            benchmark_native_frame_sha256=cfg.get('benchmark_native_frame_sha256',False),
+            timing_semantics='Wall stages may overlap; face substage times are included in face; gate waits are separate',
+            frame_queue=dict(handoff.stats) if handoff is not None else None,
+            model_load_count=getattr(restorer,'model_load_count',None),
+            model_loads_this_run=getattr(restorer,'model_load_count',0) if loaded_this_run else 0,
+            model_load_seconds=getattr(restorer,'model_load_seconds',{}),
+            resource_gate=gate.summary() if gate is not None else None)
         save(output.with_name(output.name+'.pipeline.json'),receipt)
         print(json.dumps(receipt),flush=True)
+    except torch.cuda.OutOfMemoryError as error:
+        if gate is not None:gate.oom(error,stage='native-pipeline')
+        raise WaitGPU('Shared native inference memory changed; retain segment for retry') from error
     finally:
+        cancel.set()
+        if gate is not None:gate.wake()
+        if handoff is not None:handoff.close()
         for process in [decoder,encoder]:
             if process is not None and process.poll() is None:
                 process.terminate()
