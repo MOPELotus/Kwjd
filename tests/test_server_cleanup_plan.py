@@ -204,5 +204,18 @@ class CleanupTests(unittest.TestCase):
         self.assertTrue(result['completed'])
         self.assertIn('Absent after verified isolation',result['rows'][str(p)]['recovery'])
 
+    def test_recovered_private_isolation_still_checks_exact_fd_holders(self):
+        p,path,digest=self.audition_manifest();real_atomic=cleanup.atomic_receipt
+        def crash(target,data):
+            if any(row.get('status')=='verified_isolated' for row in data.get('rows',{}).values()):
+                raise OSError('crash before private unlink')
+            real_atomic(target,data)
+        with patch.object(cleanup,'atomic_receipt',side_effect=crash),self.assertRaises(OSError):self.run_execute(path,digest)
+        def holder(paths):return {str(p):[{'pid':42,'fd':'3'}] for p in paths},[]
+        with self.assertRaisesRegex(ValueError,'recovered-isolation'):self.run_execute(path,digest,fd_scan=holder,allow_unknown_auditions=True)
+        receipt_path=self.root/'post/reports/server-cleanup'/(digest+'-auditions.json')
+        receipt=json.loads(receipt_path.read_text())
+        self.assertTrue(Path(receipt['rows'][str(p)]['isolated_path']).exists())
+
 
 if __name__=='__main__':unittest.main()

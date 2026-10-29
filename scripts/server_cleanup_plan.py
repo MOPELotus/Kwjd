@@ -215,7 +215,7 @@ def atomic_receipt(path,data):
 
 def execute(manifest_path,manifest_sha256,group,*,allow_unknown_auditions=False,
             allow_reviewed_inputs=False,fd_scan=open_fds,lock_scan=locks,dependency_scan=dependencies):
-    """Explicit reviewed exact-file execution. Agent must never call this on live data.
+    """Explicit controller execution; inventory alone never authorizes deletion.
 
     Quarantines via same-filesystem rename, rechecks the isolated inode/identity/
     SHA, then deletes ONLY that private inode. Concurrent replacements survive.
@@ -227,6 +227,9 @@ def execute(manifest_path,manifest_sha256,group,*,allow_unknown_auditions=False,
     if group=='inputs' and not allow_reviewed_inputs:raise ValueError('Inputs require separate explicit controller authorization')
     rows=[r for r in manifest['candidates'] if r['kind']==('obsolete_audition_media' if group=='auditions' else 'old_cut_input')]
     if not rows:raise ValueError('Selection is empty')
+    for row in rows:
+        if str(boundary(root,row,allow_missing=True))!=row['resolved_path']:
+            raise ValueError('Selected manifest path resolution changed')
     home=root/'post-home';home.mkdir(exist_ok=True)
     lockpath=home/'.server-cleanup.lock'
     if lockpath.is_symlink():raise ValueError('Cleanup lock symlink forbidden')
@@ -257,6 +260,15 @@ def execute(manifest_path,manifest_sha256,group,*,allow_unknown_auditions=False,
                 if regular(isolated)!=isolated or identity(isolated)!=row['identity'] or sha(isolated)!=row['sha256']:
                     raise ValueError('Interrupted private isolation differs; retain')
                 if Path(key).exists():raise ValueError('Concurrent public replacement retained; inspect both assets')
+                holders,warnings=fd_scan([isolated])
+                permitted=(allow_unknown_auditions and group=='auditions' and row['episode']=='S01E49'
+                    and any(Path(key).is_relative_to((root/rel).resolve()) for rel in AUDITIONS[:2]))
+                if (holders[str(isolated)] or dependency_scan(root,[row])
+                        or lock_scan([Path(p) for p in manifest.get('required_lock_paths',[])])
+                        or (warnings and not permitted)):
+                    raise ValueError('Active/unknown recovered-isolation dependency blocks cleanup')
+                if warnings:receipt['limitations'].append(dict(candidate=key,unknown_same_uid_fd_processes=warnings,
+                    override='Explicit closed E49 audition override during private isolation recovery; no complete FD visibility claim'))
                 isolated.unlink();previous['status']='deleted';receipt['deletion_performed']=True
                 atomic_receipt(receipt_path,receipt);continue
             if isolated is not None and previous.get('status')=='verified_isolated' and not Path(key).exists():
