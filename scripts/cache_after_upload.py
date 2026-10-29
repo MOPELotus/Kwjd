@@ -7,6 +7,7 @@ No scheduled monitor, upload restart, or media/project modification is performed
 import argparse
 import os
 from pathlib import Path
+import re
 import subprocess
 
 from episode_lifecycle import episode, load, now, save, sha256
@@ -22,6 +23,7 @@ def previous_released(root, previous, expected):
             raise ValueError('Previous upload and local-release receipts are incomplete')
     if Path(upload['local_path']).exists():
         raise ValueError('Previous master remains local; wait for its verified release')
+    return upload
 
 
 def prepare(root, ep, previous):
@@ -63,7 +65,7 @@ def run(root, ep):
         print('Waiting for previous upload/release process', pid, flush=True)
         subprocess.run(['pwsh', '-NoProfile', '-Command',
                         f'Wait-Process -Id {pid} -ErrorAction SilentlyContinue'], check=False)
-        previous_released(root, value['previous'], value['previous_master_sha256'])
+        previous_upload = previous_released(root, value['previous'], value['previous_master_sha256'])
         if sha256(value['snapshot_path']) != value['snapshot_sha256']:
             raise ValueError('Queued cache snapshot changed')
         value.update(state='VERIFYING_NEXT_MASTER_AND_CACHE', checked_at=now())
@@ -77,6 +79,17 @@ def run(root, ep):
         review.update(cache_cleanup_executed=True, cache_preserved=False,
                       cache_cleanup_basis='USER_AUTHORIZED_LOCAL_ANCHOR_AFTER_PREVIOUS_UPLOAD')
         save(review_path, review)
+        alias = previous_upload.get('ssh_alias', '')
+        if re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', alias):
+            try:
+                receipt = root / '.kwjd/cache-cleanup' / f'{ep}.local-anchor.json'
+                subprocess.run(['scp', '-O', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15',
+                                str(receipt), f'{alias}:qingqingwu/post/receipts/{ep}.cache-release.json'],
+                               check=True)
+                value['server_cache_release_notified'] = True
+            except (OSError, subprocess.CalledProcessError) as error:
+                value['server_cache_release_notification_error'] = str(error)
+            save(chain_path, value)
     except Exception as error:
         value.update(state='FAILED_CACHE_RETAINED_OR_PARTIAL_CHECK_LOG', error=str(error), failed_at=now())
         save(chain_path, value)
