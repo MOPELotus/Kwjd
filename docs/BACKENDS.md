@@ -772,16 +772,16 @@ production thermal validation. No GPU power/clock settings were changed.
 
 The human approved feasible, validated scheduling optimizations as the formal
 native defaults after the long trial and scoped physical review of Guo Degang.
-The candidate `prepare_native_face_backend.py` template now explicitly selects
+The formal `prepare_native_face_backend.py` template explicitly selects
 `overlap1-legacy`: `pipeline_prefetch=true`, `pipeline_prefetch_frames=1`,
 `resource_wait_in_process=false`, `resource_wait_poll_seconds=1.5`,
 `resource_wait_timeout_seconds=120`, and
-`benchmark_native_frame_sha256=false`. This is a source/template policy change;
-the long trial and Guo physical review are still pending. It does not activate
-that candidate or certify it for production. Retained-state thermal waiting
-remains experimental; the formal candidate keeps legacy abort/retry protection.
-The controlled live source stays
-at `e7be0af` until the remaining evidence and rollover checks pass.
+`benchmark_native_frame_sha256=false`. This profile was activated for E50 on
+2026-10-29 after the bounded long trial,
+physical playback and independent Guo review below. Retained-state thermal
+waiting remains experimental; the formal profile keeps legacy abort/retry
+protection. The live source advanced from `e7be0af` to `e2b4616` at a verified
+segment boundary, preserving the completed prefix.
 
 `scheduling_profile(name)` defines independent comparison and rollback settings:
 
@@ -839,15 +839,48 @@ or current-segment redo; their wall times were slower. These show that reachable
 loaded-state recovery can preserve progress, not that thermal retention always
 improves throughput. The first three longer retained-gate segments measured
 81.09s (no thermal wait),163.43s (84.08s wait), and312.08s (230.85s wait).
-Their actual native/output pixel comparisons, full decode/PTS and mixed PCM
-checks passed across all three segments. The full trial and remaining physical
-review are still pending. Repeated85C→84C micro-resumes explain increasing wall
+The full retained-gate trial completed four segments: 1000 primary native
+frames and 2400 output frames, with full decode/PTS, cut and mixed PCM checks
+passing. Its decoded frames exactly match the retained serial production
+reference. It took 790.45s, including 478.54s thermal waiting.
+Repeated85C→84C micro-resumes explain increasing wall
 time: the120s limit applies to each heat episode and currently does not cap
 cumulative waiting per segment. Do not promote this retained-state policy as a
-net speed improvement. The exact formal `overlap1-legacy` profile still needs
-its longer cold-segment comparison, and any future cumulative-retention policy
+net speed improvement. The exact formal `overlap1-legacy` trial completed two
+consecutive 250-frame
+segments in 80.5288s and 79.1365s, loading the two models once. All 1200 decoded
+frames matched the serial reference; native lookahead, cut, full PTS and mixed
+PCM checks passed. A third ordinary segment completed in 79.09s and did not
+trigger thermal fallback; this is explicitly not evidence of an actual hot
+abort/retry under the new overlap profile. New production must still be
+monitored for that natural event. These bounded trials do not guarantee a
+whole-episode completion time.
+
+Six ten-second long-trial clips were actually opened with A4000 OpenGL rendering
+and NVDEC-copy decoding. Each measured playback window advanced 7.2s with zero
+render/decoder drops, and media identities/hashes were unchanged. Root and an
+independent reviewer actually examined six selected native screenshots. Guo's
+face, pose and readable ASS passed this bounded review. Per the human's explicit
+scope, other people and audience quality do not block acceptance. This is not
+full-episode or audible-listening acceptance.
+
+Formal rollout reused 98 SHA-verified segments (24500 native frames), with zero
+prefix neural recomputation. New readiness records retain original producer
+fingerprints and authorization provenance; ordinary pipeline validation adopted
+the linked media and original logs. The actual runtime fingerprint is
+`53e9852e99e3e7c27f8a0891531044daa919bcec72a58fc505a1b5a5804b6cab`.
+The worker was restarted for its own new-fingerprint current-master calibration;
+production resume and the first new segment are monitored separately. Idle
+E50/E51 takeover owners were refreshed to avoid cached Python modules. E51
+continues waiting for E50 final acceptance and stage release.
+
+Local evidence remains under `post/reports/S01E50-review/`: the long serial
+reference, `optimization-long-hardware-playback-20261029` collection and root/
+independent reviews, and `queue1-production-promotion-20261029` authorization,
+full prefix audit, rollback snapshot and controller report. The latter binds
+actual source/configuration hashes and both old/new identities. No final E50
+or E51 acceptance is claimed here. Any future cumulative-retention policy
 needs actual hot release/fallback and recovery validation before adoption.
-No formal activation has occurred.
 
 Keep the exact legacy runtime config, launcher, source snapshot and fingerprint,
 plus a freshly SHA-verified completed-segment prefix, before any promotion.
