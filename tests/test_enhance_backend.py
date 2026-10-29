@@ -14,6 +14,16 @@ from enhance_stage import sha256, GIB
 
 
 class BackendTests(unittest.TestCase):
+    def test_native_scheduling_rejects_invalid_options_before_model_hash_reads(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'runtime.json'
+            path.write_text(json.dumps(dict(restoration_backend='cuda_gfpgan_fused',
+                                            pipeline_prefetch_frames=3)))
+            with patch.object(backend,'sha256') as hashing:
+                with self.assertRaisesRegex(ValueError,'prefetch_frames'):
+                    backend.config(path)
+                hashing.assert_not_called()
+
     def test_known_retired_hash_rejected_without_local_policy(self):
         with self.assertRaisesRegex(ValueError,'Retired master'):
             reject_retired(next(iter(RETIRED_MASTER_SHA256)))
