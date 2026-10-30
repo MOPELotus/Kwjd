@@ -959,3 +959,11 @@ accepted media. Windows going offline at23:00 is not a production gate or an
 error. Retain finals pending later matching Windows SHA and actual quality
 receipts; pending delivery alone must not stop subsequent cloud episodes.
 Only all-seven server acceptance and stable handoff evidence closes this goal.
+
+Native clock matching compares the central face interior (25percent inset of
+the detected Haar box). E53 close-up boxes included replaced scenery beside a
+cheek at the previous12percent inset, depressing scores despite matching native
+moments. CPU diagnostics and actual source/master views identified this cause.
+The0.96 correlation threshold, ±1native-frame tolerance, minimum3 passing anchors
+and1500second coverage remain unchanged. Retain failed observations separately;
+this clock evidence does not certify full-film visual quality or audible sync.
