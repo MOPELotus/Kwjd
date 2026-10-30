@@ -946,3 +946,16 @@ uploads count once; released predecessors are never reserved as future uploads.
 This is not an unbounded queue or permission to delete retained finals. The
 machine-local receive report records actual capacities; refresh budgets before
 subsequent processing. Windows owns SFTP transport and its local cache cleanup.
+
+The human explicitly confirmed continuous management of all seven Qingqingwu
+episodes E49–E55, including server technical and actual visual acceptance and
+stable retained handoffs. The active Codex goal covers that complete scope;
+finishing the current episode does not finish the goal. The persistent owner
+checks the finite E52→E55 queue every30 seconds and advances after each actual
+acceptance and safe stage release. Codex performs the evidence-based reviews;
+the owner must not fabricate them to advance. Reuse and verify prior E49–E51
+acceptance evidence, including legacy E49 report layouts, rather than rerunning
+accepted media. Windows going offline at23:00 is not a production gate or an
+error. Retain finals pending later matching Windows SHA and actual quality
+receipts; pending delivery alone must not stop subsequent cloud episodes.
+Only all-seven server acceptance and stable handoff evidence closes this goal.
