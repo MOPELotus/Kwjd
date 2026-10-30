@@ -65,7 +65,7 @@ function Upload([string]$from,[string]$to,[switch]$ReplaceStyle){
  & ssh.exe -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=3 $SshAlias "mkdir -p '$parent'"; AssertExit 'mkdir'
  $partial="$to.uploading"
  $address=$SshAlias+':'+$partial
- & scp.exe -O -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o Compression=no -- $from $address; AssertExit 'scp upload'
+ & scp.exe -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o Compression=no -- $from $address; AssertExit 'sftp upload'
  if((RemoteHash $partial) -ne $hash){throw "Upload SHA mismatch: $to"}
  if($old -and $ReplaceStyle){
   # Compare-and-replace: never replace a concurrently changed style asset.
@@ -92,7 +92,17 @@ function Download([string]$from,[string]$to){
  $staging=Join-Path $RootDir '.kwjd/downloads'
  New-Item -ItemType Directory -Force $staging | Out-Null
  $part=Join-Path $staging "$hash.downloading"
- & scp.exe -O -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o Compression=no -- ($SshAlias+':'+$from) $part; AssertExit 'scp download'
+ # Resume only the hash-named staging file. The final full SHA remains the
+ # publication gate; a partial file is never treated as a received final.
+ if($from -notmatch '^[A-Za-z0-9_./-]+$' -or $part -match '["\r\n]'){throw 'Unsafe SFTP batch path'}
+ $batch=Join-Path $staging "$hash.$PID.sftp"
+ try {
+  ('reget "{0}" "{1}"' -f $from,$part.Replace('\','/')) | Set-Content -LiteralPath $batch -Encoding utf8NoBOM
+  & sftp.exe -b $batch -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o Compression=no $SshAlias
+  AssertExit 'sftp resumed download'
+ }finally{
+  Remove-Item -LiteralPath $batch -ErrorAction SilentlyContinue
+ }
  if((Get-FileHash -Algorithm SHA256 -LiteralPath $part).Hash.ToLowerInvariant() -ne $hash){throw 'Download SHA mismatch'}
  Move-Item -LiteralPath $part -Destination $to
  Write-Host "Verified download $to" -ForegroundColor Green
