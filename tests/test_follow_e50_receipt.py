@@ -7,9 +7,34 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 from follow_e50_receipt import receipt_ready, cache_release_ready, EXPECTED
 from follow_e50_receipt import remaining_upload_bytes
 from follow_e50_receipt import validate_remaining_manifest
+from follow_e50_receipt import adopt_native_submission
+from follow_e50_receipt import assert_unstarted_native_submission
 
 
 class ReceiveAdmission(unittest.TestCase):
+    def test_generic_queued_submission_uses_calibrated_episode_style(self):
+        job=dict(episode='S01E53',state='QUEUED',style='styles/template.ass')
+        result=adopt_native_submission(job,'S01E53')
+        self.assertEqual(result['style'],'styles/S01E53.ass')
+        self.assertEqual(job['style'],'styles/template.ass')
+        self.assertEqual(adopt_native_submission(result,'S01E53'),result)
+
+    def test_custom_style_and_started_generic_job_are_preserved(self):
+        for style,state in [('styles/custom.ass','QUEUED'),('styles/template.ass','ENHANCING'),('styles/template.ass','WAIT_DISK')]:
+            with self.assertRaises(ValueError):
+                adopt_native_submission(dict(episode='S01E53',state=state,style=style),'S01E53')
+
+    def test_orphan_production_is_rejected_before_profile_preparation(self):
+        job=dict(episode='S01E53',state='QUEUED',style='styles/template.ass')
+        with tempfile.TemporaryDirectory() as directory:
+            post=Path(directory);cache=post/'cache/S01E53';(cache/'native-style').mkdir(parents=True)
+            assert_unstarted_native_submission(post,job,'S01E53')
+            (cache/'S01E53.segments').mkdir()
+            with self.assertRaises(ValueError):assert_unstarted_native_submission(post,job,'S01E53')
+            (cache/'S01E53.segments').rmdir()
+            (cache/'S01E53.source.ready.json').write_text('{}')
+            with self.assertRaises(ValueError):assert_unstarted_native_submission(post,job,'S01E53')
+
     def test_finite_manifest_rejects_extra_episode_and_invalid_size(self):
         import copy
         valid=dict(authorized=True,order=[f'S01E{n}' for n in range(52,56)],

@@ -932,6 +932,12 @@ native master references and model calibration. The current formal overlap1
 legacy-retry pipeline remains unchanged. A READY file is not final visual
 acceptance: the next episode waits for matching server-acceptance and stage-cleanup
 records after actual root/independent review.
+Generic QUEUED Windows submissions pointing at `styles/template.ass` are archived and
+adopted with the current episode's calibrated style before starting that worker.
+Custom style paths and already-started generic jobs require investigation rather
+than silent replacement. A pre-profile check rejects any existing enhancement,
+source bundle or segment context even if a stale job still says QUEUED.
+This changes queue metadata, not sealed subtitle text.
 
 The finite receive allowance permits up to four simultaneous masters including
 E52, with one GPU episode. Each real filesystem must cover its production phase

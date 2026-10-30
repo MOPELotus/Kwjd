@@ -239,6 +239,8 @@ def tick():
     identity=FOLDER/'verified-master-identity.json'
     if identity.exists():require(json.loads(identity.read_text())['stat']==current,'Validated master changed')
     else:atomic_json(identity,{'sha256':EXPECTED,'stat':current})
+    if EP in ('S01E52','S01E53','S01E54','S01E55') and existing_job.exists():
+        assert_unstarted_native_submission(POST,json.loads(existing_job.read_text()),EP)
     srt,style,fonts=prepare_inputs(master)
     if EP in ('S01E52','S01E53','S01E54','S01E55'):
         reference=FOLDER/'master-reference-v1/manifest.json'
@@ -279,6 +281,12 @@ def tick():
             output=f'final/{EP}.final-1080p60.mkv',created_at=datetime.now().astimezone().isoformat(),
             picture_pipeline='native_light_gfpgan_rife_ass_one_encode',detail='Persistent full-phase budget admission'))
     job=json.loads(job_path.read_text());require(job.get('master_sha256')==EXPECTED,'Existing queue identity differs')
+    if EP in ('S01E52','S01E53','S01E54','S01E55'):
+        adopted=adopt_native_submission(job,EP)
+        if adopted!=job:
+            archive=FOLDER/'submitted-job-before-native-adoption.json'
+            if not archive.exists():atomic_json(archive,job)
+            atomic_json(job_path,adopted);job=adopted
     if job['state']=='READY':
         set_state('FINAL_READY_PENDING_WINDOWS',report=str(POST/'reports'/f'{EP}.json'));return
     active=subprocess.check_output(['systemctl','--user','is-active',UNIT],text=True).strip() if subprocess.run(
@@ -340,6 +348,30 @@ def remaining_upload_bytes(post,current,masters):
                 stat=target.stat();allocated+=min(stat.st_size,stat.st_blocks*512)
         remaining+=max(0,profile['bytes']-allocated)
     return remaining
+
+
+def adopt_native_submission(job,episode):
+    """Redirect only a not-started generic submission, preserving custom styles."""
+    require(episode in ('S01E52','S01E53','S01E54','S01E55')
+            and job.get('episode')==episode,'Wrong finite queued episode')
+    style=f'styles/{episode}.ass'
+    if job.get('style')==style:return job
+    require(job.get('style')=='styles/template.ass' and job.get('state')=='QUEUED'
+            and not job.get('enhanced_sha256'),
+            'Preserve custom style or already-started queued job for review')
+    return dict(job,style=style,picture_pipeline='native_light_gfpgan_rife_ass_one_encode',
+                detail='Adopted verified Windows submission with current-master calibrated native ASS')
+
+
+def assert_unstarted_native_submission(post,job,episode):
+    if job.get('style')==f'styles/{episode}.ass':return
+    adopt_native_submission(job,episode)
+    cache=Path(post)/'cache'/episode
+    segments=cache/(episode+'.segments')
+    require(not segments.exists() and not segments.is_symlink()
+            and not list(cache.glob(episode+'.enhanced*'))
+            and not list(cache.glob(episode+'.source*')),
+            'Generic job already has production artifacts; preserve them before any active-profile change')
 
 
 def validate_remaining_manifest(manifest):
