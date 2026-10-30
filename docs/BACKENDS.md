@@ -967,3 +967,9 @@ moments. CPU diagnostics and actual source/master views identified this cause.
 The0.96 correlation threshold, ±1native-frame tolerance, minimum3 passing anchors
 and1500second coverage remain unchanged. Retain failed observations separately;
 this clock evidence does not certify full-film visual quality or audible sync.
+
+The existing read-only `audit_native_prefix.py` also accepts the finite E52–E55
+production contexts. It independently hashes completed media, pipeline receipts
+and native frame logs, and checks contiguous primary/lookahead coverage, detected
+face restoration counts, the single encode and ASS-after-RIFE order. It never
+runs inference, mutates media or claims whole-final/Guo-specific acceptance.
