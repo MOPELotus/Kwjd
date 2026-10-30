@@ -914,3 +914,29 @@ beginning, or replace `runtime.native-active.json` during comparison runs.
 Rollback restores the exact controlled legacy config/source identities rather
 than synthesizing a similar profile. No driver, clock, power or fan changes are
 part of this scheduling policy.
+
+## Finite E52–E55 managed continuation (2026-10-30)
+
+The human authorized fetching E50/E51 and uploading all remaining E53–E55
+masters while Linux manages E52→E53→E54→E55. The two predecessors have now
+completed actual server acceptance and stage-release audits. Their final copies
+remain protected until matching Windows technical receipts and actual quality
+checks; a transfer or server acceptance alone does not fabricate Windows quality.
+
+`follow_e50_receipt.py --managed-remaining` manages only these four episodes,
+using private `post/backend/managed-remaining.json` master sizes and hashes.
+An unknown SHA must come from an actual verified Windows upload/release receipt,
+then Linux independently hashes and technically validates the published master.
+Each episode retains its own program-clock evidence, approved MiSans84 ASS,
+native master references and model calibration. The current formal overlap1
+legacy-retry pipeline remains unchanged. A READY file is not final visual
+acceptance: the next episode waits for matching server-acceptance and stage-cleanup
+records after actual root/independent review.
+
+The finite receive allowance permits up to four simultaneous masters including
+E52, with one GPU episode. Each real filesystem must cover its production phase
+peak, remaining authorized upload bytes and15GiB reserve. Already allocated
+uploads count once; released predecessors are never reserved as future uploads.
+This is not an unbounded queue or permission to delete retained finals. The
+machine-local receive report records actual capacities; refresh budgets before
+subsequent processing. Windows owns SFTP transport and its local cache cleanup.

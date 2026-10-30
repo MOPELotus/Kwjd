@@ -5,9 +5,39 @@ import unittest
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 from follow_e50_receipt import receipt_ready, cache_release_ready, EXPECTED
+from follow_e50_receipt import remaining_upload_bytes
+from follow_e50_receipt import validate_remaining_manifest
 
 
 class ReceiveAdmission(unittest.TestCase):
+    def test_finite_manifest_rejects_extra_episode_and_invalid_size(self):
+        import copy
+        valid=dict(authorized=True,order=[f'S01E{n}' for n in range(52,56)],
+            masters={f'S01E{n}':{'bytes':100,'sha256':None} for n in range(52,56)})
+        self.assertEqual(validate_remaining_manifest(valid),valid)
+        extra=copy.deepcopy(valid);extra['masters']['S01E56']={'bytes':1}
+        with self.assertRaises(ValueError):validate_remaining_manifest(extra)
+        for invalid in (-1,0,True):
+            bad=copy.deepcopy(valid);bad['masters']['S01E55']['bytes']=invalid
+            with self.assertRaises(ValueError):validate_remaining_manifest(bad)
+        bad=copy.deepcopy(valid);bad['authorized']=False
+        with self.assertRaises(ValueError):validate_remaining_manifest(bad)
+
+    def test_remaining_uploads_exclude_current_and_released_predecessors(self):
+        with tempfile.TemporaryDirectory() as directory:
+            post=Path(directory);(post/'incoming').mkdir()
+            masters={f'S01E{n}':{'bytes':100} for n in range(52,56)}
+            self.assertEqual(remaining_upload_bytes(post,'S01E53',masters),200)
+            self.assertEqual(remaining_upload_bytes(post,'S01E55',masters),0)
+
+    def test_allocated_future_upload_is_not_reserved_twice(self):
+        with tempfile.TemporaryDirectory() as directory:
+            post=Path(directory);incoming=post/'incoming';incoming.mkdir()
+            masters={'S01E53':{'bytes':100},'S01E54':{'bytes':100}}
+            (incoming/'S01E53.clean-master.mov').write_bytes(b'x'*100)
+            (incoming/'S01E54.clean-master.mov.uploading').write_bytes(b'x'*40)
+            self.assertEqual(remaining_upload_bytes(post,'S01E52',masters),60)
+
     def test_e51_completion_notice_requires_actual_matching_release(self):
         record=dict(episode='S01E51',master_sha256='2eb923278d3dd7526ed7466296ad437fd19411acaf303508ee8013d1239822f1',
                     state='LOCAL_ANCHORED_CACHE_CLEANED',master_retained=True)

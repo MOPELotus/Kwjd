@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import re
 import subprocess
 import sys
 import time
@@ -40,6 +41,18 @@ def configure_episode(episode):
     global EP,EXPECTED,BYTES,FOLDER,UNIT
     profiles={'S01E50':('7494ca20c6dca29b8c03cd927a293278a3ce01002beef031d5044ef61ca8f725',7840642589),
               'S01E51':('2eb923278d3dd7526ed7466296ad437fd19411acaf303508ee8013d1239822f1',7803409376)}
+    if episode in ('S01E52','S01E53','S01E54','S01E55'):
+        manifest=load_remaining_manifest()
+        profile=manifest['masters'][episode]
+        digest=profile.get('sha256')
+        if not digest:
+            receipt=json.loads((POST/'receipts'/f'{episode}.upload.json').read_text(encoding='utf-8-sig'))
+            require(receipt.get('episode')==episode and receipt.get('verified') is True
+                    and receipt.get('local_master_deleted') is True,'Actual Windows upload handoff required')
+            digest=receipt['sha256']
+        require(bool(re.fullmatch('[0-9a-f]{64}',digest)) and type(profile['bytes']) is int
+                and profile['bytes']>0,'Invalid finite master profile')
+        profiles[episode]=(digest,profile['bytes'])
     EP=episode;EXPECTED,BYTES=profiles[episode]
     FOLDER=POST/'reports'/f'{episode}-takeover';UNIT=f'kwjd-native-production-e{int(episode.split("E")[1])}.service'
 
@@ -166,16 +179,17 @@ def tick():
     if EP=='S01E50':watch_cache_notice()
     if (FOLDER/'policy-maintenance.json').exists():
         set_state('STORAGE_POLICY_MAINTENANCE');return
-    if EP=='S01E51':
-        prior=POST/'jobs/S01E50.json'
+    if EP!='S01E50':
+        predecessor=f'S01E{int(EP.split("E")[1])-1:02d}'
+        prior=POST/'jobs'/f'{predecessor}.json'
         if not prior.exists() or json.loads(prior.read_text()).get('state')!='READY':
-            set_state('WAIT_SERIAL_PREDECESSOR_E50');return
-        review=POST/'reports/S01E50.server-acceptance.json'
-        cleanup=POST/'reports/S01E50.stage-cleanup.json'
+            set_state('WAIT_SERIAL_PREDECESSOR',predecessor=predecessor);return
+        review=POST/'reports'/f'{predecessor}.server-acceptance.json'
+        cleanup=POST/'reports'/f'{predecessor}.stage-cleanup.json'
         if not review.exists() or not cleanup.exists():
             set_state('WAIT_PREDECESSOR_BOUNDED_REVIEW_AND_STAGE_RELEASE');return
         accepted=json.loads(review.read_text());released=json.loads(cleanup.read_text())
-        final_report=json.loads((POST/'reports/S01E50.json').read_text())
+        final_report=json.loads((POST/'reports'/f'{predecessor}.json').read_text())
         require(accepted.get('server_accepted') is True and accepted.get('bounded_visual_review_pass') is True
                 and accepted.get('sha256')==final_report['sha256']
                 and released.get('complete') is True and released.get('sha256')==final_report['sha256'],
@@ -214,8 +228,10 @@ def tick():
             expected_duration_seconds=3649.933,actual_duration_seconds=3650.440,
             human_quote='对 尾部是一点点背景 裁背景素材的时候有一点误差 属合理情况',
             reason='Explicit previously recorded human approval for this exact E50 tail'))
+        source_probe=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_format',
+            '-of','json',str(ROOT/'input'/f'{EP}.mp4')],text=True))
         command=[sys.executable,str(HERE/'validate_master.py'),'--file',str(master),'--receipt',str(marker),
-                 '--expected-duration','3649.933' if EP=='S01E50' else '3571.979']
+                 '--expected-duration',str(source_probe['format']['duration'])]
         if EP=='S01E50':command+=['--duration-approval',str(approval)]
         run_logged(command)
     validated=json.loads(marker.read_text());require(validated['sha256']==EXPECTED,'Validation belongs to another master')
@@ -224,6 +240,30 @@ def tick():
     if identity.exists():require(json.loads(identity.read_text())['stat']==current,'Validated master changed')
     else:atomic_json(identity,{'sha256':EXPECTED,'stat':current})
     srt,style,fonts=prepare_inputs(master)
+    if EP in ('S01E52','S01E53','S01E54','S01E55'):
+        reference=FOLDER/'master-reference-v1/manifest.json'
+        if not reference.exists():
+            set_state('PRESERVE_NATIVE_MASTER_REFERENCES')
+            if reference.parent.exists():
+                directory=reference.parent
+                require(directory.is_dir() and not directory.is_symlink()
+                    and directory.stat().st_uid==os.getuid()
+                    and all(not p.is_symlink() and p.stat().st_uid==os.getuid()
+                            and (p.is_file() or p.is_dir()) for p in directory.rglob('*')),
+                    'Unbounded incomplete reference directory')
+                archive=FOLDER/('master-reference-incomplete-'+str(time.time_ns()))
+                directory.rename(archive)
+                atomic_json(FOLDER/('reference-recovery-'+str(time.time_ns())+'.json'),
+                    dict(master_sha256=EXPECTED,preserved_incomplete_directory=str(archive),
+                         reason='Interrupted reference capture without manifest; preserved, never deleted'))
+            from capture_master_review import capture
+            capture(ROOT,EP,reference.parent)
+        references=json.loads(reference.read_text())
+        require(references['master_sha256']==EXPECTED,'Master references differ')
+        for frame in references['frames']:
+            image=Path(frame['path'])
+            require(not image.is_symlink() and image.resolve().parent==reference.parent.resolve()
+                    and sha256(image)==frame['sha256'],'Master reference image differs')
     calibration=FOLDER/'native-calibration-ready.json'
     if not calibration.exists():
         set_state('BOUNDED_CURRENT_MASTER_NATIVE_CALIBRATION')
@@ -252,7 +292,7 @@ def tick():
     peaks=phase_peaks(seconds,int(audio['sample_rate']),audio['channels'],devices)
     held={}
     gate=POST/'reports/S01E51.receive-storage-gate.json'
-    if gate.exists():
+    if EP=='S01E50' and gate.exists():
         reservation=json.loads(gate.read_text())
         if reservation.get('upload_allowed') is True:
             allocated=0
@@ -261,10 +301,13 @@ def tick():
                 if target.exists():
                     stat=target.stat();allocated+=min(stat.st_size,stat.st_blocks*512)
             held[(POST/'incoming').stat().st_dev]=max(0,reservation['expected_bytes']-allocated)
+    if EP in ('S01E52','S01E53','S01E54','S01E55'):
+        manifest=load_remaining_manifest()
+        held[(POST/'incoming').stat().st_dev]=remaining_upload_bytes(POST,EP,manifest['masters'])
     reserve=minimum_free_gib();assessment=evaluate(peaks,free,reserve,held)
     budget=dict(master_sha256=EXPECTED,reserve_gib=reserve,**assessment,
                 cache=str((POST/'cache').resolve()),
-                note='Per-filesystem phase maxima; actual input blocks counted once and admitted E51 remaining upload reserved. GPU episodes stay serialized.')
+                note='Per-filesystem phase maxima; allocated inputs counted once; authorized future uploads reserved. GPU episodes stay serialized.')
     atomic_json(FOLDER/'production-budget.json',budget)
     if not budget['allowed']:
         set_state('WAIT_FULL_PRODUCTION_DISK',**budget);return
@@ -285,8 +328,82 @@ def main():
             time.sleep(30)
 
 
+def remaining_upload_bytes(post,current,masters):
+    """Finite future uploads only; never reserve released predecessor masters again."""
+    remaining=0
+    for episode,profile in masters.items():
+        if episode<=current:continue
+        allocated=0
+        for suffix in ('.mov','.mov.uploading'):
+            target=Path(post)/'incoming'/(episode+'.clean-master'+suffix)
+            if target.exists():
+                stat=target.stat();allocated+=min(stat.st_size,stat.st_blocks*512)
+        remaining+=max(0,profile['bytes']-allocated)
+    return remaining
+
+
+def validate_remaining_manifest(manifest):
+    expected=[f'S01E{n}' for n in range(52,56)]
+    require(manifest.get('authorized') is True and manifest.get('order')==expected
+            and set(manifest.get('masters',{}))==set(expected),'Only finite authorized E52-E55 manifest allowed')
+    for profile in manifest['masters'].values():
+        require(type(profile.get('bytes')) is int and profile['bytes']>0,'Invalid remaining master bytes')
+        digest=profile.get('sha256')
+        require(digest is None or (isinstance(digest,str) and bool(re.fullmatch('[0-9a-f]{64}',digest))),
+                'Invalid remaining master SHA')
+    return manifest
+
+
+def load_remaining_manifest():
+    return validate_remaining_manifest(json.loads((POST/'backend/managed-remaining.json').read_text()))
+
+
+def managed_remaining():
+    """Only E52-E55; actual per-episode acceptance/cleanup gates the next episode."""
+    folder=POST/'reports/managed-E52-E55';folder.mkdir(parents=True,exist_ok=True)
+    with (folder/'owner.lock').open('a+') as owner:
+        fcntl.flock(owner,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        while True:
+            current=None
+            try:
+                for episode in ('S01E52','S01E53','S01E54','S01E55'):
+                    current=episode
+                    review=POST/'reports'/f'{episode}.server-acceptance.json'
+                    cleanup=POST/'reports'/f'{episode}.stage-cleanup.json'
+                    technical=POST/'reports'/f'{episode}.json'
+                    if review.exists() and cleanup.exists() and technical.exists():
+                        a,c,t=[json.loads(p.read_text()) for p in (review,cleanup,technical)]
+                        if (a.get('server_accepted') is True and a.get('bounded_visual_review_pass') is True
+                                and c.get('complete') is True and a.get('sha256')==c.get('sha256')==t.get('sha256')):
+                            continue
+                    configure_episode(episode)
+                    FOLDER.mkdir(parents=True,exist_ok=True)
+                    if not (FOLDER/'progress.log').exists():(FOLDER/'progress.log').touch()
+                    atomic_json(folder/'status.json',dict(episode=episode,stage='MANAGING_CURRENT_EPISODE',
+                        at=datetime.now().astimezone().isoformat(),owner_pid=os.getpid(),episode_status=str(FOLDER/'status.json')))
+                    with (FOLDER/'owner.lock').open('a+') as episode_owner:
+                        fcntl.flock(episode_owner,fcntl.LOCK_EX|fcntl.LOCK_NB)
+                        tick()
+                    break
+                else:
+                    atomic_json(folder/'status.json',dict(stage='ALL_FOUR_SERVER_ACCEPTED',
+                        at=datetime.now().astimezone().isoformat(),owner_pid=os.getpid()))
+                    return
+            except (WaitDisk,WaitGPU,BlockingIOError) as error:
+                atomic_json(folder/'status.json',dict(stage='RESOURCE_WAIT',episode=current,error=str(error),owner_pid=os.getpid()))
+            except FileNotFoundError as error:
+                atomic_json(folder/'status.json',dict(stage='WAIT_ACTUAL_INPUT_OR_HANDOFF',episode=current,error=str(error),owner_pid=os.getpid()))
+            except Exception as error:
+                atomic_json(folder/'status.json',dict(stage='NEEDS_ATTENTION',episode=current,error=repr(error),owner_pid=os.getpid()))
+            time.sleep(30)
+
+
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--episode',choices=['S01E50','S01E51'],default='S01E50')
-    configure_episode(parser.parse_args().episode)
-    main()
+    parser.add_argument('--episode',choices=[f'S01E{n}' for n in range(50,56)],default='S01E50')
+    parser.add_argument('--managed-remaining',action='store_true',help='Manage finite E52-E55 serial queue')
+    args=parser.parse_args()
+    if args.managed_remaining:managed_remaining()
+    else:
+        configure_episode(args.episode)
+        main()
