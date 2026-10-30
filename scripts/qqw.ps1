@@ -94,15 +94,8 @@ function Download([string]$from,[string]$to){
  $part=Join-Path $staging "$hash.downloading"
  # Resume only the hash-named staging file. The final full SHA remains the
  # publication gate; a partial file is never treated as a received final.
- if($from -notmatch '^[A-Za-z0-9_./-]+$' -or $part -match '["\r\n]'){throw 'Unsafe SFTP batch path'}
- $batch=Join-Path $staging "$hash.$PID.sftp"
- try {
-  ('reget "{0}" "{1}"' -f $from,$part.Replace('\','/')) | Set-Content -LiteralPath $batch -Encoding utf8NoBOM
-  & sftp.exe -b $batch -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o Compression=no $SshAlias
-  AssertExit 'sftp resumed download'
- }finally{
-  Remove-Item -LiteralPath $batch -ErrorAction SilentlyContinue
- }
+ & python -X utf8 (Join-Path $PSScriptRoot 'resume_sftp_download.py') --ssh-alias $SshAlias --remote $from --part $part --sha256 $hash
+ AssertExit 'watched SFTP resumed download'
  if((Get-FileHash -Algorithm SHA256 -LiteralPath $part).Hash.ToLowerInvariant() -ne $hash){throw 'Download SHA mismatch'}
  Move-Item -LiteralPath $part -Destination $to
  Write-Host "Verified download $to" -ForegroundColor Green
