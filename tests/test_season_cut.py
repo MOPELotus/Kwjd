@@ -47,6 +47,7 @@ class SeasonCutTests(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 cut.save_new(path, {"old": False})
             self.assertEqual(cut.read(path), {"old": True})
+            self.assertNotIn(b"\r\n", path.read_bytes())
 
     def test_invalid_json_never_publishes_partial_receipt(self):
         with tempfile.TemporaryDirectory() as folder:

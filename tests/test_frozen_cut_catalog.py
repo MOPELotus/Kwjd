@@ -1,4 +1,6 @@
 import copy
+import hashlib
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -16,6 +18,9 @@ class FrozenCatalogTests(unittest.TestCase):
         self.assertTrue(freeze.validate_catalog(catalog))
         validation = base.read(base.REPO / "config/cuts/four-seasons-known-v1.validation.json")
         self.assertEqual(validation["catalog_sha256"], base.digest(catalog_path))
+        content_sha = hashlib.sha256(json.dumps(catalog, sort_keys=True,
+            ensure_ascii=False, separators=(",", ":")).encode("utf-8")).hexdigest()
+        self.assertEqual(validation["catalog_content_sha256"], content_sha)
         self.assertEqual(validation["boundary_copy_passed"], 260)
         self.assertEqual(set(validation["episode_receipt_sha256"]),
                          {e["episode"] for e in catalog["entries"]})

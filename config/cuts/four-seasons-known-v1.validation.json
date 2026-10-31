@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "catalog_sha256": "03789900f6e4415c32d5f288f813497e1e4c5c104bbb00bdbd06af0e37320949",
+  "catalog_sha256": "10c2f77d3031adc51d558517db9f1445784dfb2f879eefc1b3242f2be09cb84b",
   "scope": "Initial cuts only. Complete source SHA survey and all source boundary rows reviewed. Actual copied short head/tail windows decoded for all 260. Not full-programme playback or full-programme decode.",
   "source_sha_surveyed": 260,
   "source_boundary_rows_actually_reviewed": 260,
@@ -279,5 +279,8 @@
     "S04E50": "62674526a21ad171daaa416f105778a7d68f183f34ff0bf7a8739f3a33f5a882",
     "S04E51": "99a98382d77709aa6e5951b3f22dadbc8220450c247e414389928db57928174f",
     "S04E52": "6f102d3c9d68bae459c26c8d7e2664d6066635c215bb465cfef2cd5a9f2eafe4"
-  }
+  },
+  "audited_catalog_sha256": "03789900f6e4415c32d5f288f813497e1e4c5c104bbb00bdbd06af0e37320949",
+  "catalog_content_sha256": "8fb2cdb059d5b1f8e4cc04d8310bfc76ba0f4c7aad035fdf608acaf974710093",
+  "catalog_serialization": "LF for Windows/Linux identical bytes; original CRLF audit catalog retained locally, identical parsed JSON content"
 }

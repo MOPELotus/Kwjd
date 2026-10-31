@@ -32,7 +32,7 @@ def save_new(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     temp = path.with_name(path.name + "." + uuid.uuid4().hex + ".writing")
     try:
-        with temp.open("x", encoding="utf-8") as stream:
+        with temp.open("x", encoding="utf-8", newline="\n") as stream:
             json.dump(value, stream, ensure_ascii=False, indent=2, allow_nan=False)
             stream.write("\n")
             stream.flush()
