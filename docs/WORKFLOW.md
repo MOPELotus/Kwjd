@@ -36,6 +36,8 @@
 
 Windows回传使用SFTP续传至SHA命名的ASCII暂存文件，再经完整SHA、媒体参数和实际解码校验后发布回目名及收据。`resume_sftp_download.py`按文件实际增长监督自己的SFTP子进程，连续180秒无增长时仅结束该进程树并保留partial，最多4次恢复；Windows有Git附带SSH时优先使用已实测的独立客户端。重试耗尽或完整SHA不符须保留日志/partial调查，不允许发布或清理服务器成片。修改恢复逻辑不代表当前媒体已接收，活跃传输不得重复启动。
 
+可选的`chunked_sftp_download.py`使用现有rclone和SSH配置中的身份/严格known_hosts，以最多4个独立连接读取offset/count范围，持久保留分块进度并保护既有连续prefix；完整有序组装SHA通过后才原子替换暂存文件，媒体接收检查仍由原流程完成。2026-10-31已通过6项边界/互斥/失败续传测试和实际8MiB（保留1MiB前缀）的完整SHA实测，但未证明整片稳态收益，**尚未接入默认下载**。正常推进的单连接不得为此中断；只能在没有同文件活跃写入、验证代表性收益后显式采用。无rclone、缺安全身份/known_hosts或SSH代理路线不受支持时拒绝，不安装组件或放松主机密钥检查。
+
 Windows：qqw.ps1的fetch-srt、sync-style、send-master、submit、fetch-final均可传-Episode 49。接收/清理见LIFECYCLE.md。
 
 Linux：`python3 scripts/server_worker.py --once --episode S01E49 --stage enhance`先增强，样式批准后`--stage all`。SRT审校完成才`python3 kwjd.py seal-srt --file ~/qingqingwu/output/S01E49.zh.srt --approve`，不要批量制造封存。
