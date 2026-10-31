@@ -41,3 +41,8 @@ Windows回传使用SFTP续传至SHA命名的ASCII暂存文件，再经完整SHA�
 Windows：qqw.ps1的fetch-srt、sync-style、send-master、submit、fetch-final均可传-Episode 49。接收/清理见LIFECYCLE.md。
 
 Linux：`python3 scripts/server_worker.py --once --episode S01E49 --stage enhance`先增强，样式批准后`--stage all`。SRT审校完成才`python3 kwjd.py seal-srt --file ~/qingqingwu/output/S01E49.zh.srt --approve`，不要批量制造封存。
+
+
+## 故事选题与周更
+
+按[长短篇发布计划](RELEASE_PLAN.md)执行：一部长线配按工期动态选择的短篇，不固定数量；每周至少一个完整故事，排期包含本地准备、云端、交付验收和返工。当前轮次的选题不自动扩展活跃生产goal，新季必须独立验证profile。
