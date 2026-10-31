@@ -243,7 +243,7 @@ def main():
     p.add_argument("--audit", required=True)
     for flag in ("first-live", "keep-through", "first-forbidden"):
         p.add_argument("--" + flag, type=float, required=True)
-    p.add_argument("--tail-kind", choices=["logo_transition", "preview", "credits", "clean_eof"], required=True)
+    p.add_argument("--tail-kind", choices=["white_flash", "logo_transition", "preview", "credits", "clean_eof"], required=True)
     p.add_argument("--note", required=True)
     p.add_argument("--output", required=True)
     p = sub.add_parser("cut")

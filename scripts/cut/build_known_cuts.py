@@ -180,7 +180,8 @@ def sheets(output, results):
     folder = output / "sheets"
     folder.mkdir(exist_ok=True)
     for season in EXPECTED:
-        entries = [r for r in results if r["episode"].startswith(season)]
+        entries = sorted([r for r in results if r["episode"].startswith(season)],
+                         key=lambda r: int(r["episode"][4:]))
         for offset in range(0, len(entries), 12):
             group = entries[offset:offset+12]
             sheet = Image.new("RGB", (1280, len(group) * 114), "black")
@@ -218,7 +219,7 @@ def main():
             results.append(result)
             print(f'{len(results)}/260 {result["episode"]} head={result["opening_seconds"]:.3f} '
                   f'tail={result["tail"]["kind"]} {time.monotonic()-started:.1f}s', flush=True)
-    results.sort(key=lambda r: r["episode"])
+    results.sort(key=lambda r: (r["episode"][:3], int(r["episode"][4:])))
     sheets(a.output, results)
     summary = a.output / "summary.json"
     if not summary.exists():

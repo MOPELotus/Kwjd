@@ -61,7 +61,8 @@
       "logo_transition",
       "preview",
       "credits",
-      "clean_eof"
+      "clean_eof",
+      "white_flash"
     ],
     "tail_safety_seconds": 0.25,
     "max_opening_keyframe_skip_seconds": 5,
@@ -74,5 +75,13 @@
       "S01E58"
     ],
     "sample_scope": "selected heads/tails only; not every episode; not audio review"
+  },
+  "known_cut_catalog": {
+    "path": "config/cuts/four-seasons-known-v1.json",
+    "episode_count": 58,
+    "reference_intro_end_seconds": 30.0,
+    "actual_start": "source_sha256_bound_entry.opening_seconds",
+    "runtime_detection_required": false,
+    "unknown_source_policy": "reject_and_keep_original"
   }
 }

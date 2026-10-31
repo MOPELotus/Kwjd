@@ -28,5 +28,13 @@
       "S02E104"
     ],
     "sample_scope": "selected heads/tails only; not every episode; not audio review"
+  },
+  "known_cut_catalog": {
+    "path": "config/cuts/four-seasons-known-v1.json",
+    "episode_count": 104,
+    "reference_intro_end_seconds": 30.44,
+    "actual_start": "source_sha256_bound_entry.opening_seconds",
+    "runtime_detection_required": false,
+    "unknown_source_policy": "reject_and_keep_original"
   }
 }

@@ -29,5 +29,13 @@
       "S04E52"
     ],
     "sample_scope": "selected heads/tails only; not every episode; not audio review"
+  },
+  "known_cut_catalog": {
+    "path": "config/cuts/four-seasons-known-v1.json",
+    "episode_count": 52,
+    "reference_intro_end_seconds": 37.04,
+    "actual_start": "source_sha256_bound_entry.opening_seconds",
+    "runtime_detection_required": false,
+    "unknown_source_policy": "reject_and_keep_original"
   }
 }

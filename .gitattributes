@@ -1,0 +1,2 @@
+# Frozen cut-catalog hashes must survive Windows/Linux checkout unchanged.
+config/cuts/*.json text eol=lf
