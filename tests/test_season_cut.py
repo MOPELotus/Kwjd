@@ -48,6 +48,14 @@ class SeasonCutTests(unittest.TestCase):
                 cut.save_new(path, {"old": False})
             self.assertEqual(cut.read(path), {"old": True})
 
+    def test_invalid_json_never_publishes_partial_receipt(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "receipt.json"
+            with self.assertRaises(ValueError):
+                cut.save_new(path, {"invalid": float("nan")})
+            self.assertFalse(path.exists())
+            self.assertEqual(list(Path(folder).iterdir()), [])
+
     @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "FFmpeg required")
     def test_real_bframe_stream_copy_preserves_bounds_and_refuses_stale_or_duplicate(self):
         with tempfile.TemporaryDirectory() as folder:

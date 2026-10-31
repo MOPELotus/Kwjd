@@ -30,9 +30,16 @@ def read(path):
 def save_new(path, value):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("x", encoding="utf-8") as stream:
-        json.dump(value, stream, ensure_ascii=False, indent=2, allow_nan=False)
-        stream.write("\n")
+    temp = path.with_name(path.name + "." + uuid.uuid4().hex + ".writing")
+    try:
+        with temp.open("x", encoding="utf-8") as stream:
+            json.dump(value, stream, ensure_ascii=False, indent=2, allow_nan=False)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.link(temp, path)  # Atomic complete JSON publication, never replace prior evidence.
+    finally:
+        temp.unlink(missing_ok=True)
 
 
 def probe(source):
