@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "season": "S04",
+  "source_basename_pattern": "^坑王驾到S04E(?P<episode>\\d{2,3})\\.",
+  "scope": "reviewed_initial_cut_only_not_production_admission",
+  "cut_review": {
+    "mode": "stream_copy",
+    "opening_scope": "within_each_season_not_across_seasons",
+    "opening_search_seconds": [
+      34,
+      39
+    ],
+    "opening_policy": "first_live_entrance_or_percussion_after_title; indoor_first_live_if_no_entrance",
+    "tail_policy": "per_episode_review_before_first_outro_transition; preserve_closing_wide_if_present",
+    "tail_kinds": [
+      "logo_transition",
+      "preview",
+      "credits",
+      "clean_eof"
+    ],
+    "tail_safety_seconds": 0.25,
+    "max_opening_keyframe_skip_seconds": 5,
+    "source_sha256_bound_review_required": true,
+    "allow_extra_cut_only": true,
+    "sampled_episodes": [
+      "S04E01",
+      "S04E33",
+      "S04E35",
+      "S04E52"
+    ],
+    "sample_scope": "selected heads/tails only; not every episode; not audio review"
+  }
+}

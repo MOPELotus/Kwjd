@@ -45,4 +45,6 @@ Linux：`python3 scripts/server_worker.py --once --episode S01E49 --stage enhanc
 
 ## 故事选题与周更
 
+四季初切按[四季裁切规则](SEASON_CUTS.md)独立审看：片头模板只在一季内复用，片尾逐集定位Logo/预告/片尾信息，季末与室内录制单独处理。使用源SHA绑定的 `season_cut.py inspect → plan → cut`；新季profile仅批准初切，不自动加入当前S01后处理/OCR生产。现有确认裁片不重切。
+
 按[长短篇发布计划](RELEASE_PLAN.md)执行：一部长线配按工期动态选择的短篇，不固定数量；每周至少一个完整故事，排期包含本地准备、云端、交付验收和返工。当前轮次的选题不自动扩展活跃生产goal，新季必须独立验证profile。
