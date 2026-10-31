@@ -116,6 +116,56 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(dashboard.clip('中文abc',1),'')
         self.assertNotIn('\x1b',dashboard.clip('\x1b[31mtext',20))
 
+    def test_worker_display_does_not_require_an_eta_record(self):
+        (self.post/'reports/S01E49.eta.json').unlink()
+        with patch.object(dashboard,'native_worker_pid',return_value=789) as lookup:
+            view=dashboard.collect(self.post,'S01E49',self.now)
+        self.assertEqual(view['worker_pid'],789)
+        self.assertEqual(view['eta'],{})
+        lookup.assert_called_once_with(self.post,'S01E49')
+
+    def test_native_service_worker_requires_correct_workspace_script_and_episode(self):
+        script=Path(dashboard.__file__).resolve().with_name('server_worker.py')
+        post=script.parents[2]/'post'
+        proc=self.post/'proc';process=proc/'789';process.mkdir(parents=True)
+        fields=['S','1']+['0']*20;fields[19]='12345'
+        (process/'stat').write_text('789 (python worker) '+' '.join(fields))
+        command=['python3','-u',str(script),'--loop','--episode','S01E49']
+        (process/'cmdline').write_bytes(b'\0'.join(x.encode() for x in command)+b'\0')
+        result=dashboard.subprocess.CompletedProcess([],0,stdout='789\n')
+        with patch.object(dashboard.subprocess,'run',return_value=result) as query:
+            self.assertEqual(dashboard.native_worker_pid(post,'S01E49',proc),789)
+            self.assertIn('kwjd-native-production-e49.service',query.call_args.args[0])
+            command[-1]='S01E50'
+            (process/'cmdline').write_bytes(b'\0'.join(x.encode() for x in command))
+            self.assertIsNone(dashboard.native_worker_pid(post,'S01E49',proc))
+            command[-1]='S01E49';command[2]='/unrelated/server_worker.py'
+            (process/'cmdline').write_bytes(b'\0'.join(x.encode() for x in command))
+            self.assertIsNone(dashboard.native_worker_pid(post,'S01E49',proc))
+        with patch.object(dashboard.subprocess,'run') as query:
+            self.assertIsNone(dashboard.native_worker_pid(self.post,'S01E49',proc))
+            self.assertIsNone(dashboard.native_worker_pid(post,'../other',proc))
+            query.assert_not_called()
+
+    def test_native_worker_rejects_pid_reuse_during_command_read(self):
+        script=Path(dashboard.__file__).resolve().with_name('server_worker.py')
+        proc=self.post/'proc';process=proc/'789';process.mkdir(parents=True)
+        fields=['S','1']+['0']*20;fields[19]='12345'
+        (process/'stat').write_text('789 (python) '+' '.join(fields))
+        real_read=Path.read_text;reads=0
+        def read(path,*args,**kwargs):
+            nonlocal reads
+            if path==process/'stat':
+                reads+=1
+                fields[19]='12345' if reads==1 else '54321'
+                return '789 (python) '+' '.join(fields)
+            return real_read(path,*args,**kwargs)
+        command=b'python3\0'+str(script).encode()+b'\0--episode\0S01E49\0'
+        result=dashboard.subprocess.CompletedProcess([],0,stdout='789\n')
+        with patch.object(Path,'read_text',read),patch.object(Path,'read_bytes',return_value=command),\
+                patch.object(dashboard.subprocess,'run',return_value=result):
+            self.assertIsNone(dashboard.native_worker_pid(script.parents[2]/'post','S01E49',proc))
+
     def test_validation_progress_requires_same_live_process_and_separate_frame_total(self):
         pid=os.getpid()
         starttime=Path(f'/proc/{pid}/stat').read_text().rsplit(')',1)[1].split()[19]

@@ -959,3 +959,17 @@ accepted media. Windows going offline at23:00 is not a production gate or an
 error. Retain finals pending later matching Windows SHA and actual quality
 receipts; pending delivery alone must not stop subsequent cloud episodes.
 Only all-seven server acceptance and stable handoff evidence closes this goal.
+
+Native clock matching compares the central face interior (25percent inset of
+the detected Haar box). E53 close-up boxes included replaced scenery beside a
+cheek at the previous12percent inset, depressing scores despite matching native
+moments. CPU diagnostics and actual source/master views identified this cause.
+The0.96 correlation threshold, ±1native-frame tolerance, minimum3 passing anchors
+and1500second coverage remain unchanged. Retain failed observations separately;
+this clock evidence does not certify full-film visual quality or audible sync.
+
+The existing read-only `audit_native_prefix.py` also accepts the finite E52–E55
+production contexts. It independently hashes completed media, pipeline receipts
+and native frame logs, and checks contiguous primary/lookahead coverage, detected
+face restoration counts, the single encode and ASS-after-RIFE order. It never
+runs inference, mutates media or claims whole-final/Guo-specific acceptance.

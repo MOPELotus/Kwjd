@@ -11,6 +11,7 @@ import locale
 import math
 from pathlib import Path
 import re
+import subprocess
 import unicodedata
 
 TAIL_BYTES=128*1024
@@ -92,6 +93,28 @@ def process_status(pid,expected):
         if expected.encode() not in cmdline:return '未运行或 PID 已复用'
         return '存活（进程身份匹配）'
     except OSError:return '未运行或不可读'
+
+
+def native_worker_pid(post,episode,proc_root=Path('/proc')):
+    """Read the matching native service's live process independently of ETA."""
+    script=Path(__file__).resolve().with_name('server_worker.py')
+    if (not isinstance(episode,str) or not re.fullmatch(r'S01E\d{2,3}',episode)
+            or Path(post).resolve()!=(script.parents[2]/'post').resolve()):return None
+    try:
+        unit='kwjd-native-production-'+episode[3:].lower()+'.service'
+        result=subprocess.run(['systemctl','--user','show',unit,'--property=MainPID','--value'],
+                              capture_output=True,text=True,check=True,timeout=1)
+        pid=int(result.stdout.strip())
+        if pid<=0:return None
+        process=proc_root/str(pid)
+        before=(process/'stat').read_text().rsplit(')',1)[1].split()
+        argv=[x.decode(errors='replace') for x in (process/'cmdline').read_bytes().split(b'\0') if x]
+        after=(process/'stat').read_text().rsplit(')',1)[1].split()
+        if (before[19]!=after[19] or before[0] in ('Z','X') or after[0] in ('Z','X')
+                or str(script) not in argv or argv.count('--episode')!=1
+                or argv[argv.index('--episode')+1]!=episode):return None
+        return pid
+    except (OSError,ValueError,IndexError,subprocess.SubprocessError):return None
 
 
 def validation_status(post,episode):
@@ -191,7 +214,7 @@ def collect(post,episode,now=None):
             'placement_validation':bool(thermal_bound and thermal.get('state')=='VALIDATING_GPU_PLACEMENT'),
             'validation':validation_status(post,episode),
             'progress':progress,'stale':stale,'age':age,'eta':eta,'rate':rate,
-            'logs':logs[-3:],'worker_pid':eta.get('worker_pid'),
+            'logs':logs[-3:],'worker_pid':eta.get('worker_pid') or native_worker_pid(post,episode),
             'monitor_pid':snap.get('monitor_pid')}
 
 

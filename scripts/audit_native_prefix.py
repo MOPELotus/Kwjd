@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only native segment/pipeline/frame-log audit during E50/E51 production.
+"""Read-only native segment/pipeline/frame-log audit during E50–E55 production.
 
 No inference, repeated decode, media changes or final acceptance declaration.
 Counts primary native frames separately from intentional RIFE lookahead repeats.
@@ -23,7 +23,8 @@ def require(condition,message):
 
 def audit(context):
     context=context.absolute();identity=json.loads((context/'context.json').read_text())
-    require(identity['episode'] in ('S01E50','S01E51'),'Outside authorized native episodes')
+    require(identity['episode'] in ('S01E50','S01E51','S01E52','S01E53','S01E54','S01E55'),
+            'Outside authorized native episodes')
     total=identity['input_frames'];size=identity['segment_source_frames'];expected=0;rows=[]
     source_restored=source_noface=lookahead=output=0;seconds=0.0
     ready=sorted(p for p in context.iterdir() if re.fullmatch(r'\d{6}\.ready\.json',p.name))

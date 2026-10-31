@@ -22,7 +22,9 @@ def check(source,master,offset):
         image=frames(source,anchor,1)[0];candidates=frames(master,anchor+offset-.2,11)
         faces=detector.detectMultiScale(image,1.1,4,minSize=(35,35))
         if not len(faces):continue
-        x,y,w,h=max(faces,key=lambda box:box[2]*box[3]);pad=max(2,int(min(w,h)*.12))
+        # Haar boxes can include scenery beside a cheek. Compare the central
+        # face interior to reduce sensitivity to the replaced background.
+        x,y,w,h=max(faces,key=lambda box:box[2]*box[3]);pad=max(2,int(min(w,h)*.25))
         patch=image[y+pad:y+h-pad,x+pad:x+w-pad].astype(float);patch-=patch.mean()
         scores=[]
         for candidate in candidates:
@@ -31,10 +33,11 @@ def check(source,master,offset):
             scores.append(float(np.sum(area*patch)/denominator) if denominator else 0)
         best=int(np.argmax(scores))
         rows.append(dict(anchor=anchor,face=[int(v) for v in [x,y,w,h]],
+                         face_patch=[int(v) for v in [x+pad,y+pad,w-2*pad,h-2*pad]],
                          expected_index=5,best_index=best,scores=scores,
                          match=abs(best-5)<=1 and scores[best]>=.96))
     passing=[row for row in rows if row['match']]
-    return dict(offset_seconds=offset,method='Source face versus11 native25 master frames; no generative model',
+    return dict(offset_seconds=offset,method='Central face interior versus11 native25 master frames;25percent inset reduces sensitivity to replaced scenery; no generative model',
                 rows=rows,verified=len(passing)>=3 and max(r['anchor'] for r in passing)-min(r['anchor'] for r in passing)>=1500)
 
 
