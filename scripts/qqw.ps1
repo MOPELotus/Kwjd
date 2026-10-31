@@ -5,11 +5,13 @@ Run from repository: pwsh ./scripts/qqw.ps1 -Command status
 #>
 [CmdletBinding()]
 param(
- [ValidateSet('adopt','status','doctor','cut','upload-cut','fetch-srt','send-master','confirm-upload','sync-style','submit','fetch-final','remote-status','complete-episode','cleanup-cache')]
+ [ValidateSet('adopt','status','doctor','cut','cut-known','upload-cut','fetch-srt','send-master','confirm-upload','sync-style','submit','fetch-final','remote-status','complete-episode','cleanup-cache')]
  [string]$Command='status',
  [int]$Episode=0,
  [string]$RootDir='D:\qingqingwu',
  [string]$SourceDir='D:\K坑王驾到S1',
+ [ValidateSet('S01','S02','S03','S04')]
+ [string]$CutSeason='S01',
  [string]$SshAlias='TodayEatUbuntu-7K62',
  [string]$MasterPath='',
  [string]$QualityNote=''
@@ -118,6 +120,21 @@ function ConfirmUpload([string]$id){
  Upload $path "qingqingwu/post/receipts/$id.upload.json" | Out-Null
 }
 if($Episode -ne 0){[void](Ep $Episode)}
+if($Command -eq 'cut-known'){
+ if($Episode -lt 1){throw 'cut-known requires one explicit -Episode; no implicit whole-library recut'}
+ $cutSourceDir=$SourceDir
+ if(-not $PSBoundParameters.ContainsKey('SourceDir')){
+  $cutSourceDir='D:\K坑王驾到S'+[int]$CutSeason.Substring(1)
+ }
+ $id=('{0}E{1:d2}' -f $CutSeason,$Episode)
+ $pattern='^坑王驾到'+[regex]::Escape($id)+'\.'
+ $files=@(Get-ChildItem -LiteralPath $cutSourceDir -Filter '*.mp4' -File | Where-Object {$_.Name -match $pattern})
+ if($files.Count -ne 1){throw "Expected one original source for $id"}
+ $destination=Join-Path (Join-Path $RootDir 'videos') "$id.mp4"
+ & python -X utf8 (Join-Path $PSScriptRoot 'cut/cut_known.py') --source $files[0].FullName --output $destination
+ AssertExit 'frozen known-source cutter'
+ return
+}
 if($Command -in @('cut','upload-cut')){
  $script=Join-Path $PSScriptRoot 'cut\qqw-local-cut-upload-v2.ps1'
  $mode=if($Command -eq 'cut'){'CutOnly'}else{'UploadOnly'}
