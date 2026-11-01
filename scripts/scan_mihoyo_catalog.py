@@ -28,9 +28,9 @@ def next_offset(response, current):
     return value
 
 
-def survey(base, root):
+def survey(base, root, artist_tracks_only=False):
     status = {'status': 'RUNNING', 'albums': 0, 'tracks': 0, 'errors': []}
-    checkpoint = root/'scan-status.json'
+    checkpoint = root/('artist-track-status.json' if artist_tracks_only else 'scan-status.json')
     def request(path):
         cache = root/'pages'/(hashlib.sha256(path.encode()).hexdigest() + '.json')
         if cache.exists():
@@ -65,6 +65,25 @@ def survey(base, root):
                 return
             offset = cursor
         raise ValueError('Pagination budget exceeded')
+
+    if artist_tracks_only:
+        tracks = {}
+        save(checkpoint, status)
+        for artist in ARTISTS:
+            status['current'] = artist
+            save(checkpoint, status)
+            for track in pages('/v1/artists/' + artist + '/tracks'):
+                ref = track['ref']
+                if ref not in tracks:
+                    tracks[ref] = track
+                    tracks[ref]['survey_artist_refs'] = []
+                tracks[ref]['survey_artist_refs'].append(artist)
+            status['tracks'] = len(tracks)
+            save(root/'artist-tracks.json', list(tracks.values()))
+            save(checkpoint, status)
+        status['status'] = 'COMPLETE'
+        save(checkpoint, status)
+        return
 
     albums, tracks = {}, {}
     save(checkpoint, status)
@@ -106,10 +125,11 @@ if __name__ == '__main__':
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--base', default='http://127.0.0.1:7832')
     p.add_argument('--output', type=Path, required=True)
+    p.add_argument('--artist-tracks-only', action='store_true')
     args = p.parse_args()
     try:
-        survey(args.base, args.output)
+        survey(args.base, args.output, args.artist_tracks_only)
     except Exception as error:
-        save(args.output/'scan-failure.json', {'type':type(error).__name__,
+        save(args.output/('artist-track-failure.json' if args.artist_tracks_only else 'scan-failure.json'), {'type':type(error).__name__,
                                               'http_status':getattr(error, 'code', None)})
         raise SystemExit(2)
