@@ -46,13 +46,16 @@ def execute(client, state, save, stop_type):
             save(state)
             print(json.dumps({'completed': len(state['results']), 'total': len(state['plan']),
                               'id': item, 'status': state['results'][item]['status']}), flush=True)
-        except Exception:
+        except Exception as error:
             # Preserve pending intent on uncertain writes. No automatic write replay.
             state['status'] = 'STOPPED_REQUIRES_REVIEW'
             state['stopped_item'] = item
+            state['stop_reason'] = str(error) if isinstance(error, stop_type) else type(error).__name__
             save(state)
             raise
     state['status'] = 'COMPLETED'
+    state.pop('stopped_item', None)
+    state.pop('stop_reason', None)
     save(state)
 
 
@@ -87,6 +90,8 @@ def main():
             raise ValueError('Resume account/list mismatch')
         state = previous
         state['status'] = 'RUNNING'
+        state.pop('stopped_item', None)
+        state.pop('stop_reason', None)
     save = lambda value: sw.atomic_json(a.state, value)
     save(state)
     execute(client, state, save, sw.Stop)

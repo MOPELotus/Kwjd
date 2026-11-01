@@ -29,9 +29,11 @@ class CachedSubscriptionTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             m.execute(c, state, lambda x:saved.append(deepcopy(x)), RuntimeError)
         self.assertEqual(saved[0]['results']['1']['status'], 'pending_verification')
+        self.assertEqual(state['stop_reason'], 'connection lost after server accepted')
         m.execute(c, state, lambda x:None, RuntimeError)
         self.assertEqual(c.writes, 1)
         self.assertEqual(state['status'], 'COMPLETED')
+        self.assertNotIn('stopped_item', state)
 
     def test_unknown_state_never_writes(self):
         class Client:
