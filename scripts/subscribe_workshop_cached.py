@@ -85,7 +85,7 @@ def main():
              'confirmation_token': token, 'approval': 'user explicitly approved all listed items',
              'results': {}, 'status': 'RUNNING'}
     if a.state.exists():
-        previous = json.loads(a.state.read_text(encoding='utf8'))
+        previous = json.loads(a.state.read_text(encoding='utf-8-sig'))
         if any(previous.get(k) != state[k] for k in ('appid', 'account', 'roots', 'confirmation_token')):
             raise ValueError('Resume account/list mismatch')
         state = previous
