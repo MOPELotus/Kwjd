@@ -57,8 +57,11 @@ def collect_candidates(args, group, blocked, fallback_map):
     for source in sources:
         platform = source['ref'].split(':', 1)[0]
         if platform in blocked:
-            attempts.append({'ref': source['ref'], 'skipped': blocked[platform]})
-            continue
+            if time.time() >= blocked[platform]['until']:
+                del blocked[platform]
+            else:
+                attempts.append({'ref': source['ref'], 'skipped': blocked[platform]['reason']})
+                continue
         for quality in ('master','hires','lossless'):
             query = urllib.parse.urlencode({'account':'personal','quality':quality,
                                            'fallback':'false','unblock':'false'})
@@ -74,14 +77,21 @@ def collect_candidates(args, group, blocked, fallback_map):
                     candidates.append((candidate_score(data),source,data))
             except urllib.error.HTTPError as error:
                 attempts.append({'ref':source['ref'],'requested':quality,'http':error.code})
-                if getattr(args, 'qq_fallback', False) and platform == 'qq' and (error.code == 401 or 500 <= error.code <= 599):
-                    blocked['qq'] = f'HTTP {error.code}'
+                can_rotate = getattr(args, 'provider_rotation', False) or (getattr(args, 'qq_fallback', False) and platform == 'qq')
+                if can_rotate and (error.code == 401 or 500 <= error.code <= 599):
+                    blocked[platform] = {'reason':f'HTTP {error.code}', 'until':time.time()+getattr(args,'provider_retry_seconds',600)}
                     break
                 check_download_http_status(error.code)
+            except (urllib.error.URLError, TimeoutError):
+                if not getattr(args, 'provider_rotation', False):
+                    raise
+                attempts.append({'ref':source['ref'],'requested':quality,'error':'network'})
+                blocked[platform] = {'reason':'network', 'until':time.time()+getattr(args,'provider_retry_seconds',600)}
+                break
     return candidates, attempts, sources
 
 
-def run(args):
+def run_pass(args):
     plan = json.loads(args.plan.read_text(encoding='utf-8-sig'))['groups']
     status_path = args.evidence/'status.json'
     status = {'status':'RUNNING','total':len(plan),'verified':0,'failed':0,'deferred':0}
@@ -104,9 +114,9 @@ def run(args):
         try:
             candidates, attempts, sources = collect_candidates(args, group, blocked, fallback_map)
             if not candidates:
-                if 'qq' in blocked and any(s['ref'].startswith('qq:') for s in sources):
+                if any(s['ref'].split(':',1)[0] in blocked for s in sources):
                     atomic(args.evidence/'deferred'/(key+'.json'),
-                           {'key':key,'reason':'QQ unavailable; no verified alternate candidate', 'attempts':attempts})
+                           {'key':key,'reason':'Provider cooling down; no verified alternate candidate', 'attempts':attempts})
                     status['deferred'] += 1
                     atomic(status_path,status)
                     continue
@@ -167,6 +177,18 @@ def run(args):
             return
     status['status']='COMPLETE_WITH_PENDING' if status['failed'] or status['deferred'] else 'COMPLETE'
     atomic(status_path,status)
+    return status
+
+
+def run(args):
+    while True:
+        result = run_pass(args)
+        if not (getattr(args,'provider_rotation',False) and result and result['deferred']):
+            return
+        result['status']='WAITING_PROVIDER_RETRY'
+        result['retry_after_seconds']=getattr(args,'provider_retry_seconds',600)
+        atomic(args.evidence/'status.json',result)
+        time.sleep(result['retry_after_seconds'])
 
 
 if __name__=='__main__':
@@ -174,6 +196,8 @@ if __name__=='__main__':
     p.add_argument('--plan',type=Path,required=True)
     p.add_argument('--output',type=Path,required=True)
     p.add_argument('--evidence',type=Path,required=True)
+    p.add_argument('--provider-rotation',action='store_true',help='Rotate QQ/NetEase on auth, gateway or network failures; retry deferred groups after cooldown')
+    p.add_argument('--provider-retry-seconds',type=int,default=600)
     p.add_argument('--qq-fallback',action='store_true',help='Suspend failing QQ provider for this run and use reviewed NetEase candidates; retain unmatched groups as deferred')
     p.add_argument('--fallback-map',type=Path,help='Reviewed QQ ref to NetEase source overrides; original plan and receipt keys stay unchanged')
     p.add_argument('--base',default='http://127.0.0.1:7832')
