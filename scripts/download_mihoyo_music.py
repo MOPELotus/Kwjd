@@ -41,6 +41,12 @@ class StopBatch(Exception):
     pass
 
 
+def check_download_http_status(code):
+    # A gateway outage is not evidence that the next songs are unavailable.
+    if code in (401, 429) or 500 <= code <= 599:
+        raise StopBatch(f'Download service HTTP {code}; preserve checkpoint for review')
+
+
 def run(args):
     plan = json.loads(args.plan.read_text(encoding='utf-8-sig'))['groups']
     status_path = args.evidence/'status.json'
@@ -77,8 +83,7 @@ def run(args):
                             candidates.append((candidate_score(data),source,data))
                     except urllib.error.HTTPError as error:
                         attempts.append({'ref':source['ref'],'requested':quality,'http':error.code})
-                        if error.code in (401,429):
-                            raise StopBatch('Authentication or rate limit; batch stopped')
+                        check_download_http_status(error.code)
             if not candidates:
                 raise ValueError('No authorized complete ordinary audio candidate')
             _,source,data=max(candidates,key=lambda x:x[0])
@@ -114,8 +119,10 @@ def run(args):
             atomic(receipt_path,receipt)
             status['verified']+=1
             network_errors=0
-        except StopBatch:
-            status['status']='STOPPED_REQUIRES_REVIEW';atomic(status_path,status)
+        except StopBatch as error:
+            status['status']='STOPPED_REQUIRES_REVIEW'
+            status['stop_reason']=str(error)
+            atomic(status_path,status)
             raise
         except Exception as error:
             # Only stable exception type; exceptions may embed signed media URLs.
