@@ -59,3 +59,8 @@ rawvideo管道不落PNG，工作余量从旧PNG口径8GiB改为512MiB；便携PN
 用户要求持续完成四季裁切规则，效果沿用第一季：现场入场/锣鼓开始，收束后远景结束，飞入Logo及后续预告均不要，允许向内多切。用户明确“片头时长一致”仅指同季内部。已抽查的季末与室内版存在例外，不能强制统一尾长/白帧/入场镜头。新增各季独立cut_review与源SHA绑定的审看初切工具；实际范围、局限和命令见SEASON_CUTS.md，不声称260份全审、不触发其他故事正式生产。
 
 用户进一步要求把已知四季做至无需再改参数直接用。已升级为完整260份源SHA和逐集边界图复核后的冻结清单：57白帧、187片尾动画、16尾卡；全部260份已通过真实短首尾stream-copy/首帧哈希/尾包边界/窗口AV解码。16份尾卡各自定点，第四季E25–46室内版、E47/48/50观众收束和E52近景淡出均有固定记录。日常cut-known只选季/集，重核源SHA后读固定时间；未知版本才走人工兜底，不再把逐集找时间留给后续使用。完整切点、参考片头时间及验证限制见SEASON_CUTS.md；不是260集全片主观播放验收，不扩展现有云端生产。
+
+
+## 2026-11-02: QQ download failures may use reviewed NetEase candidates
+
+The user authorized QQ-to-NetEase fallback for the music library. `download_mihoyo_music.py --qq-fallback` suspends QQ for the current run after an HTTP 401 or 5xx, then uses existing paired NetEase sources or an explicitly reviewed `--fallback-map`. Original plan groups and receipt keys stay unchanged. Groups without an admissible alternate remain deferred; they are not counted as downloaded or permanently unavailable. HTTP 429 and NetEase service failures retain the batch stop gate. Full-file decode, duration, size and SHA checks still apply, and receipts record the actual provider. Metadata pairing does not establish identical audio versions.

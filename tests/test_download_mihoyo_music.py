@@ -2,6 +2,7 @@ import importlib.util
 from pathlib import Path
 import unittest
 import json
+import io
 import tempfile
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -35,5 +36,33 @@ class AudioAdmissionTests(unittest.TestCase):
             self.assertEqual(status['index'],0)
             self.assertEqual(status['failed'],0)
             self.assertNotIn('secret.invalid',json.dumps(status))
+
+class ProviderFallbackTests(unittest.TestCase):
+    def test_qq_gateway_uses_netease_and_circuits_qq(self):
+        args=SimpleNamespace(base='http://localhost',qq_fallback=True)
+        group={'sources':[{'ref':'qq:a','duration_ms':10000}]}
+        alternate={'ref':'netease:b','duration_ms':10000}
+        data={'available':True,'url':'https://secret.invalid/media','format':'flac','duration_ms':10000}
+        blocked={}
+        def request(url,timeout):
+            if '/qq:' in url: raise HTTPError('https://secret.invalid/signed',502,'gateway',None,None)
+            return io.StringIO(json.dumps({'data':data}))
+        with patch.object(m.time,'sleep'),patch.object(m.urllib.request,'urlopen',side_effect=request) as call:
+            candidates,attempts,sources=m.collect_candidates(args,group,blocked,{'qq:a':alternate})
+            self.assertEqual(call.call_count,4)
+            self.assertEqual(candidates[0][1]['ref'],'netease:b')
+            self.assertNotIn('secret.invalid',json.dumps(attempts))
+            m.collect_candidates(args,group,blocked,{'qq:a':alternate})
+            self.assertEqual(call.call_count,7) # QQ is not hammered again.
+            candidates,attempts,_=m.collect_candidates(args,group,blocked,{})
+            self.assertEqual(candidates,[])
+            self.assertEqual(call.call_count,7)
+
+    def test_netease_gateway_and_rate_limit_still_stop(self):
+        args=SimpleNamespace(base='http://localhost',qq_fallback=True)
+        for ref,code in [('netease:b',502),('qq:a',429)]:
+            with self.subTest(ref=ref,code=code),patch.object(m.time,'sleep'),patch.object(m.urllib.request,'urlopen',side_effect=HTTPError('https://secret.invalid',code,'error',None,None)):
+                with self.assertRaises(m.StopBatch):
+                    m.collect_candidates(args,{'sources':[{'ref':ref}]},{},{})
 
 if __name__=='__main__':unittest.main()

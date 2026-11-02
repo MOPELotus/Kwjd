@@ -47,11 +47,47 @@ def check_download_http_status(code):
         raise StopBatch(f'Download service HTTP {code}; preserve checkpoint for review')
 
 
+def collect_candidates(args, group, blocked, fallback_map):
+    candidates, attempts = [], []
+    sources = list(group['sources'])
+    for original in group['sources']:
+        extra = fallback_map.get(original['ref'])
+        if extra and not any(s['ref'] == extra['ref'] for s in sources):
+            sources.append(extra)
+    for source in sources:
+        platform = source['ref'].split(':', 1)[0]
+        if platform in blocked:
+            attempts.append({'ref': source['ref'], 'skipped': blocked[platform]})
+            continue
+        for quality in ('master','hires','lossless'):
+            query = urllib.parse.urlencode({'account':'personal','quality':quality,
+                                           'fallback':'false','unblock':'false'})
+            time.sleep(.5)
+            try:
+                with urllib.request.urlopen(args.base+'/v1/tracks/'+source['ref']+'/download?'+query,timeout=40) as response:
+                    answer=json.load(response)
+                data=answer.get('data') or {}
+                attempts.append({'ref':source['ref'],'requested':quality,
+                                 'actual':data.get('actual_quality'),'format':data.get('format'),
+                                 'available':data.get('available')})
+                if native_candidate(data,source.get('duration_ms')):
+                    candidates.append((candidate_score(data),source,data))
+            except urllib.error.HTTPError as error:
+                attempts.append({'ref':source['ref'],'requested':quality,'http':error.code})
+                if getattr(args, 'qq_fallback', False) and platform == 'qq' and (error.code == 401 or 500 <= error.code <= 599):
+                    blocked['qq'] = f'HTTP {error.code}'
+                    break
+                check_download_http_status(error.code)
+    return candidates, attempts, sources
+
+
 def run(args):
     plan = json.loads(args.plan.read_text(encoding='utf-8-sig'))['groups']
     status_path = args.evidence/'status.json'
-    status = {'status':'RUNNING','total':len(plan),'verified':0,'failed':0}
+    status = {'status':'RUNNING','total':len(plan),'verified':0,'failed':0,'deferred':0}
     network_errors = 0
+    blocked = {}
+    fallback_map = json.loads(args.fallback_map.read_text(encoding='utf-8-sig')) if getattr(args, 'fallback_map', None) else {}
     for index, group in enumerate(plan):
         key = hashlib.sha256(json.dumps(group,sort_keys=True,ensure_ascii=False).encode()).hexdigest()[:20]
         receipt_path = args.evidence/'receipts'/(key+'.json')
@@ -66,25 +102,14 @@ def run(args):
         if shutil.disk_usage(args.output).free < args.minimum_free_gib*1024**3:
             raise StopBatch('Insufficient disk reserve; sources retained')
         try:
-            candidates, attempts = [], []
-            for source in group['sources']:
-                for quality in ('master','hires','lossless'):
-                    query = urllib.parse.urlencode({'account':'personal','quality':quality,
-                                                   'fallback':'false','unblock':'false'})
-                    time.sleep(.5)
-                    try:
-                        with urllib.request.urlopen(args.base+'/v1/tracks/'+source['ref']+'/download?'+query,timeout=40) as response:
-                            answer=json.load(response)
-                        data=answer.get('data') or {}
-                        attempts.append({'ref':source['ref'],'requested':quality,
-                                         'actual':data.get('actual_quality'),'format':data.get('format'),
-                                         'available':data.get('available')})
-                        if native_candidate(data,source.get('duration_ms')):
-                            candidates.append((candidate_score(data),source,data))
-                    except urllib.error.HTTPError as error:
-                        attempts.append({'ref':source['ref'],'requested':quality,'http':error.code})
-                        check_download_http_status(error.code)
+            candidates, attempts, sources = collect_candidates(args, group, blocked, fallback_map)
             if not candidates:
+                if 'qq' in blocked and any(s['ref'].startswith('qq:') for s in sources):
+                    atomic(args.evidence/'deferred'/(key+'.json'),
+                           {'key':key,'reason':'QQ unavailable; no verified alternate candidate', 'attempts':attempts})
+                    status['deferred'] += 1
+                    atomic(status_path,status)
+                    continue
                 raise ValueError('No authorized complete ordinary audio candidate')
             _,source,data=max(candidates,key=lambda x:x[0])
             extension=data['format'].lower()
@@ -110,7 +135,7 @@ def run(args):
                 digest=hashlib.file_digest(file,'sha256').hexdigest()
             partial.replace(destination)
             receipt={'status':'VERIFIED','group_key':key,'title':group['title'],'album':group['album'],
-                     'source_ref':source['ref'],'candidate_sources':[s['ref'] for s in group['sources']],
+                     'source_ref':source['ref'],'candidate_sources':[s['ref'] for s in sources],
                      'match_basis':group['match_basis'],'requested_quality':data.get('requested_quality'),
                      'actual_quality':data.get('actual_quality'),'file':str(destination),'bytes':destination.stat().st_size,
                      'sha256':digest,'full_decode_ok':True,'duration_seconds':duration,
@@ -118,6 +143,8 @@ def run(args):
                      'attempts':attempts,'listened':False,'quality_note':'Highest ordinary authorized candidate ranked by lossless format and returned bitrate; platform effect labels do not prove master fidelity'}
             atomic(receipt_path,receipt)
             status['verified']+=1
+            deferred_path = args.evidence/'deferred'/(key+'.json')
+            if deferred_path.exists(): deferred_path.unlink()
             network_errors=0
         except StopBatch as error:
             status['status']='STOPPED_REQUIRES_REVIEW'
@@ -138,7 +165,7 @@ def run(args):
         if args.limit and status['verified']>=args.limit:
             status['status']='LIMIT_REACHED';atomic(status_path,status)
             return
-    status['status']='COMPLETE_WITH_FAILURES' if status['failed'] else 'COMPLETE'
+    status['status']='COMPLETE_WITH_PENDING' if status['failed'] or status['deferred'] else 'COMPLETE'
     atomic(status_path,status)
 
 
@@ -147,6 +174,8 @@ if __name__=='__main__':
     p.add_argument('--plan',type=Path,required=True)
     p.add_argument('--output',type=Path,required=True)
     p.add_argument('--evidence',type=Path,required=True)
+    p.add_argument('--qq-fallback',action='store_true',help='Suspend failing QQ provider for this run and use reviewed NetEase candidates; retain unmatched groups as deferred')
+    p.add_argument('--fallback-map',type=Path,help='Reviewed QQ ref to NetEase source overrides; original plan and receipt keys stay unchanged')
     p.add_argument('--base',default='http://127.0.0.1:7832')
     p.add_argument('--minimum-free-gib',type=int,default=40)
     p.add_argument('--limit',type=int,default=0)
