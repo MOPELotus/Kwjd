@@ -6,6 +6,7 @@ import hashlib
 import html
 import json
 from pathlib import Path
+import re
 import subprocess
 
 MODEL = 'laion/clap-htsat-unfused'
@@ -75,6 +76,16 @@ def locations(game,text):
 def album_context(game, album):
     return [dict(region=region,place='',source=url,basis=basis) for g,name,region,url,basis in ALBUM_CONTEXT if g==game and name in album]
 
+def time_hint(title):
+    text=title.casefold()
+    if any(x in text for x in ['昼夜','day and night','day-night']):return '昼夜变化'
+    if any(x in text for x in ['日出','sunrise','dawn']):return '日出/清晨'
+    if any(x in text for x in ['日落','夕照','黄昏','sunset','dusk','evening']):return '日落/黄昏'
+    if any(x in text for x in ['夜','night']):return '夜晚'
+    if any(x in text for x in ['早晨','清晨','morning']):return '清晨'
+    if any(x in text for x in ['白天','白昼','日间','正午','午后','noon']) or re.search(r'\bday\b',text):return '白天'
+    return '时段待核'
+
 def decide(scores):
     winners=[max(s,key=s.get) for s in scores]
     means={k:sum(s[k] for s in scores)/len(scores) for k in PROMPTS}
@@ -97,7 +108,7 @@ def assets(root):
             if state=='STATIC_OR_ENGINE_ONLY_NO_EXTRACTED_VIDEO':status='仅静态或引擎场景/无原视频'
             elif 'UNSUPPORTED' in state:status='源类型待核'
         if item in ['3539590179','3172124476']:status='仅预设/依赖待核'
-        result.append(dict(id=item,game=game,title=d['title'],location=locations(game,d['title']),status=status,file=''))
+        result.append(dict(id=item,game=game,title=d['title'],location=locations(game,d['title']),time_hint=time_hint(d['title']),status=status,file=''))
     for batch in (research/'clean1080').glob('batch*'):
         if not (batch/'completion.json').exists() or not (batch/'plan.json').exists():continue
         for item in read(batch/'plan.json')['items']:
@@ -105,7 +116,7 @@ def assets(root):
                 if a['id']==str(item['id']) and Path(item['destination']).exists():
                     a['status']='可用成片（有界验收）';a['file']=item['destination']
     for f in (root/'background/ZZZ-1080p60-clean').glob('*.mp4'):
-        result.append(dict(id='ZZZ:'+f.stem,game='ZZZ',title=f.stem,location=locations('ZZZ',f.stem),status='可用成片（有界验收）',file=str(f)))
+        result.append(dict(id='ZZZ:'+f.stem,game='ZZZ',title=f.stem,location=locations('ZZZ',f.stem),time_hint=time_hint(f.stem),status='可用成片（有界验收）',file=str(f)))
     return result
 
 def build(root,evidence):
@@ -117,28 +128,35 @@ def build(root,evidence):
         matching_location=loc or context
         matches=[x for x in a if x['game']==g['game'] and matching_location and any(m['region']==n['region'] and (not m['place'] or not n['place'] or m['place']==n['place']) for m in matching_location for n in x['location'])]
         cache=evidence/'audio-reviews'/(rec['sha256']+'.json');review=read(cache) if cache.exists() else None
-        rows.append(dict(key=key,game=g['game'],title=g['title'],album=g['album'],file=rec['file'],sha256=rec['sha256'],duration=rec['duration_seconds'],mood=review['category'] if review else '待音频初筛',audio_review=review,location=loc,album_context=context,location_basis='曲名明确地名，仅元数据线索，非游戏播放位置确证' if loc else '专辑地区背景，具体播放位置待核' if context else '待逐曲核对',assets=[dict(id=x['id'],status=x['status'],file=x['file'],title=x['title']) for x in matches],human_listened=False))
+        rows.append(dict(key=key,game=g['game'],title=g['title'],album=g['album'],file=rec['file'],sha256=rec['sha256'],duration=rec['duration_seconds'],mood=review['category'] if review else '待音频初筛',audio_review=review,location=loc,time_hint=time_hint(g['title']),album_context=context,location_basis='曲名明确地名，仅元数据线索，非游戏播放位置确证' if loc else '专辑地区背景，具体播放位置待核' if context else '待逐曲核对',assets=[dict(id=x['id'],status=x['status'],file=x['file'],title=x['title'],time_hint=x['time_hint']) for x in matches],human_listened=False))
     atomic(evidence/'catalog.json',dict(tracks=rows,assets=a,note='模型分布抽样初筛，非人工试听；素材匹配仅地区线索，不保证构图适合。'))
     return rows,a
 
 def export(root,evidence,rows,a):
-    headings=['游戏','曲名','情绪初筛','曲名地区线索','专辑地区背景','素材匹配','素材明细','专辑','文件']
+    headings=['游戏','曲名','情绪初筛','曲名地区线索','曲名时段线索','专辑地区背景','该地区素材储备','专辑','音乐文件']
     records=[]
     for r in rows:
         ready=sum(x['status']=='可用成片（有界验收）' for x in r['assets'])
         loc='、'.join(x['region']+('/'+x['place'] if x['place'] else '') for x in r['location']) or '待核对'
         context='、'.join(x['region']+'（'+x['basis']+'）' for x in r['album_context']) or '待核对'
-        detail='；'.join(x['title']+' ['+x['status']+'] '+x['file'] for x in r['assets']) or '尚未匹配到；不代表游戏内不存在'
-        records.append([r['game'],r['title'],r['mood'],loc,context,f'{ready}份可用 / {len(r["assets"])}份相关候选',detail,r['album'],r['file']])
+        status='已有成片' if ready else '有待处理素材' if any(x['status'] not in ['仅静态或引擎场景/无原视频','仅预设/依赖待核'] for x in r['assets']) else '仅静态或预设' if r['assets'] else '尚未匹配/待核'
+        times='、'.join(sorted(set(x['time_hint'] for x in r['assets'])))
+        records.append([r['game'],r['title'],r['mood'],loc,r['time_hint'],context,status+('：'+times if times else ''),r['album'],r['file']])
     with (evidence/'曲目分类与素材.csv').open('w',encoding='utf-8-sig',newline='') as f:
         w=csv.writer(f);w.writerow(headings);w.writerows(records)
     page='<meta charset="utf-8"><title>音乐与风景素材对照</title><style>body{font:15px system-ui;margin:24px}td,th{padding:8px;border-bottom:1px solid #ddd;text-align:left}input{padding:8px;width:60%}</style><h1>音乐与风景素材对照</h1><p>模型抽样初筛，不等于人工试听；地区仅明确地名线索，待逐曲核对。舒缓/轻快候选优先，激烈/紧张候选暂不入视频。</p><input id="q" placeholder="搜索游戏、曲名、地区、情绪"><table><thead><tr>'
     page+=''.join('<th>'+html.escape(h)+'</th>' for h in headings)+'</tr></thead><tbody>'
     for row in records:
-        page+='<tr>'+''.join('<td>'+('<details><summary>展开素材</summary>'+html.escape(str(v))+'</details>' if i==6 else html.escape(str(v)))+'</td>' for i,v in enumerate(row))+'</tr>'
+        page+='<tr>'+''.join('<td>'+html.escape(str(v))+'</td>' for v in row)+'</tr>'
     page+='</tbody></table><script>document.getElementById("q").oninput=e=>document.querySelectorAll("tbody tr").forEach(r=>r.hidden=!r.textContent.toLowerCase().includes(e.target.value.toLowerCase()))</script>'
     target=root/'music/miHoYo/音乐与风景素材对照.html';target.write_text(page,encoding='utf8')
     atomic(evidence/'summary.json',dict(total=len(rows),moods=dict(collections.Counter(r['mood'] for r in rows)),assets=len(a),output=str(target)))
+    for game in ['Genshin','StarRail','ZZZ']:
+        for name,labels in {'舒缓候选':['舒缓候选'],'轻快候选':['轻快候选'],'暂不入视频':['激烈候选/暂不入视频','紧张候选/暂不入视频','人声显著候选/待复核']}.items():
+            selected=[r for r in rows if r['game']==game and r['mood'] in labels]
+            target=root/'music/miHoYo/selection-playlists'/(game+'-'+name+'.m3u8')
+            target.parent.mkdir(parents=True,exist_ok=True)
+            target.write_text('#EXTM3U\n'+''.join('#EXTINF:'+str(round(r['duration']))+','+r['title'].replace('\n',' ')+'\n'+r['file']+'\n' for r in selected),encoding='utf8')
 
 def classify(args):
     import numpy as np
@@ -164,7 +182,7 @@ def classify(args):
                 raw=subprocess.check_output([args.ffmpeg,'-v','error','-ss',str(start),'-i',row['file'],'-t','10','-vn','-ac','1','-ar','48000','-f','f32le','-'],timeout=40)
                 clips.append(np.frombuffer(raw,dtype=np.float32).copy())
             with torch.inference_mode():
-                audio=model.get_audio_features(**processor(audios=clips,sampling_rate=48000,return_tensors='pt',padding=True));audio=audio/audio.norm(dim=-1,keepdim=True);sims=(audio@text.T).tolist()
+                audio=model.get_audio_features(**processor(audio=clips,sampling_rate=48000,return_tensors='pt',padding=True));audio=audio/audio.norm(dim=-1,keepdim=True);sims=(audio@text.T).tolist()
             scores=[{k:sum(v[i*3:i*3+3])/3 for i,k in enumerate(PROMPTS)} for v in sims];category,margin=decide(scores)
             after=Path(row['file']).stat()
             if (before.st_size,before.st_mtime_ns)!=(after.st_size,after.st_mtime_ns):raise ValueError('Source changed')

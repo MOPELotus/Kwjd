@@ -6,7 +6,9 @@ exports a searchable local HTML index, UTF-8 BOM CSV and evidence JSON.
 
 Track geography has two separate fields: literal place-name clues in the title,
 and sourced album-region context. Neither proves a track's precise in-game use.
-Unknown locations remain unknown. Asset matches are same-game regional candidates,
+Unknown locations and times of day remain unknown. The visible index reports
+regional asset availability and time-of-day clues, without assigning a particular
+clip to a track. Internal asset matches are same-game regional candidates,
 not a guarantee of matching framing, time of day or suitability. Static/engine-only
 assets and preset dependencies are distinguished from raw videos and accepted
 normalized outputs. Expand the asset details to inspect individual status/path.
@@ -21,7 +23,8 @@ to three distributed 10-second mono/48kHz excerpts and compares audio/text featu
 against calm, cheerful, intense, tense and vocal prompts. This is model-assisted
 sampled triage, not human listening. A cosine margin is not a calibrated confidence
 or probability. Disagreement among excerpts or a small margin stays pending. No
-model result automatically approves a track for publication. Long mixes can change
+model result automatically approves a track for publication. Candidate playlists
+are exported by game, separate from the original music files. Long mixes can change
 substantially outside the samples; narration masking and volume also need review.
 
 Analysis receipts are cached by actual audio SHA. Changed source audio cannot reuse

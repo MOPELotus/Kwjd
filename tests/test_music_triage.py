@@ -40,5 +40,11 @@ class MusicTriageTests(unittest.TestCase):
         self.assertEqual(triage.locations('Genshin','Gilded Runner'),[])
         self.assertEqual(triage.album_context('ZZZ','智妙明论之林'),[])
 
+    def test_day_night_hints_remain_literal(self):
+        self.assertEqual(triage.time_hint('龙脊雪山'), '时段待核')
+        self.assertEqual(triage.time_hint('Qingce Night'), '夜晚')
+        self.assertEqual(triage.time_hint('Dragonspine day'), '白天')
+        self.assertEqual(triage.time_hint('昼夜变化'), '昼夜变化')
+
 
 if __name__=='__main__': unittest.main()
