@@ -21,7 +21,7 @@ def decode(job):
     row, receipt, ffmpeg = job
     before=Path(row['file']).stat()
     if sha(row['file'])!=row['sha256']:raise ValueError('Source SHA mismatch')
-    result=subprocess.run([ffmpeg,'-v','error','-threads','1','-i',row['file'],'-map','0:a:0','-vn',
+    result=subprocess.run([ffmpeg,'-v','error','-xerror','-i',row['file'],'-map','0:a:0','-vn',
                            '-c:a','pcm_s32le','-f','hash','-hash','sha256','-'],capture_output=True,text=True,
                           timeout=max(120,min(1800,row['duration']*2)),check=True)
     match=re.fullmatch(r'SHA256=([a-f0-9]{64})\s*',result.stdout)
