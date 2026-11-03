@@ -23,6 +23,32 @@ def sha(path):
     with path.open('rb') as stream:return hashlib.file_digest(stream,'sha256').hexdigest()
 
 
+def review_pages(output):
+    """Full sampled framing plus unscaled left/right edge pixels, six videos/page."""
+    target=output/'review-pages';target.mkdir(exist_ok=True)
+    if (target/'manifest.json').exists():raise RuntimeError('Existing review pages retained')
+    sources=sorted(output.glob('*/receipt.json'));pages=[]
+    for start in range(0,len(sources),6):
+        sheet=Image.new('RGB',(1920,6*578),(18,18,18));draw=ImageDraw.Draw(sheet);rows=[]
+        for n,path in enumerate(sources[start:start+6]):
+            receipt=read(path);y=n*578
+            draw.text((5,y+3),path.parent.name+'   full frame samples / native left and right edge pixels',fill='white')
+            for col,frame in enumerate(receipt['frames']):
+                native=Path(frame['file'])
+                if sha(native)!=frame['sha256']:raise ValueError('Native frame SHA changed')
+                with Image.open(native) as image:
+                    thumb=image.copy();thumb.thumbnail((640,260))
+                    sheet.paste(thumb,(col*640,y+24))
+                    # Both sides of each top/bottom strip, at original pixel scale.
+                    for j,(left,top) in enumerate([(0,0),(image.width-320,0),(0,image.height-128),(image.width-320,image.height-128)]):
+                        sheet.paste(image.crop((left,top,left+320,top+128)),(col*640+(j%2)*320,y+294+(j//2)*128))
+            rows.append(dict(id=path.parent.name,source_sha256=receipt['source_sha256'],frames=receipt['frames']))
+        page=target/f'page-{len(pages)+1:02d}.png';sheet.save(page)
+        pages.append(dict(file=str(page),sha256=sha(page),rows=rows))
+    atomic(target/'manifest.json',dict(pages=pages,count=len(sources),scope='Three full-frame thumbnails and native corner strips per source; preparation alone is not visual approval.'))
+    print(json.dumps(dict(pages=len(pages),videos=len(sources))))
+
+
 def run(args):
     args.output.mkdir(parents=True,exist_ok=True)
     lock=args.output/'worker.lock'
@@ -82,4 +108,7 @@ if __name__=='__main__':
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--ffmpeg',default='D:/Apps/ffmpeg/ffmpeg.exe')
     parser.add_argument('--limit',type=int,default=0)
-    run(parser.parse_args())
+    parser.add_argument('--review-pages',action='store_true')
+    args=parser.parse_args()
+    if args.review_pages:review_pages(args.output)
+    else:run(args)
