@@ -26,3 +26,15 @@ Byte-identical source groups are reported separately. Similar scenes, different
 encodes, viewpoints and day/night variants are not automatically called duplicates.
 Current classification means sampled acceptance, not guaranteed absence of one-frame
 overlays outside the samples or seamless looping.
+
+Exception handling uses `process_background_exceptions.py` with a source-SHA-bound
+explicit crop plan. `--prepare-previews` renders the same filter on the three native
+cached frames; only actually inspected previews may be marked `framing_reviewed`.
+The runner uses NVENC p3, retains native frame timing/count, and checks every input
+and output packet plus three decode windows. It imposes neither 1080p nor 60fps.
+Output visual acceptance remains separate from successful technical processing.
+
+Prefer a clean alternative for the same region and time of day over repairing
+large text, performance panels or black sequences. Such difficult sources stay as
+backup; process them only if that region/time category has no better candidate.
+Keep source files and review evidence even when choosing an alternative.
