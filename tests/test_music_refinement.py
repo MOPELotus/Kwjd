@@ -32,11 +32,13 @@ class RefinementTests(unittest.TestCase):
         scores=[self.score(k) for k in ['calm','cheerful','calm','cheerful','calm']]
         self.assertEqual(refine.resampled_decision(scores,[])['category'],'舒缓候选')
 
-    def test_strong_quiet_action_transition_stays_uncertain(self):
+    def test_repeated_action_sections_exclude_a_whole_track_without_manual_review(self):
         scores=[self.score(k) for k in ['calm','calm','calm','intense','intense']]
         # Keep the average family scores close to represent a genuine mixed track.
         scores[-1]['intense']=.65;scores[-2]['intense']=.65
-        self.assertEqual(refine.resampled_decision(scores,[])['category'],'混合/待复核')
+        result=refine.resampled_decision(scores,[])
+        self.assertEqual(result['category'],'激烈候选/暂不入视频')
+        self.assertEqual(result['reason'],'repeated_action_sections_excluded_for_whole_track_use')
 
     def test_vocal_is_not_mislabeled_as_calm_because_of_slow_rhythm(self):
         result=refine.resampled_decision([self.score('vocal')]*5,[dict(onsets_per_second=0,pulse_strength=0)])

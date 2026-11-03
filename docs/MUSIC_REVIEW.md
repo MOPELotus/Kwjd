@@ -22,8 +22,10 @@ calm/cheerful and intense/tense excerpt votes, then resamples remaining conflict
 at five positions with new prompt ensembles. Quiet reflective/sad music has its
 own calm descriptions; normalized onset and pulse measurements only help resolve
 close calm/cheerful subtype choices. Aggregate family evidence replaces the old
-all-excerpts-must-agree rule. Strong quiet/action transitions and close family
-ties remain empty. This is still sampled model classification, not human listening
+all-excerpts-must-agree rule. Tracks with repeated clearly intense/tense excerpts
+are excluded for whole-track background use, even if other excerpts are quiet;
+they do not require individual manual exclusion. Close family ties remain empty.
+This is still sampled model classification, not human listening
 or calibrated accuracy. Original reviews remain unchanged; source-SHA-bound second
 pass receipts and an overrides index live under `selection/refinement-v2`.
 Catalog rebuilds apply this index; the web server continues to prioritize stored

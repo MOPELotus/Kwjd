@@ -106,12 +106,16 @@ def resampled_decision(scores, features):
         keys = sorted(s, key=s.get, reverse=True)
         if s[keys[0]] - s[keys[1]] >= .045:
             strong[keys[0]] += 1
-    # Long clips with both clearly quiet and clearly forceful sections stay mixed.
+    # Whole-track admission: repeated forceful sections make a track unsuitable
+    # even if other excerpts are quiet. A mixed track is not a manual-review chore.
     transition = strong['usable'] >= 2 and strong['action'] >= 2 and margin < .06
     ambiguous = margin < .008 or votes.count(top) < 2
-    if transition or ambiguous:
+    if transition:
+        category = base.LABELS[max(('intense','tense'),key=avg.get)]
+        reason = 'repeated_action_sections_excluded_for_whole_track_use'
+    elif ambiguous:
         category = '混合/待复核'
-        reason = 'strong_cross_family_transition' if transition else 'close_cross_family_evidence'
+        reason = 'close_cross_family_evidence'
     else:
         label = max(FAMILIES[top], key=avg.get)
         # Slow/sad is still usable calm. Do not turn low-volume dark music into
@@ -126,7 +130,7 @@ def resampled_decision(scores, features):
         reason = 'aggregate_family_and_subtype'
     return dict(category=category, method='new_prompt_ensemble_five_windows', reason=reason,
                 family_margin=margin, family_votes=votes, strong_family_votes=dict(strong),
-                mean_scores=avg, human_listened=False)
+                mean_scores=avg, decision_policy='whole_track_admission_v3', human_listened=False)
 
 
 def file_sha(path):
@@ -212,6 +216,13 @@ def main(args):
         if receipt.exists():
             review = base.read(receipt)
             if review.get('version') == VERSION and review.get('source_sha256') == sha:
+                if review.get('method')=='new_prompt_ensemble_five_windows':
+                    updated=resampled_decision(review['cosine_scores'],review['rhythm_features'])
+                    if any(review.get(k)!=v for k,v in updated.items()):
+                        archive=folder/'before-whole-track-policy'/(sha+'.json')
+                        if not archive.exists():base.atomic(archive,review)
+                        review.update(updated)
+                        base.atomic(receipt,review)
                 overrides[sha] = review
                 continue
         decision = quick_decision(row['audio_review']['cosine_scores'])
@@ -229,6 +240,8 @@ def main(args):
     print(json.dumps(dict(state='FAMILY_PASS_COMPLETE', refined=len(overrides), pending=len(pending))), flush=True)
     if args.quick_only:
         return
+    if args.reconcile_only and pending:
+        raise RuntimeError('Unprocessed audio remains; reconciliation is not completion')
     if not pending:
         return finish(args, candidates, overrides, 0)
     from concurrent.futures import ProcessPoolExecutor
@@ -280,5 +293,6 @@ if __name__ == '__main__':
     p.add_argument('--threads',type=int,default=2)
     p.add_argument('--workers',type=int,choices=range(1,5),default=4)
     p.add_argument('--quick-only',action='store_true')
+    p.add_argument('--reconcile-only',action='store_true')
     p.add_argument('--limit',type=int,default=0)
     main(p.parse_args())
