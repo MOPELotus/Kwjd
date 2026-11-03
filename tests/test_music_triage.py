@@ -46,5 +46,11 @@ class MusicTriageTests(unittest.TestCase):
         self.assertEqual(triage.time_hint('Dragonspine day'), '白天')
         self.assertEqual(triage.time_hint('昼夜变化'), '昼夜变化')
 
+    def test_originals_available_but_excluded_assets_do_not_imply_ready(self):
+        self.assertTrue(triage.available_asset(dict(status='原视频直接通过（抽样）')))
+        self.assertFalse(triage.available_asset(dict(status='排除/仅备用')))
+        self.assertFalse(triage.pending_video_asset(dict(status='仅静态或引擎场景/无原视频')))
+        self.assertFalse(triage.pending_video_asset(dict(status='排除/仅备用')))
+
 
 if __name__=='__main__': unittest.main()

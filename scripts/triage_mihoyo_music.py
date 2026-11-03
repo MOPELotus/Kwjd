@@ -117,7 +117,25 @@ def assets(root):
                     a['status']='可用成片（有界验收）';a['file']=item['destination']
     for f in (root/'background/ZZZ-1080p60-clean').glob('*.mp4'):
         result.append(dict(id='ZZZ:'+f.stem,game='ZZZ',title=f.stem,location=locations('ZZZ',f.stem),time_hint=time_hint(f.stem),status='可用成片（有界验收）',file=str(f)))
+    bulk=research/'bulk-review-v1/inventory.json'
+    if bulk.exists():
+        reviewed={x['id']:x for x in read(bulk)['items']}
+        statuses={'DIRECT_ORIGINAL':'原视频直接通过（抽样）','READY_EXISTING_OUTPUT':'可用成片（有界验收）',
+                  'EXCLUDE':'排除/仅备用','PICTURE_FIX_REQUIRED':'需裁边或修剪',
+                  'NONSTANDARD_SIZE_OR_SAR':'需修正尺寸或像素比例','TECHNICAL_REVIEW':'技术疑点待核',
+                  'REVIEW_REQUIRED':'画面疑点待核','SOURCE_CHANGED_REVIEW':'源变动待核'}
+        for asset in result:
+            if asset['id'] in reviewed:
+                row=reviewed[asset['id']]
+                asset['status']=statuses.get(row['action'],'待核')
+                asset['file']=row['file'] if row['action'] in ['DIRECT_ORIGINAL','READY_EXISTING_OUTPUT'] else ''
     return result
+
+def available_asset(asset):
+    return asset['status'] in ['原视频直接通过（抽样）','可用成片（有界验收）']
+
+def pending_video_asset(asset):
+    return asset['status'] in ['已安装/待审看','已看抽帧/待处理','需裁边或修剪','需修正尺寸或像素比例','技术疑点待核','画面疑点待核']
 
 def build(root,evidence):
     a=assets(root);rows=[]
@@ -136,10 +154,10 @@ def export(root,evidence,rows,a):
     headings=['游戏','曲名','情绪初筛','曲名地区线索','曲名时段线索','专辑地区背景','该地区素材储备','专辑','音乐文件']
     records=[]
     for r in rows:
-        ready=sum(x['status']=='可用成片（有界验收）' for x in r['assets'])
+        ready=sum(available_asset(x) for x in r['assets'])
         loc='、'.join(x['region']+('/'+x['place'] if x['place'] else '') for x in r['location']) or '待核对'
         context='、'.join(x['region']+'（'+x['basis']+'）' for x in r['album_context']) or '待核对'
-        status='已有成片' if ready else '有待处理素材' if any(x['status'] not in ['仅静态或引擎场景/无原视频','仅预设/依赖待核'] for x in r['assets']) else '仅静态或预设' if r['assets'] else '尚未匹配/待核'
+        status='已有可用视频（原片/成片）' if ready else '有待处理或复核视频' if any(pending_video_asset(x) for x in r['assets']) else '仅静态/预设/备用候选' if r['assets'] else '尚未匹配/待核'
         times='、'.join(sorted(set(x['time_hint'] for x in r['assets'])))
         records.append([r['game'],r['title'],r['mood'],loc,r['time_hint'],context,status+('：'+times if times else ''),r['album'],r['file']])
     with (evidence/'曲目分类与素材.csv').open('w',encoding='utf-8-sig',newline='') as f:
