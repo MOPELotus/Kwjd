@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#f6f5f0">
+  <title>听选 · 游戏音乐审核</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="masthead">
+      <div><div class="eyebrow"><span class="brand-mark">♫</span> 听选 <span class="divider">/</span> 游戏音乐库</div>
+        <h1>扫一眼，需要时再听。</h1>
+        <p class="intro">点击分类即保存。舒缓、轻快用于视频；激烈／紧张、人声和其他不入视频。</p>
+      </div>
+      <div class="header-actions"><span id="save-status" role="status">正在载入…</span><button id="refresh" class="quiet">刷新</button><button id="export" class="quiet">导出审核结果 ↗</button></div>
+    </header>
+
+    <section class="overview" aria-label="分类状态">
+      <div><span class="stat-label">曲目总数</span><strong id="total">—</strong></div>
+      <div><span class="stat-label">已有分类</span><strong id="classified">—</strong></div>
+      <div><span class="stat-label">尚未分类</span><strong id="unclassified">—</strong></div>
+      <div class="progress-block"><span id="progress-text" class="stat-label">已有分类直接沿用，只需修改不合适的。</span><div class="progress"><div id="progress-fill"></div></div></div>
+    </section>
+
+    <nav id="games" class="game-tabs" aria-label="游戏子选项卡"></nav>
+    <section class="library" aria-label="曲目审核列表">
+      <div class="toolbar">
+        <label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="搜索歌名或专辑" aria-label="搜索歌名或专辑"></label>
+        <select id="review-filter" aria-label="分类状态"><option value="all">全部状态</option><option value="classified">已有分类</option><option value="unclassified">未分类</option></select>
+        <select id="label-filter" aria-label="音乐分类"><option value="all">全部分类</option><option value="usable">适合入视频</option><option value="excluded">不入视频</option><option value="calm">舒缓</option><option value="cheerful">轻快</option><option value="intense">激烈／紧张</option><option value="vocal">人声</option><option value="other">其他</option></select>
+      </div>
+      <div class="list-caption"><span id="list-count">正在读取音乐库…</span><span>选中即为当前分类，无需确认；需要调整时直接点分类，不确定可留空。</span></div>
+      <div class="column-head" aria-hidden="true"><span>曲目 / 专辑</span><span>分类</span><span>状态</span></div>
+      <div id="tracks" class="tracks" aria-live="polite"></div>
+      <footer class="pagination"><span id="page-info"></span><div><button id="previous-page" class="quiet">← 上一页</button><button id="next-page" class="quiet">下一页 →</button></div></footer>
+    </section>
+    <p class="footnote">所有改动自动保存到本机，刷新或换设备后可以继续。已有分类直接沿用，无需逐首确认。</p>
+  </main>
+
+  <section class="player" aria-label="播放器">
+    <div class="player-track"><span class="player-art" aria-hidden="true">♫</span><div><strong id="now-title">选一首，开始试听</strong><span id="now-album">原神 · 星穹铁道 · 绝区零</span></div></div>
+    <div class="audio-wrap"><audio id="audio" controls preload="none"></audio><span class="shortcuts">空格 播放 / 暂停　·　1–5 分类　·　N 下一首</span></div>
+    <div class="player-actions"><button id="previous-track" class="quiet" title="上一首" aria-label="上一首">← 上一首</button><button id="next-track" class="primary" title="下一首" aria-label="下一首">下一首 →</button></div>
+  </section>
+  <div id="toast" class="toast" role="alert" hidden></div>
+</body>
+</html>
