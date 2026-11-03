@@ -139,6 +139,8 @@ def pending_video_asset(asset):
 
 def build(root,evidence):
     a=assets(root);rows=[]
+    refined_path=evidence/'refinement-v2/overrides.json'
+    refined=read(refined_path).get('reviews',{}) if refined_path.exists() else {}
     for g in read(root/'.kwjd/mihoyo-music/catalog/download-plan.json')['groups']:
         key=hashlib.sha256(json.dumps(g,sort_keys=True,ensure_ascii=False).encode()).hexdigest()[:20]
         rec=read(root/'.kwjd/mihoyo-music/download/receipts'/(key+'.json'))
@@ -147,6 +149,11 @@ def build(root,evidence):
         matches=[x for x in a if x['game']==g['game'] and matching_location and any(m['region']==n['region'] and (not m['place'] or not n['place'] or m['place']==n['place']) for m in matching_location for n in x['location'])]
         cache=evidence/'audio-reviews'/(rec['sha256']+'.json');review=read(cache) if cache.exists() else None
         rows.append(dict(key=key,game=g['game'],title=g['title'],album=g['album'],file=rec['file'],sha256=rec['sha256'],duration=rec['duration_seconds'],mood=review['category'] if review else '待音频初筛',audio_review=review,location=loc,time_hint=time_hint(g['title']),album_context=context,location_basis='曲名明确地名，仅元数据线索，非游戏播放位置确证' if loc else '专辑地区背景，具体播放位置待核' if context else '待逐曲核对',assets=[dict(id=x['id'],status=x['status'],file=x['file'],title=x['title'],time_hint=x['time_hint']) for x in matches],human_listened=False))
+        extra=refined.get(rec['sha256'])
+        if extra and extra.get('source_sha256')==rec['sha256']:
+            rows[-1]['first_pass_mood']=rows[-1]['mood']
+            rows[-1]['mood']=extra['category']
+            rows[-1]['refinement']=extra
     atomic(evidence/'catalog.json',dict(tracks=rows,assets=a,note='模型分布抽样初筛，非人工试听；素材匹配仅地区线索，不保证构图适合。'))
     return rows,a
 

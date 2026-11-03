@@ -17,6 +17,19 @@ regardless of whether it came from the model or a human override. Export include
 all current classifications and their origin, including empty classifications.
 Using a model default does not imply that the user manually listened to that track.
 
+Second-pass triage (`scripts/refine_mihoyo_music.py`) first merges compatible
+calm/cheerful and intense/tense excerpt votes, then resamples remaining conflicts
+at five positions with new prompt ensembles. Quiet reflective/sad music has its
+own calm descriptions; normalized onset and pulse measurements only help resolve
+close calm/cheerful subtype choices. Aggregate family evidence replaces the old
+all-excerpts-must-agree rule. Strong quiet/action transitions and close family
+ties remain empty. This is still sampled model classification, not human listening
+or calibrated accuracy. Original reviews remain unchanged; source-SHA-bound second
+pass receipts and an overrides index live under `selection/refinement-v2`.
+Catalog rebuilds apply this index; the web server continues to prioritize stored
+human overrides, including explicit empty labels. Refinement does not edit the
+human review files or infer regions/day-night from musical mood.
+
 Human decisions are stored separately in
 `.kwjd/mihoyo-music/selection/human-reviews.json`, with an append-only recovery
 journal alongside it. No model results, source audio or download receipts change.
