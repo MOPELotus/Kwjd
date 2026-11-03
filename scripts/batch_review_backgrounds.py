@@ -102,7 +102,9 @@ def prior_verdict(item, review):
 def report(root, output):
     decisions={p.stem:read(p) for p in (output/'decisions').glob('*.json')}
     rows=[];accepted={}
-    for receipt in (root/'clean1080').glob('batch*/*/receipt.json'):
+    receipts=list((root/'clean1080').glob('batch*/*/receipt.json'))
+    receipts+=list((root/'exception-processing-v1'/'outputs').glob('*/receipt.json'))
+    for receipt in receipts:
         visual=receipt.parent/'output-visual-review.json'
         if not visual.exists():continue
         rec=read(receipt);rev=read(visual)
@@ -117,6 +119,11 @@ def report(root, output):
                 d=read(old);note=d.get('findings') or d.get('finding') or d.get('scene_observed','')
                 category,flags=prior_verdict(item,d)
             else:category='PENDING';note='';flags=[]
+            native_review=root/'exception-native-v1'/item/'native-batch-review.json'
+            if native_review.exists() and read(native_review).get('state')=='DIFFICULT_OR_UNCERTAIN_BACKUP':
+                verdict=read(native_review)
+                if verdict.get('source_sha256')==tech['sha256']:
+                    category='EXCLUDE';flags=['DIFFICULT_OR_UNCERTAIN_BACKUP'];note=verdict['findings']
             source=Path(tech['source']);stat=source.stat()
             unchanged=(stat.st_size==tech['bytes'] and stat.st_mtime_ns==tech['mtime_ns'])
             if category=='EXCLUDE':action='EXCLUDE'
@@ -125,7 +132,10 @@ def report(root, output):
             elif category in ['REVIEW_REQUIRED','PENDING']:action=category
             elif category=='NEEDS_CROP':action='PICTURE_FIX_REQUIRED'
             elif not standard_picture(tech['video']):action='NONSTANDARD_SIZE_OR_SAR'
-            elif tech['state']=='TECHNICAL_REVIEW_REQUIRED':action='TECHNICAL_REVIEW'
+            elif tech['state']=='TECHNICAL_REVIEW_REQUIRED':
+                resolution=p.parent/'technical-flag-resolution.json'
+                resolved=read(resolution) if resolution.exists() else {}
+                action='DIRECT_ORIGINAL' if resolved.get('state')=='ORIGINAL_TIMING_VERIFIED' and resolved.get('source_sha256')==tech['sha256'] else 'TECHNICAL_REVIEW'
             else:action='DIRECT_ORIGINAL'
             rows.append(dict(id=item,title=tech.get('title',''),category=category,
                              flags=flags,findings=note,source_sha256=tech['sha256'],action=action,
