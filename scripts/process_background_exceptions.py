@@ -81,6 +81,23 @@ def timestamp_check(packets,timeline=None):
     return count
 
 
+def output_review_pages(evidence):
+    receipts=[p for p in sorted(evidence.glob('*/receipt.json')) if not (p.parent/'output-visual-review.json').exists()]
+    directory=evidence/'visual-pages'/time.strftime('%Y%m%d-%H%M%S')
+    directory.mkdir(parents=True,exist_ok=False);pages=[]
+    for start in range(0,len(receipts),8):
+        sheet=Image.new('RGB',(1440,8*300),(18,18,18));rows=[]
+        for n,path in enumerate(receipts[start:start+8]):
+            rec=read(path)
+            if sha(rec['item']['destination'])!=rec['sha256']:raise ValueError('Encoded output SHA changed')
+            with Image.open(rec['visual_contact']) as im:sheet.paste(im,(0,n*300))
+            rows.append(dict(id=path.parent.name,receipt=str(path),output_sha256=rec['sha256'],source_sha256=rec['source_sha256']))
+        page=directory/f'page-{len(pages)+1:02d}.jpg';sheet.save(page,quality=95)
+        pages.append(dict(file=str(page),sha256=sha(page),rows=rows))
+    atomic(directory/'manifest.json',dict(pages=pages,items=len(receipts),scope='Three encoded frames per source, prepared for actual batch visual inspection; preparation is not acceptance.'))
+    print(json.dumps(dict(manifest=str(directory/'manifest.json'),items=len(receipts))))
+
+
 def run(plan_path,evidence):
     plan=read(plan_path);evidence.mkdir(parents=True,exist_ok=True)
     lock=evidence/'worker.lock'
@@ -167,6 +184,8 @@ if __name__=='__main__':
     parser.add_argument('--plan',type=Path,required=True)
     parser.add_argument('--evidence',type=Path,required=True)
     parser.add_argument('--prepare-previews',action='store_true')
+    parser.add_argument('--output-review-pages',action='store_true')
     args=parser.parse_args()
     if args.prepare_previews:prepare_previews(args.plan,args.evidence)
+    elif args.output_review_pages:output_review_pages(args.evidence)
     else:run(args.plan,args.evidence)
