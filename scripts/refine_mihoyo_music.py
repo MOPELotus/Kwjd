@@ -141,6 +141,64 @@ def publish(args, overrides):
     return rows
 
 
+_WORKER = None
+
+def init_model(args):
+    import torch
+    from transformers import ClapModel, ClapProcessor
+    torch.set_num_threads(args.threads)
+    torch.manual_seed(0)
+    processor = ClapProcessor.from_pretrained(args.model, local_files_only=True)
+    model = ClapModel.from_pretrained(args.model, local_files_only=True).eval()
+    prompt_sha = hashlib.sha256(json.dumps(PROMPTS, sort_keys=True).encode()).hexdigest()
+    with torch.inference_mode():
+        text = model.get_text_features(**processor(text=[p for v in PROMPTS.values() for p in v], padding=True, return_tensors='pt'))
+        text = text/text.norm(dim=-1, keepdim=True)
+    return processor,model,text,prompt_sha
+
+
+def analyse_track(payload):
+    global _WORKER
+    row,args=payload
+    import numpy as np
+    import torch
+    if _WORKER is None:
+        _WORKER=init_model(args)
+    processor,model,text,prompt_sha=_WORKER
+    try:
+        before = Path(row['file']).stat()
+        if file_sha(row['file']) != row['sha256']:
+            raise ValueError('Source SHA mismatch')
+        starts = sorted(set(round(max(0, (row['duration']-10)*p), 3) for p in [.05,.275,.5,.725,.95]))
+        clips = []
+        for start in starts:
+            raw = subprocess.check_output([args.ffmpeg,'-v','error','-ss',str(start),'-i',row['file'],
+                  '-t','10','-vn','-ac','1','-ar','48000','-f','f32le','-'], timeout=45)
+            clip = np.frombuffer(raw,dtype=np.float32).copy()
+            if len(clip) < min(48000, row['duration']*48000*.8):
+                raise ValueError('Insufficient sampled audio')
+            clips.append(clip)
+        features = rhythm_features(clips)
+        with torch.inference_mode():
+            audio = model.get_audio_features(**processor(audio=clips,sampling_rate=48000,return_tensors='pt',padding=True))
+            audio = audio/audio.norm(dim=-1,keepdim=True)
+            similarities = (audio@text.T).tolist()
+        scores = [{k:sum(v[i*4:i*4+4])/4 for i,k in enumerate(PROMPTS)} for v in similarities]
+        decision = resampled_decision(scores, features)
+        after = Path(row['file']).stat()
+        if (before.st_size,before.st_mtime_ns)!=(after.st_size,after.st_mtime_ns):
+            raise ValueError('Source changed')
+        review = dict(decision, version=VERSION, source_sha256=row['sha256'], model=base.MODEL,
+                      model_revision=getattr(model.config,'_commit_hash',None), prompt_sha256=prompt_sha,
+                      windows=[dict(start=t,seconds=min(10,row['duration']-t)) for t in starts],
+                      cosine_scores=scores,rhythm_features=features,
+                      initial_category=row.get('first_pass_mood', row['mood']),
+                      scope='Five distributed samples, aggregate semantics and spectral onsets; not full human listening')
+        return row['sha256'],review,None
+    except Exception as error:
+        return row['sha256'],None,type(error).__name__
+
+
 def main(args):
     folder = args.evidence/'refinement-v2'
     folder.mkdir(parents=True, exist_ok=True)
@@ -173,66 +231,30 @@ def main(args):
         return
     if not pending:
         return finish(args, candidates, overrides, 0)
-    import numpy as np
-    import torch
-    from transformers import ClapModel, ClapProcessor
-    torch.set_num_threads(args.threads)
-    torch.manual_seed(0)
-    processor = ClapProcessor.from_pretrained(args.model, local_files_only=True)
-    model = ClapModel.from_pretrained(args.model, local_files_only=True).eval()
-    prompt_sha = hashlib.sha256(json.dumps(PROMPTS, sort_keys=True).encode()).hexdigest()
-    with torch.inference_mode():
-        text = model.get_text_features(**processor(text=[p for v in PROMPTS.values() for p in v], padding=True, return_tensors='pt'))
-        text = text/text.norm(dim=-1, keepdim=True)
-    errors = 0
-    started = time.monotonic()
-    for index, row in enumerate(pending):
-        try:
-            before = Path(row['file']).stat()
-            if file_sha(row['file']) != row['sha256']:
-                raise ValueError('Source SHA mismatch')
-            starts = sorted(set(round(max(0, (row['duration']-10)*p), 3) for p in [.05,.275,.5,.725,.95]))
-            clips = []
-            for start in starts:
-                raw = subprocess.check_output([args.ffmpeg,'-v','error','-ss',str(start),'-i',row['file'],
-                      '-t','10','-vn','-ac','1','-ar','48000','-f','f32le','-'], timeout=45)
-                clip = np.frombuffer(raw,dtype=np.float32).copy()
-                if len(clip) < min(48000, row['duration']*48000*.8):
-                    raise ValueError('Insufficient sampled audio')
-                clips.append(clip)
-            features = rhythm_features(clips)
-            with torch.inference_mode():
-                audio = model.get_audio_features(**processor(audio=clips,sampling_rate=48000,return_tensors='pt',padding=True))
-                audio = audio/audio.norm(dim=-1,keepdim=True)
-                similarities = (audio@text.T).tolist()
-            scores = [{k:sum(v[i*4:i*4+4])/4 for i,k in enumerate(PROMPTS)} for v in similarities]
-            decision = resampled_decision(scores, features)
-            after = Path(row['file']).stat()
-            if (before.st_size,before.st_mtime_ns)!=(after.st_size,after.st_mtime_ns):
-                raise ValueError('Source changed')
-            review = dict(decision, version=VERSION, source_sha256=row['sha256'], model=base.MODEL,
-                          model_revision=getattr(model.config,'_commit_hash',None), prompt_sha256=prompt_sha,
-                          windows=[dict(start=t,seconds=min(10,row['duration']-t)) for t in starts],
-                          cosine_scores=scores,rhythm_features=features,
-                          initial_category=row.get('first_pass_mood', row['mood']),
-                          scope='Five distributed samples, aggregate semantics and spectral onsets; not full human listening')
-            base.atomic(folder/'reviews'/(row['sha256']+'.json'),review)
-            overrides[row['sha256']] = review
-        except Exception as error:
-            errors += 1
-            base.atomic(folder/'errors'/(row['sha256']+'.json'),dict(type=type(error).__name__,source_sha256=row['sha256']))
-        base.atomic(folder/'status.json', dict(state='RUNNING', groups=len(candidates),unique_candidates=len(unique),
-                    refined=len(overrides),resampled_this_run=index+1,remaining=len(pending)-index-1,
-                    errors=errors,elapsed_seconds=round(time.monotonic()-started,1)))
-        if (index+1)%25==0:
-            publish(args,overrides)
-            print(json.dumps(dict(resampled=index+1,remaining=len(pending)-index-1,errors=errors)),flush=True)
-        if args.limit and index+1 >= args.limit:
-            publish(args,overrides)
-            base.atomic(folder/'status.json', dict(state='BOUNDED_RUN_COMPLETE', groups=len(candidates),
-                        refined=len(overrides), remaining=len(pending)-index-1, errors=errors,
-                        resampled_this_run=index+1,elapsed_seconds=round(time.monotonic()-started,1)))
-            return
+    from concurrent.futures import ProcessPoolExecutor
+    errors=0
+    started=time.monotonic()
+    selected=pending[:args.limit] if args.limit else pending
+    # Workers only return results; the parent alone writes receipts/catalogs.
+    with ProcessPoolExecutor(max_workers=args.workers) as pool:
+        for index,(sha,review,error) in enumerate(pool.map(analyse_track,((row,args) for row in selected))):
+            if error:
+                errors+=1
+                base.atomic(folder/'errors'/(sha+'.json'),dict(type=error,source_sha256=sha))
+            else:
+                base.atomic(folder/'reviews'/(sha+'.json'),review)
+                overrides[sha]=review
+            base.atomic(folder/'status.json',dict(state='RUNNING',groups=len(candidates),unique_candidates=len(unique),
+                        refined=len(overrides),resampled_this_run=index+1,remaining=len(pending)-index-1,
+                        workers=args.workers,threads_per_worker=args.threads,errors=errors,elapsed_seconds=round(time.monotonic()-started,1)))
+            if (index+1)%25==0:
+                publish(args,overrides)
+                print(json.dumps(dict(resampled=index+1,remaining=len(pending)-index-1,errors=errors)),flush=True)
+    if args.limit and len(selected)<len(pending):
+        publish(args,overrides)
+        base.atomic(folder/'status.json',dict(state='BOUNDED_RUN_COMPLETE',groups=len(candidates),refined=len(overrides),
+                    remaining=len(pending)-len(selected),errors=errors,resampled_this_run=len(selected),elapsed_seconds=round(time.monotonic()-started,1)))
+        return
     finish(args,candidates,overrides,errors)
 
 
@@ -255,7 +277,8 @@ if __name__ == '__main__':
     p.add_argument('--evidence',type=Path,default=Path('D:/qingqingwu/.kwjd/mihoyo-music/selection'))
     p.add_argument('--model',default='D:/qingqingwu/tools/music-analysis-models/clap-htsat-unfused')
     p.add_argument('--ffmpeg',default='D:/Apps/ffmpeg/ffmpeg.exe')
-    p.add_argument('--threads',type=int,default=4)
+    p.add_argument('--threads',type=int,default=2)
+    p.add_argument('--workers',type=int,choices=range(1,5),default=4)
     p.add_argument('--quick-only',action='store_true')
     p.add_argument('--limit',type=int,default=0)
     main(p.parse_args())
