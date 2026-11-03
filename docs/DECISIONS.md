@@ -68,3 +68,7 @@ The user authorized QQ-to-NetEase fallback for the music library. `download_miho
 The user further authorized bidirectional provider rotation. `--provider-rotation` cools down either provider on HTTP 401/5xx or network failures, tries reviewed alternate sources, and rechecks deferred groups after a default ten-minute cooldown. Verified receipts are reused on every pass; HTTP 429 still stops for review. Missing alternates remain pending rather than silently substituting unrelated music.
 
 A real authorized 56-minute ZZZ mix returned a roughly 795 MB FLAC, exceeding the original 512 MiB single-track guard. Permit up to 2 GiB per audio file while retaining the 40 GiB disk reserve, and scale full-decode timeout with actual duration (120–1800 seconds). This changes resource admission only; duration, byte count, SHA and full decode remain required.
+
+## 2026-11-03: Opportunistic lossless upgrades
+
+The user requested another check of lossy candidates. `--upgrade-lossy` rechecks technically verified MP3/Vorbis receipts, admits only actual lossless codecs for upgrades, archives superseded receipts and retains the original candidate files. If no lossless candidate is returned, the existing verified file stays usable. Platform lossless labels alone do not establish codec quality or audio-version identity.

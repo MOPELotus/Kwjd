@@ -18,6 +18,14 @@ def atomic(path, value):
     temp.replace(path)
 
 
+def lossless_codec(name):
+    return name in ('flac','alac') or str(name).startswith('pcm_')
+
+
+def receipt_is_lossless(receipt):
+    return any(lossless_codec(s.get('codec_name')) for s in receipt.get('streams',[]))
+
+
 def candidate_score(data):
     lossless = data.get('format', '').lower() in ('flac','wav','alac','aiff')
     duration = data.get('duration_ms') or 1
@@ -101,18 +109,29 @@ def run_pass(args):
     for index, group in enumerate(plan):
         key = hashlib.sha256(json.dumps(group,sort_keys=True,ensure_ascii=False).encode()).hexdigest()[:20]
         receipt_path = args.evidence/'receipts'/(key+'.json')
+        previous_receipt = None
         if receipt_path.exists():
             receipt = json.loads(receipt_path.read_text(encoding='utf8'))
             file = Path(receipt['file'])
             if receipt.get('status')=='VERIFIED' and file.exists() and file.stat().st_size==receipt['bytes']:
-                status['verified'] += 1
-                continue
+                if getattr(args,'upgrade_lossy',False) and not receipt_is_lossless(receipt):
+                    previous_receipt = receipt
+                else:
+                    status['verified'] += 1
+                    continue
         status.update(index=index,current_title=group['title'],current_key=key)
         atomic(status_path,status)
         if shutil.disk_usage(args.output).free < args.minimum_free_gib*1024**3:
             raise StopBatch('Insufficient disk reserve; sources retained')
         try:
             candidates, attempts, sources = collect_candidates(args, group, blocked, fallback_map)
+            if previous_receipt:
+                candidates = [c for c in candidates if c[2].get('format','').lower() in ('flac','wav','alac','aiff')]
+                if not candidates:
+                    atomic(args.evidence/'upgrade-unavailable'/(key+'.json'), {'key':key,'attempts':attempts,'retained_sha256':previous_receipt['sha256']})
+                    status['verified'] += 1
+                    atomic(status_path,status)
+                    continue
             if not candidates:
                 if any(s['ref'].split(':',1)[0] in blocked for s in sources):
                     atomic(args.evidence/'deferred'/(key+'.json'),
@@ -137,6 +156,8 @@ def run_pass(args):
             if data.get('size') and partial.stat().st_size!=data['size']:
                 raise ValueError('Download size mismatch')
             probe=json.loads(subprocess.run([args.ffprobe,'-v','error','-show_format','-show_streams','-of','json',str(partial)],capture_output=True,check=True,timeout=30).stdout)
+            if previous_receipt and not any(lossless_codec(s.get('codec_name')) for s in probe['streams']):
+                raise ValueError('Upgrade candidate is not an actual lossless codec')
             duration=float(probe['format']['duration'])
             if source.get('duration_ms') and abs(duration-source['duration_ms']/1000)>2:
                 raise ValueError('Decoded duration mismatch; no full-song claim')
@@ -151,6 +172,10 @@ def run_pass(args):
                      'sha256':digest,'full_decode_ok':True,'duration_seconds':duration,
                      'streams':[{k:s.get(k) for k in ('codec_name','sample_rate','channels','bits_per_raw_sample')} for s in probe['streams']],
                      'attempts':attempts,'listened':False,'quality_note':'Highest ordinary authorized candidate ranked by lossless format and returned bitrate; platform effect labels do not prove master fidelity'}
+            if previous_receipt:
+                atomic(args.evidence/'upgrade-history'/(key+'.'+previous_receipt['sha256']+'.json'),previous_receipt)
+                receipt['supersedes'] = {k:previous_receipt[k] for k in ('file','sha256','bytes')}
+                receipt['upgrade_note'] = 'Actual lossless codec verified; old candidate file retained. Metadata pairing does not prove identical audio versions.'
             atomic(receipt_path,receipt)
             status['verified']+=1
             deferred_path = args.evidence/'deferred'/(key+'.json')
@@ -196,6 +221,7 @@ if __name__=='__main__':
     p.add_argument('--plan',type=Path,required=True)
     p.add_argument('--output',type=Path,required=True)
     p.add_argument('--evidence',type=Path,required=True)
+    p.add_argument('--upgrade-lossy',action='store_true',help='Recheck lossy receipts for actual lossless candidates; preserve old audio and receipts')
     p.add_argument('--provider-rotation',action='store_true',help='Rotate QQ/NetEase on auth, gateway or network failures; retry deferred groups after cooldown')
     p.add_argument('--provider-retry-seconds',type=int,default=600)
     p.add_argument('--qq-fallback',action='store_true',help='Suspend failing QQ provider for this run and use reviewed NetEase candidates; retain unmatched groups as deferred')

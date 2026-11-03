@@ -17,6 +17,11 @@ class AudioAdmissionTests(unittest.TestCase):
             self.assertFalse(m.native_candidate(dict(base,**changes),180000))
         self.assertTrue(m.native_candidate(base,180000))
 
+    def test_actual_codec_controls_lossless_receipt(self):
+        self.assertFalse(m.receipt_is_lossless({'actual_quality':'lossless','streams':[{'codec_name':'vorbis'}]}))
+        self.assertTrue(m.receipt_is_lossless({'streams':[{'codec_name':'flac'}]}))
+        self.assertTrue(m.lossless_codec('pcm_s24le'))
+
     def test_lossless_preferred_over_larger_lossy_bitrate(self):
         self.assertGreater(m.candidate_score({'format':'flac','bitrate':700000}),m.candidate_score({'format':'mp3','bitrate':900000}))
 
