@@ -66,7 +66,7 @@ def prepare_previews(plan_path,evidence):
     print(json.dumps(dict(pages=len(pages),items=len(plan['items']))))
 
 
-def timestamp_check(packets):
+def timestamp_check(packets,timeline=None):
     """Validate packet timing without imposing CFR or a particular frame rate."""
     pts=set();count=0;last=None
     for line in packets:
@@ -77,6 +77,7 @@ def timestamp_check(packets):
         if p in pts or (last is not None and d<=last):raise ValueError('Duplicate PTS or non-monotonic DTS')
         pts.add(p);last=d;count+=1
     if not count:raise ValueError('No video packets')
+    if timeline is not None:timeline.extend(sorted(pts))
     return count
 
 
@@ -107,7 +108,7 @@ def run(plan_path,evidence):
             if partial.exists():raise ValueError('Prior partial retained for investigation')
             command=[FFMPEG,'-v','warning','-nostdin','-hwaccel','cuda','-i',str(source),'-map','0:v:0','-an','-sn','-dn',
                 '-vf',video_filter(item),'-fps_mode','passthrough','-enc_time_base','demux','-c:v','hevc_nvenc','-preset','p3',
-                '-tune','hq','-rc','vbr','-cq','19','-b:v','0','-pix_fmt','yuv420p','-tag:v','hvc1','-movflags','+faststart',
+                '-tune','hq','-rc','vbr','-cq','19','-b:v','0','-bf','0','-pix_fmt','yuv420p','-tag:v','hvc1','-movflags','+faststart',
                 '-map_metadata','-1','-progress',str(work/'progress.txt'),str(partial)]
             atomic(work/'command.json',dict(args=command,source_sha256=item['source_sha256']))
             started=time.monotonic()
@@ -122,18 +123,25 @@ def run(plan_path,evidence):
                 raise ValueError('Unexpected output dimensions/SAR/streams')
             if abs(duration-item['duration'])>max(0.15,2/float(Fraction(native['avg_frame_rate']))):raise ValueError('Duration changed')
             packet_command=[FFPROBE,'-v','error','-select_streams','v:0','-show_packets','-show_entries','packet=pts,dts','-of','csv=p=0']
-            counts=[]
+            counts=[];timelines=[]
             for packet_source in [source,partial]:
                 process=subprocess.Popen(packet_command+[str(packet_source)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
-                try:counts.append(timestamp_check(process.stdout))
+                timeline=[]
+                try:counts.append(timestamp_check(process.stdout,timeline))
                 except BaseException:process.kill();process.communicate();raise
                 _,stderr=process.communicate()
                 if process.returncode or stderr:raise ValueError('Packet scan failed')
+                timelines.append(timeline)
             if counts[0]!=counts[1]:raise ValueError('Frame count changed')
+            bases=[Fraction(native['time_base']),Fraction(v['time_base'])]
+            timing_error=max(abs(float((a-timelines[0][0])*bases[0]-(b-timelines[1][0])*bases[1])) for a,b in zip(*timelines))
+            if timing_error>float(max(bases))+1e-8:raise ValueError('Native presentation timing changed')
             checks=[];sheet=Image.new('RGB',(1440,300),(18,18,18));draw=ImageDraw.Draw(sheet)
             for n,t in enumerate([min(1,duration/4),duration/2,max(0,duration-1)]):
-                check=subprocess.run([FFMPEG,'-v','error','-ss',str(t),'-i',str(partial),'-t','1','-map','0:v:0','-fps_mode','passthrough','-f','null','-'],capture_output=True,text=True)
-                if check.returncode or check.stderr.strip():raise ValueError('Output sample decode failed')
+                check=subprocess.run([FFMPEG,'-v','error','-ss',str(t),'-i',str(partial),'-t','1','-map','0:v:0','-fps_mode','passthrough','-enc_time_base','demux','-f','null','-'],capture_output=True,text=True)
+                if check.returncode or check.stderr.strip():
+                    atomic(work/f'decode-{n}-failure.json',dict(start=t,exit_code=check.returncode,stderr=check.stderr))
+                    raise ValueError('Output sample decode failed')
                 target=work/f'output-{n}.jpg'
                 subprocess.run([FFMPEG,'-v','error','-ss',str(t),'-i',str(partial),'-map','0:v:0','-frames:v','1','-vf','scale=480:270:force_original_aspect_ratio=decrease,pad=480:270:(ow-iw)/2:(oh-ih)/2',str(target)],check=True,capture_output=True)
                 with Image.open(target) as im:sheet.paste(im,(n*480,25))
@@ -144,7 +152,7 @@ def run(plan_path,evidence):
             if (before.st_size,before.st_mtime_ns)!=(after.st_size,after.st_mtime_ns):raise ValueError('Source changed during encoding')
             result=dict(state='TECHNICAL_VERIFIED_VISUAL_PENDING',item=item,source_sha256=item['source_sha256'],sha256=sha(partial),bytes=partial.stat().st_size,
                 seconds=duration,video=v,packet_count=counts[1],source_packet_count=counts[0],native_frame_count_preserved=True,all_pts_unique=True,
-                all_dts_strictly_monotonic=True,decode_windows=checks,render_seconds=time.monotonic()-started,visual_contact=str(contact),
+                all_dts_strictly_monotonic=True,max_relative_pts_error_seconds=timing_error,decode_windows=checks,render_seconds=time.monotonic()-started,visual_contact=str(contact),
                 scope='Native packet count retained, complete packet timestamp checks and three bounded decode windows. Output picture approval pending.')
             dest.parent.mkdir(parents=True,exist_ok=True);partial.replace(dest);atomic(receipt,result)
             completed.append(name);status('ITEM_TECHNICAL_VERIFIED',item=name)
