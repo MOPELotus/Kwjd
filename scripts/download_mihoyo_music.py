@@ -131,7 +131,7 @@ def run_pass(args):
                 total=0
                 while chunk:=response.read(1024*1024):
                     total+=len(chunk)
-                    if total>512*1024**2:
+                    if total>2*1024**3:
                         raise ValueError('Single-file size budget exceeded')
                     output.write(chunk)
             if data.get('size') and partial.stat().st_size!=data['size']:
@@ -140,7 +140,7 @@ def run_pass(args):
             duration=float(probe['format']['duration'])
             if source.get('duration_ms') and abs(duration-source['duration_ms']/1000)>2:
                 raise ValueError('Decoded duration mismatch; no full-song claim')
-            subprocess.run([args.ffmpeg,'-v','error','-xerror','-i',str(partial),'-f','null','-'],capture_output=True,check=True,timeout=120)
+            subprocess.run([args.ffmpeg,'-v','error','-xerror','-i',str(partial),'-f','null','-'],capture_output=True,check=True,timeout=max(120,min(1800,int(duration/5))))
             with partial.open('rb') as file:
                 digest=hashlib.file_digest(file,'sha256').hexdigest()
             partial.replace(destination)
