@@ -49,11 +49,31 @@ def inputs(root,master,ass):
     if not ass.is_file() or ass.is_symlink() or sha256(ass)!=sha256(canonical_ass):
         raise ValueError('Supplied ASS differs from reviewed published ASS')
     data=load(canonical_ass.with_suffix('.ass.ready.json'))
-    style=root/'post/styles/template.ass';approval=load(style.with_name(style.name+'.ready.json'))
+    per_episode=root/'post/styles'/(ep+'.ass')
+    style=per_episode if per_episode.is_file() else root/'post/styles/template.ass'
+    approval=load(style.with_name(style.name+'.ready.json'))
     if (approval.get('master_sha256')!=digest or approval.get('approved') is not True
-            or approval.get('sha256')!=sha256(style) or approval.get('fonts')!=data.get('fonts')):
+            or approval.get('sha256')!=sha256(style) or approval.get('sha256')!=data['template_sha256']
+            or approval.get('fonts')!=data.get('fonts')):
         raise WaitInput('Actual current-master style approval/preview required')
+    data['_selected_style']=str(style)
     return ep,digest,data
+
+
+def freeze_style(root,ep,subtitle):
+    from enhance_stage import atomic_json,sha256
+    source=Path(subtitle['_selected_style']);target=root/'post/styles'/(ep+'.ass')
+    approval=load(source.with_name(source.name+'.ready.json'))
+    if target.exists() and target.read_bytes()!=source.read_bytes():
+        raise ValueError('Existing per-episode style differs; retained')
+    if not target.exists():
+        with target.open('xb') as output:output.write(source.read_bytes())
+    marker=target.with_name(target.name+'.ready.json')
+    if marker.exists():
+        if load(marker)!=approval:raise ValueError('Existing per-episode approval differs; retained')
+    else:atomic_json(marker,approval)
+    if sha256(target)!=approval['sha256']:raise ValueError('Frozen style identity differs')
+    return target
 
 
 def ensure_timing(root,ep,master_sha,srt_sha):
@@ -107,9 +127,10 @@ def submit(root,master,ass,check_only):
     from fixed_workflow import validate_fixed_profile
     validate_fixed_profile(template)  # Full package lock was verified by bootstrap in its own venv.
     from enhance_stage import atomic_json,sha256
+    style=freeze_style(root,ep,subtitle)
     job_path=root/'post/jobs'/(ep+'.json')
     identity=dict(schema_version=1,episode=ep,master=f'incoming/{ep}.clean-master.mov',
-        style='styles/template.ass',output=f'final/{ep}.final-1080p60.mkv',master_sha256=digest,
+        style=style.relative_to(root/'post').as_posix(),output=f'final/{ep}.final-1080p60.mkv',master_sha256=digest,
         submitted_ass_sha256=sha256(ass),picture_pipeline='native_light_gfpgan_rife_ass_one_encode')
     if job_path.exists():
         prior=load(job_path)

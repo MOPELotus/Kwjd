@@ -7,7 +7,7 @@ from unittest.mock import patch
 import hashlib
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from run_fixed_post import inputs,WaitInput,select_project
+from run_fixed_post import inputs,WaitInput,select_project,freeze_style
 
 
 class FixedPostInputGateTests(unittest.TestCase):
@@ -33,6 +33,19 @@ class FixedPostInputGateTests(unittest.TestCase):
         repo=Path(__file__).resolve().parents[1]
         self.assertEqual(select_project(repo,'S03E02').name,'jigong-s03.json')
         with self.assertRaisesRegex(ValueError,'admitted'):select_project(repo,'S03E03')
+
+    def test_next_master_approval_does_not_rebind_an_active_episode_style(self):
+        folder=self.root/'post/styles';folder.mkdir();template=folder/'template.ass'
+        template.write_text('synthetic test style')
+        marker=template.with_name(template.name+'.ready.json')
+        approval=dict(approved=True,master_sha256='first-master',sha256=hashlib.sha256(template.read_bytes()).hexdigest())
+        marker.write_text(json.dumps(approval))
+        first=freeze_style(self.root,'S03E02',{'_selected_style':str(template)})
+        first_marker=first.with_name(first.name+'.ready.json');original=first_marker.read_bytes()
+        marker.write_text(json.dumps({**approval,'master_sha256':'next-master'}))
+        freeze_style(self.root,'S03E03',{'_selected_style':str(template)})
+        self.assertEqual(first_marker.read_bytes(),original)
+        self.assertEqual(json.loads(first_marker.read_text())['master_sha256'],'first-master')
 
 
 if __name__=='__main__':unittest.main()
