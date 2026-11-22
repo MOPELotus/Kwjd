@@ -72,6 +72,10 @@ The user further authorized bidirectional provider rotation. `--provider-rotatio
 
 A real authorized 56-minute ZZZ mix returned a roughly 795 MB FLAC, exceeding the original 512 MiB single-track guard. Permit up to 2 GiB per audio file while retaining the 40 GiB disk reserve, and scale full-decode timeout with actual duration (120–1800 seconds). This changes resource admission only; duration, byte count, SHA and full decode remain required.
 
+## 2026-11-22: 济公传背景与字幕准备
+
+背景原样stream copy，保留右下曲名条，不为关键帧误差重编码，允许背景略长于节目。两条背景必须按给定顺序构成连续素材；跨源章节切成前后两段并建立拼接关系，不按章节重新分配背景源。`split_background_sequence.py`保存原始各段并附达芬奇FCPXML，无渲染，不擅自统一原生帧率或音频采样率。13回字幕继续云端OCR；本地只抽样校准。旧云端任务已完成清理，待用户处理服务器空间后复用仓库重新初始化，不因目录已清理就默认改为本地整批识别。
+
 ## 2026-11-03: Opportunistic lossless upgrades
 
 The user requested another check of lossy candidates. `--upgrade-lossy` rechecks technically verified MP3/Vorbis receipts, admits only actual lossless codecs for upgrades, archives superseded receipts and retains the original candidate files. If no lossless candidate is returned, the existing verified file stays usable. Platform lossless labels alone do not establish codec quality or audio-version identity.
