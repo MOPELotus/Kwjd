@@ -23,7 +23,14 @@ def wait(root,kind,poll=30,timeout=0):
     began=time.monotonic();last_quota=-float('inf')
     while True:
         if time.monotonic()-last_quota>=120:
-            remaining=quota();last_quota=time.monotonic()
+            try:remaining=quota()
+            except Exception as error:
+                data=json.loads(progress.read_text()) if progress.exists() else {}
+                data.update(stage='QUOTA_READ_ERROR',quota_read_error=str(error),updated_at=time.time())
+                save(progress,data)
+                time.sleep(60)
+                continue
+            last_quota=time.monotonic()
             if remaining<5:
                 data=json.loads(progress.read_text()) if progress.exists() else {}
                 data.update(stage='WAIT_QUOTA_RECOVERY',quota_remaining_percent=remaining,updated_at=time.time())
