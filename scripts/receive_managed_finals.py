@@ -15,7 +15,7 @@ import sys
 import time
 
 from episode_lifecycle import (load, save, now, catalog, record_final, sha256,
-                               cleanup, register_artifact)
+                               cleanup, register_artifact, check_final_media)
 
 
 def remote(config, arguments, input_text=None):
@@ -160,14 +160,28 @@ def receive(root, config, ep):
                         '--part', str(part), '--sha256', digest], check=True)
         if part.stat().st_size != report['bytes']:
             raise ValueError('Downloaded byte count differs')
-        target.parent.mkdir(parents=True, exist_ok=True)
-        part.replace(target)
+    candidate = target if target.exists() else part
+    info = json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-show_format',
+                       '-show_streams', '-of', 'json', str(candidate)], text=True, encoding='utf-8'))
+    check_final_media(info)
+    video = next(s for s in info['streams'] if s['codec_type'] == 'video')
+    duration = float(info['format']['duration'])
+    if (video.get('profile') != 'Main 10' or video.get('pix_fmt') != 'yuv420p10le'
+            or abs(duration - float(report['master_duration'])) > 1):
+        raise ValueError('Final Main10 profile or actual master duration differs')
+    for seek in (0, duration / 2, max(0, duration - 4)):
+        subprocess.run(['ffmpeg', '-v', 'error', '-xerror', '-nostdin', '-ss', str(seek),
+                        '-i', str(candidate), '-t', '3', '-map', '0:v:0', '-map', '0:a:0',
+                        '-f', 'null', '-'], check=True)
     # Compare the complete decoded mix with the cloud's original-mix proof.
     pcm = subprocess.check_output(['ffmpeg', '-v', 'error', '-xerror', '-nostdin',
-                                  '-i', str(target), '-map', '0:a:0', '-vn', '-c:a',
+                                  '-i', str(candidate), '-map', '0:a:0', '-vn', '-c:a',
                                   'pcm_s32le', '-f', 'hash', '-hash', 'sha256', '-'], text=True)
     if pcm.strip().split('=')[-1].lower() != report['decoded_pcm_sha256']:
         raise ValueError('Returned mix differs from cloud lossless evidence')
+    if candidate == part:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        part.replace(target)
     receipt = record_final(root, ep, target, remote_report)
     return finish_delivery(root, config, ep, receipt)
 
