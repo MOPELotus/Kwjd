@@ -32,8 +32,12 @@ def main():
     subprocess.run([str(python),'-m','pip','install','--no-cache-dir','--index-url',
                     'https://download.pytorch.org/whl/cu126','torch==2.6.0','torchvision==0.21.0'],check=True)
     subprocess.run([str(python),'-m','pip','install','--no-cache-dir','numpy==2.2.6','Pillow==11.3.0',
-                    'opencv-python-headless==4.12.0.88','basicsr==1.4.2','facexlib==0.3.0',
-                    'gfpgan==1.3.8','onnxruntime-gpu==1.23.2','onnx==1.17.0'],check=True)
+                    'opencv-python-headless==4.12.0.88','onnxruntime-gpu==1.23.2','onnx==1.17.0',
+                    'setuptools','wheel','cython'],check=True)
+    # BasicSR declares Torch as a build dependency. Reuse the pinned installed
+    # CUDA Torch, rather than downloading a different full CUDA stack in /tmp.
+    subprocess.run([str(python),'-m','pip','install','--no-cache-dir','--no-build-isolation',
+                    'basicsr==1.4.2','facexlib==0.3.0','gfpgan==1.3.8'],check=True)
     weights=post/'tools/face-candidates/weights';weights.mkdir(parents=True,exist_ok=True)
     for name,(url,digest) in ASSETS.items():
         target=weights/name
