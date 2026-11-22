@@ -10,7 +10,7 @@ class FixedWorkflowTests(unittest.TestCase):
     def setUp(self):
         self.cfg=dict(rife_backend='cuda_trt',restoration_backend='cuda_gfpgan_fused',
             restore=True,restore_gpu=0,restore_gpu_name='NVIDIA RTX A4000',restore_memory_gib=2.5,
-            restore_free_reserve_gib=3,gpu=1,gpu_name='Tesla T10',encoder_gpu=1,
+            restore_free_reserve_gib=3.0,gpu=1,gpu_name='Tesla T10',encoder_gpu=1,
             light_filter='clarity',max_video_mbps=16,segment_source_frames=250,
             pipeline_prefetch=True,pipeline_prefetch_frames=1,resource_wait_in_process=False,
             input_frame_rate=25)

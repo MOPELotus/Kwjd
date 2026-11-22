@@ -19,8 +19,10 @@ def validate_fixed_profile(cfg):
         segment_source_frames=lock['scheduling']['segment_source_frames'],
         pipeline_prefetch=True,pipeline_prefetch_frames=lock['scheduling']['queued_cpu_frames'],
         resource_wait_in_process=lock['scheduling']['resource_wait_in_process'])
+    integer_fields={'restore_gpu','gpu','encoder_gpu','segment_source_frames','pipeline_prefetch_frames'}
     changed=[name for name,value in expected.items() if cfg.get(name)!=value or
-             (isinstance(value,(bool,int)) and type(cfg.get(name)) is not type(value))]
+             (isinstance(value,bool) and type(cfg.get(name)) is not bool) or
+             (name in integer_fields and type(cfg.get(name)) is not int)]
     if type(cfg.get('input_frame_rate')) is not int or cfg['input_frame_rate'] not in lock['picture']['input_fps']:
         changed.append('input_frame_rate')
     if changed:raise ValueError('Fixed production workflow differs: '+', '.join(changed))
