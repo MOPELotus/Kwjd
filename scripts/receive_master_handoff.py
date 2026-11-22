@@ -18,6 +18,7 @@ def main():
     parser.add_argument('--expected-duration',type=float,required=True)
     parser.add_argument('--finalize',action='store_true')
     parser.add_argument('--expected-frame-rate',choices=['25/1','30/1'],default='25/1')
+    parser.add_argument('--partial-info',action='store_true',help='Read-only prefix identity for safe resume')
     args=parser.parse_args()
     if not re.fullmatch(r'S0[1-4]E\d{2,3}',args.episode) or not re.fullmatch('[a-f0-9]{64}',args.sha256) or args.bytes<=0:
         parser.error('Invalid master identity')
@@ -25,6 +26,16 @@ def main():
     incoming.mkdir(parents=True,exist_ok=True)
     target=incoming/(args.episode+'.clean-master.mov')
     partial=target.with_suffix('.mov.uploading')
+    if args.partial_info:
+        if not partial.is_file():raise SystemExit(44)
+        before=partial.stat()
+        if before.st_size>args.bytes:raise ValueError('Partial longer than master')
+        with partial.open('rb') as f:prefix=hashlib.file_digest(f,'sha256').hexdigest()
+        after=partial.stat()
+        if (before.st_size,before.st_mtime_ns)!=(after.st_size,after.st_mtime_ns):
+            raise ValueError('Partial is actively changing; do not start another writer')
+        print(json.dumps({'partial_bytes':after.st_size,'partial_sha256':prefix}))
+        return
     candidate=target if target.exists() else partial if args.finalize else None
     if candidate is None or not candidate.exists():
         if shutil.disk_usage(incoming).free<25*1024**3+3*args.bytes:
