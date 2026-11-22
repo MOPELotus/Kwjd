@@ -82,7 +82,13 @@ def template(post, *, rife_backend='cuda_trt', input_fps=25, season='S01'):
     paths += [str(Path(__file__).with_name(name).resolve()) for name in SOURCES]
     paths.append(str(Path(__file__).parent.parent/'kwjd.py'))
     packages=['torch','torchvision','basicsr','facexlib','gfpgan','numpy','opencv-python-headless']
-    if rife_backend=='cuda_onnx':packages+=['onnxruntime-gpu','Pillow']
+    if rife_backend=='cuda_onnx':
+        packages+=['onnxruntime-gpu','Pillow']
+        # GFPGAN's dependencies may install a second OpenCV distribution over
+        # headless files. Bind both actual manifests and the resulting binaries.
+        try:importlib.metadata.version('opencv-python')
+        except importlib.metadata.PackageNotFoundError:pass
+        else:packages.append('opencv-python')
     versions={p:importlib.metadata.version(p) for p in packages}
     if rife_backend=='cuda_onnx':
         # Pin installed package manifests and actual compiled modules, including
