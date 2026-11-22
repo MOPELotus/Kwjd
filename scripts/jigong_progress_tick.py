@@ -55,8 +55,12 @@ def tick(config,wake=False):
     if threshold!=2 or policy.get('continue_media_processes_when_model_paused') is not True:
         raise ValueError('Current explicit cloud-only quota/media policy required')
     area=root/'post/managed-S03E02';area.mkdir(parents=True,exist_ok=True)
-    lock=(area/'progress-timer.lock').open('a')
-    fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+    with (area/'progress-timer.lock').open('a') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        return inspect(root,area,config,thread,threshold,wake)
+
+
+def inspect(root,area,config,thread,threshold,wake):
     previous=read(area/'timer-status.json');job=read(root/'post/jobs/S03E02.json')
     log=root/'post/logs/S03E02.log';now=time.time()
     from subtitle_review_supervisor import validate_episode
