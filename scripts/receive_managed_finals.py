@@ -24,7 +24,7 @@ def remote(config, arguments, input_text=None):
     client = str(git) if git.exists() else 'ssh'
     return subprocess.run([client, '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15',
                            config['host'], shlex.join(arguments)], capture_output=True,
-                          text=True, timeout=60, input=input_text)
+                          text=True, encoding='utf-8', timeout=60, input=input_text)
 
 
 def quality_identity(quality, receipt):
@@ -93,7 +93,10 @@ def finish_delivery(root, config, ep, receipt):
     if sha256(receipt['local_path']) != receipt['sha256']:
         raise ValueError('Local final changed before quality acceptance')
     quality_path = root / '.kwjd/remote-reports' / f'{ep}.quality.json'
-    save(quality_path, quality)
+    quality_path.parent.mkdir(parents=True, exist_ok=True)
+    # Preserve server bytes: reformatting or Windows CRLF conversion would break
+    # the quality-evidence SHA that the cloud validates on the return receipt.
+    quality_path.write_bytes(answer.stdout.encode('utf-8'))
     receipt.update(quality_checked=True, quality_checked_at=now(),
                    quality_note='Actual cloud Codex picture/subtitle/sync/audio review; identical local final SHA verified',
                    quality_evidence_sha256=sha256(quality_path), quality_evidence=quality)
