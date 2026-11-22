@@ -36,6 +36,12 @@ class ProgressTickTests(unittest.TestCase):
                          'SUBTITLE_REVIEW_CHECKPOINT_UNCHANGED_OVER_ONE_HOUR')
         self.assertIsNone(event(self.snapshot(review_checkpoint_age_seconds=3601,review_checkpoint_complete=True),{}))
 
+    def test_clean_deployment_completion_or_failure_wakes_same_main(self):
+        self.assertEqual(event(self.snapshot(clean_recovery_state='PASSED'),{}),'FIXED_CLEAN_RECOVERY_TEST_PASSED')
+        self.assertIsNone(event(self.snapshot(clean_recovery_state='PASSED'),{'clean_recovery_state':'PASSED'}))
+        self.assertEqual(event(self.snapshot(clean_recovery_state='FAILED_RETAINED_FOR_INSPECTION'),{}),
+                         'FIXED_CLEAN_RECOVERY_TEST_NEEDS_ATTENTION')
+
     def test_quota_uses_real_percent_and_rejects_rpc_error_with_zero_exit(self):
         with patch('jigong_progress_tick.subprocess.run',return_value=SimpleNamespace(stdout='remaining 1.5%\npoints 62500')):
             self.assertEqual(quota(),1.5)

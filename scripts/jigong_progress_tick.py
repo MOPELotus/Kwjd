@@ -30,6 +30,9 @@ def quota():
 
 def event(snapshot,previous):
     job=snapshot['job'];state=job.get('state');previous_job=previous.get('job',{})
+    clean=snapshot.get('clean_recovery_state')
+    if clean=='FAILED_RETAINED_FOR_INSPECTION':return 'FIXED_CLEAN_RECOVERY_TEST_NEEDS_ATTENTION'
+    if clean=='PASSED' and previous.get('clean_recovery_state')!='PASSED':return 'FIXED_CLEAN_RECOVERY_TEST_PASSED'
     if snapshot['review_ready'] and not job:return 'FIRST_SRT_READY_START_PRODUCTION'
     if state in ('FAILED','WAIT_DISK','WAIT_GPU','WAIT_BACKEND_TECHNICAL','WAIT_STYLE_APPROVAL'):
         return 'PRODUCTION_NEEDS_ATTENTION:'+state
@@ -76,6 +79,7 @@ def inspect(root,area,config,thread,threshold,wake):
                    and peer.get('Online') is True for peer in data.get('Peer',{}).values())
     except Exception as error:network_error=str(error)
     snapshot=dict(schema_version=1,checked_at=now,main_thread_id=thread,job=job,
+        clean_recovery_state=read(root/'post/reports/fixed-clean-recovery.json').get('state'),
         review_ready=review_ready,media_log_age_seconds=now-log.stat().st_mtime if log.exists() else 1e10,
         review_checkpoint_age_seconds=now-review_path.stat().st_mtime if review_path.exists() else 1e10,
         review_checkpoint_complete=review.get('complete') is True and len(review.get('completed_episodes',[]))==13,
