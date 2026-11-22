@@ -94,3 +94,6 @@ A real authorized 56-minute ZZZ mix returned a roughly 795 MB FLAC, exceeding th
 
 
 The user requested another check of lossy candidates. `--upgrade-lossy` rechecks technically verified MP3/Vorbis receipts, admits only actual lossless codecs for upgrades, archives superseded receipts and retains the original candidate files. If no lossless candidate is returned, the existing verified file stays usable. Platform lossless labels alone do not establish codec quality or audio-version identity.
+
+
+2026-11-22 云端恢复：旧可见主会话被中断并归档，用户在当前云端聊天继续，明确主代理负责仓库、第一回成片及原Windows制作电脑交接，单一原生子代理接续13回视听综合审校、逐回真实封存SRT及ASS。继承现有数据检查点，不运行旧模型监督器，不向当前聊天设备或任意Windows主机误投递。用户本次重新给出的全局真实额度低于5%即保存停止规则优先于此前2%重置卡例外；保持不消费点数。
