@@ -1,0 +1,58 @@
+"""Receive a technically validated master without claiming enhancement is ready."""
+import argparse
+import hashlib
+import json
+import re
+import shutil
+import subprocess
+import time
+from pathlib import Path
+
+
+def main():
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--root',type=Path,required=True)
+    parser.add_argument('--episode',required=True)
+    parser.add_argument('--sha256',required=True)
+    parser.add_argument('--bytes',type=int,required=True)
+    parser.add_argument('--expected-duration',type=float,required=True)
+    parser.add_argument('--finalize',action='store_true')
+    args=parser.parse_args()
+    if not re.fullmatch(r'S0[1-4]E\d{2,3}',args.episode) or not re.fullmatch('[a-f0-9]{64}',args.sha256) or args.bytes<=0:
+        parser.error('Invalid master identity')
+    post=args.root.resolve()/'post';incoming=post/'incoming'
+    incoming.mkdir(parents=True,exist_ok=True)
+    target=incoming/(args.episode+'.clean-master.mov')
+    partial=target.with_suffix('.mov.uploading')
+    candidate=target if target.exists() else partial if args.finalize else None
+    if candidate is None or not candidate.exists():
+        if shutil.disk_usage(incoming).free<25*1024**3+3*args.bytes:
+            raise RuntimeError('Need 25GiB reserve plus master/downstream budget')
+        raise SystemExit(44)
+    if candidate.stat().st_size!=args.bytes:raise ValueError('Remote size mismatch; preserved')
+    with candidate.open('rb') as f: digest=hashlib.file_digest(f,'sha256').hexdigest()
+    if digest!=args.sha256:raise ValueError('Remote master SHA mismatch; preserved')
+    info=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_format','-show_streams','-of','json',str(candidate)]))
+    video=next(s for s in info['streams'] if s['codec_type']=='video')
+    audio=next(s for s in info['streams'] if s['codec_type']=='audio')
+    if (video['codec_name']!='hevc' or video.get('profile')!='Main 10' or video.get('pix_fmt')!='yuv420p10le'
+            or (video['width'],video['height'],video['r_frame_rate'])!=(1920,1080,'25/1')
+            or audio['codec_name']!='pcm_s24le' or int(audio['sample_rate'])<48000 or audio['channels']!=2
+            or abs(float(info['format']['duration'])-args.expected_duration)>.5):
+        raise ValueError('Remote master media policy mismatch')
+    for seek in (0,args.expected_duration/2,max(0,args.expected_duration-4)):
+        subprocess.run(['ffmpeg','-v','error','-xerror','-nostdin','-ss',str(seek),'-i',str(candidate),
+                        '-t','3','-map','0:v:0','-map','0:a:0','-f','null','-'],check=True)
+    if candidate==partial:partial.rename(target)
+    handoffs=post/'handoffs';handoffs.mkdir(exist_ok=True)
+    receipt={'episode':args.episode,'path':str(target),'sha256':digest,'bytes':args.bytes,
+             'duration_seconds':float(info['format']['duration']),'transfer_verified':True,
+             'remote_sampled_decode_verified':True,'state':'MASTER_RECEIVED_WAIT_POST_REBUILD_AND_REVIEW',
+             'received_at':time.time(),'local_master_deleted':False,'backend_started':False,
+             'subtitle_reviewed':False,'style_approved_for_this_master':False}
+    output=handoffs/(args.episode+'.master-received.json')
+    temp=output.with_suffix('.json.tmp');temp.write_text(json.dumps(receipt,indent=2),encoding='utf8');temp.replace(output)
+    print(json.dumps(receipt))
+
+
+if __name__=='__main__':main()
