@@ -1,5 +1,32 @@
 # Linux enhancement backend contract (implementation handoff)
 
+## Independent native CUDA ONNX recovery (S03E02)
+
+`KWJD_PROJECT=config/projects/jigong-s03.json post/face-venv/bin/python
+scripts/prepare_native_face_backend.py --post ~/qingqingwu/post --rife-backend
+cuda_onnx --input-fps 30 --season S03` prepares an **inactive** native candidate
+without reading `runtime.trt.json` or borrowing removed engine proofs. Use the
+actual face-venv Python path. The candidate pins official FP32 RIFE v4.6 ONNX,
+GFPGAN weights, current source, installed package manifests and compiled modules;
+physical A4000/T10 placement and the 2.5GiB face cap/3GiB reserve remain intact.
+No production approval, sealed subtitle or style approval is manufactured.
+The default legacy TRT/S01/25 preparation is unchanged. New current-master
+fullchain and sustained measurements are still required before activation.
+
+Before the independent subtitle service seals a complete episode, an explicitly
+pixel-reviewed temporary excerpt may exercise the same chain with
+`calibrate_native_candidate.py`. Store its SRT as `temporary-not-final.srt` and
+its actual pixel review JSON in a unique trial under
+`post/reports/calibration/<episode>/<master_sha256>/<trial>/`. The proof must
+state `pixel_checked: true`, `temporary_not_final: true` and the actual master
+SHA. Pass explicit `--source-start` and `--source-frames` (at most1800).
+This requires the final master plus genuine transfer receipt, checks all master
+packet timestamps, then runs CAS/GFPGAN/CUDA RIFE/ASS/NVENC and unchanged FLAC.
+It fully decodes the sample and compares decoded PCM. It writes no subtitle
+seal, style approval, native activation or production-ready receipt. The
+`technical_calibration` recipe enforces isolated outputs and the exact bounded
+window before GPU allocation; segmented production explicitly rejects it.
+
 ## E49 runtime memory reserve authorization (2026-10-27)
 
 The user explicitly permits reducing shared GPU free-memory reserve to keep E49

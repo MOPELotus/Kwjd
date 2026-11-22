@@ -104,6 +104,11 @@ def plan(master,cfg,output=None,episode=None):
 
 
 def context(master,output,episode,cfg):
+    if cfg.get('restoration_backend')=='cuda_gfpgan_fused':
+        from native_face_recipe import validate_recipe
+        recipe=validate_recipe(cfg['native_recipe'],cfg['native_recipe_sha256'])
+        if recipe['scope']=='technical_calibration':
+            raise ValueError('Technical calibration cannot enter segmented production')
     if not re.fullmatch(r'S0[1-4]E\d{2,3}',episode) or episode[:3] not in cfg.get('admitted_seasons',['S01']):
         raise ValueError('Episode season has no explicit backend admission')
     digest=sha256(master);reject_retired(digest)

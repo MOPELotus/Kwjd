@@ -297,6 +297,7 @@ class NativeWorkerLifecycleTests(unittest.TestCase):
             self.assertTrue((self.post/'final/out.mkv').exists())
             report=json.loads((self.post/'reports/S01E49.json').read_text())
             self.assertTrue(report['final_decode_checked']);self.assertTrue(report['final_pcm_equivalent'])
+            self.assertEqual(report['bytes'],(self.post/'final/out.mkv').stat().st_size)
             self.assertEqual(report['video_encodes'],1)
             self.mocks['decoded_pcm_hash'].assert_called_once()
             self.mocks['decoded_video_frames'].assert_called_once()
@@ -316,6 +317,16 @@ class NativeWorkerLifecycleTests(unittest.TestCase):
         self.mocks['apply_offset'].assert_not_called();self.make_ass.assert_not_called()
         self.mocks['release_master_copy'].assert_called_once()
         self.assertEqual(json.loads(self.job.read_text())['state'],'READY')
+
+    def test_explicit_project_retention_keeps_master_despite_upload_receipt(self):
+        with patch.dict(worker.PROJECT,{'lifecycle':{'release_cloud_master_after_verified_lossless_audio_handoff':False}}):
+            worker.do_job(self.job)
+            self.mocks['release_master_copy'].assert_not_called()
+            self.assertTrue(self.master.exists())
+            self.mocks['release_enhancement_inputs'].assert_called_once()
+            self.assertFalse(json.loads(self.job.read_text())['native_source_release_pending'])
+            worker.do_job(self.job)
+            self.mocks['release_master_copy'].assert_not_called()
 
     def test_pending_final_recovery_requires_prior_complete_qc_before_master_release(self):
         worker.do_job(self.job)

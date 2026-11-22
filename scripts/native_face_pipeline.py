@@ -133,12 +133,13 @@ def run(master,output,episode,cfg,*,source_start=0,source_frames=None,prepared=N
     from enhance_stage import sha256
     from master_policy import reject_retired
     from render_face_samples import save
-    from native_face_recipe import validate_recipe
+    from native_face_recipe import validate_recipe,check_calibration_run
     began=time.monotonic();output=Path(output)
     from frame_clock import input_rate
     source_fps=int(input_rate(cfg.get('input_frame_rate',25)))
     if output.exists():raise FileExistsError('Native fused output already exists')
     recipe=validate_recipe(cfg['native_recipe'],cfg['native_recipe_sha256'])
+    check_calibration_run(recipe,output,source_start,source_frames)
     if prepared is None:
         reject_retired(sha256(master));info=engine.source_info(master,source_fps);full=engine.source_packet_count(master,source_fps)
     else:
@@ -196,7 +197,7 @@ def run(master,output,episode,cfg,*,source_start=0,source_frames=None,prepared=N
                 if time.monotonic()-last_guard>=2:
                     restorer.check_resources(cancel=cancel);last_guard=time.monotonic()
                 start=time.monotonic();raw=decoder.stdout.read(needed)
-                if len(raw)!=needed:raise ValueError('Truncated native25 frame')
+                if len(raw)!=needed:raise ValueError('Truncated native frame')
                 image=np.frombuffer(raw,dtype=np.uint8).reshape(1080,1920,3).copy();times['decode_read']+=time.monotonic()-start
                 return image
             def process_cpu(image,index):
