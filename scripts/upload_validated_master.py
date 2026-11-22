@@ -28,6 +28,10 @@ def main():
     command=['python3',args.remote_root+'/repo/scripts/receive_master_handoff.py','--root',args.remote_root,
              '--episode',episode,'--sha256',digest,'--bytes',str(before.st_size),
              '--expected-duration',str(data['duration_seconds'])]
+    rate=data.get('frame_rate_audit',{}).get('expected_frame_rate','25/1')
+    if rate not in ('25/1','30/1') or data['video']['r_frame_rate']!=rate:
+        raise ValueError('Unexpected validated frame rate')
+    command+=['--expected-frame-rate',rate]
     check=subprocess.run([*ssh,shlex.join(command)],capture_output=True,text=True)
     if check.returncode==44:
         print('UPLOADING '+episode,flush=True)

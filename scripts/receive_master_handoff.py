@@ -17,6 +17,7 @@ def main():
     parser.add_argument('--bytes',type=int,required=True)
     parser.add_argument('--expected-duration',type=float,required=True)
     parser.add_argument('--finalize',action='store_true')
+    parser.add_argument('--expected-frame-rate',choices=['25/1','30/1'],default='25/1')
     args=parser.parse_args()
     if not re.fullmatch(r'S0[1-4]E\d{2,3}',args.episode) or not re.fullmatch('[a-f0-9]{64}',args.sha256) or args.bytes<=0:
         parser.error('Invalid master identity')
@@ -36,7 +37,8 @@ def main():
     video=next(s for s in info['streams'] if s['codec_type']=='video')
     audio=next(s for s in info['streams'] if s['codec_type']=='audio')
     if (video['codec_name']!='hevc' or video.get('profile')!='Main 10' or video.get('pix_fmt')!='yuv420p10le'
-            or (video['width'],video['height'],video['r_frame_rate'])!=(1920,1080,'25/1')
+            or (video['width'],video['height'],video['r_frame_rate'])!=(1920,1080,args.expected_frame_rate)
+            or video['avg_frame_rate']!=args.expected_frame_rate
             or audio['codec_name']!='pcm_s24le' or int(audio['sample_rate'])<48000 or audio['channels']!=2
             or abs(float(info['format']['duration'])-args.expected_duration)>.5):
         raise ValueError('Remote master media policy mismatch')
@@ -47,6 +49,7 @@ def main():
     handoffs=post/'handoffs';handoffs.mkdir(exist_ok=True)
     receipt={'episode':args.episode,'path':str(target),'sha256':digest,'bytes':args.bytes,
              'duration_seconds':float(info['format']['duration']),'transfer_verified':True,
+             'master_frame_rate':args.expected_frame_rate,
              'remote_sampled_decode_verified':True,'state':'MASTER_RECEIVED_WAIT_POST_REBUILD_AND_REVIEW',
              'received_at':time.time(),'local_master_deleted':False,'backend_started':False,
              'subtitle_reviewed':False,'style_approved_for_this_master':False}

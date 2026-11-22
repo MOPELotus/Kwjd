@@ -12,6 +12,30 @@ import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
+from fractions import Fraction
+
+
+def frame_rate_check(video,expected='25/1',proof_path=None,master_sha256=None):
+    if expected not in ('25/1','30/1'):
+        raise ValueError('Unsupported master frame rate')
+    if (Fraction(video['r_frame_rate'])!=Fraction(expected)
+            or Fraction(video['avg_frame_rate'])!=Fraction(expected)):
+        raise ValueError('Wrong frame rate')
+    audit={'expected_frame_rate':expected,'actual_frame_rate':video['r_frame_rate'],
+           'default_25fps_gate_passed':Fraction(expected)==25,'clock_proof':None}
+    if Fraction(expected)!=25:
+        if proof_path is None:raise ValueError('CFR30 requires an actual hash-bound packet-clock proof')
+        raw=Path(proof_path).read_bytes();proof=json.loads(raw.decode('utf-8-sig'))
+        if (proof.get('master_sha256')!=master_sha256 or not isinstance(master_sha256,str)
+                or not re.fullmatch('[0-9a-f]{64}',master_sha256)
+                or proof.get('packet_clock_verified') is not True or proof.get('input_rate')!='30'
+                or proof.get('input_packets')!=int(video['nb_frames'])
+                or proof.get('expected_output_frames')!=int(video['nb_frames'])*2
+                or proof.get('output_rate')!=60):
+            raise ValueError('Frame clock proof does not bind this CFR30 master')
+        audit['clock_proof']={'path':str(Path(proof_path).resolve()),
+                              'sha256':hashlib.sha256(raw).hexdigest(),'proof':proof}
+    return audit
 
 
 def duration_check(path, duration, expected, approval_path=None, master_sha256=None):
@@ -54,6 +78,8 @@ def main():
     p.add_argument('--receipt', type=Path, required=True)
     p.add_argument('--expected-duration', type=float, required=True)
     p.add_argument('--duration-approval', type=Path, help='Optional SHA-bound explicit human tail-background exception')
+    p.add_argument('--expected-frame-rate',choices=['25/1','30/1'],default='25/1')
+    p.add_argument('--frame-clock-proof',type=Path,help='Required for an explicit CFR30 candidate')
     args = p.parse_args()
     path = args.file.resolve(strict=True)
     before = path.stat()
@@ -63,8 +89,8 @@ def main():
     audio = next(s for s in info['streams'] if s['codec_type'] == 'audio')
     duration = float(info['format']['duration'])
     assert (video['width'], video['height']) == (1920, 1080), 'Wrong dimensions'
-    assert video['r_frame_rate'] == '25/1', 'Wrong frame rate'
-    digest = hashlib.file_digest(path.open('rb'), 'sha256').hexdigest() if args.duration_approval else None
+    digest = hashlib.file_digest(path.open('rb'), 'sha256').hexdigest() if args.duration_approval or args.frame_clock_proof else None
+    frame_audit=frame_rate_check(video,args.expected_frame_rate,args.frame_clock_proof,digest)
     duration_audit=duration_check(path,duration,args.expected_duration,args.duration_approval,digest)
     assert audio['codec_name'] == 'pcm_s24le', 'Expected PCM24 mixed audio'
     assert int(audio['sample_rate']) >= 48000 and audio['channels'] == 2, 'Wrong audio format'
@@ -83,6 +109,7 @@ def main():
     report = {'checked_at': datetime.now(timezone.utc).isoformat(),
               'state': 'TECHNICALLY_VALIDATED', 'path': str(path), 'bytes': after.st_size,
               'sha256': digest, 'duration_seconds': duration, 'duration_audit':duration_audit,
+              'frame_rate_audit':frame_audit,
               'video': video, 'audio': audio,
               'decode_sample_seconds': samples,
               'audio_max_volume_db': float(peak[1]) if peak else None,
