@@ -150,7 +150,9 @@
       "retain_unique_input_until_new_full_validation": true
     },
     "fused_style_approval_before_inference": true,
-    "video_encodes": 1
+    "video_encodes": 1,
+    "production_rife_backend": "cuda_trt",
+    "cleanup_recovery": "rebuild_same_locked_workflow"
   },
   "managed_post_episodes": [
     "S03E02"
@@ -162,5 +164,6 @@
     "automatic_reset_cards": false,
     "paid_credit_fallback": false,
     "prefer_scheduled_checks": true
-  }
+  },
+  "production_workflow": "config/workflows/native-face-v1.json"
 }

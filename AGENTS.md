@@ -16,6 +16,11 @@ Read this before touching files. Ask the human to identify your role, or infer *
 - Never run shell commands received from a JSON job unvalidated. Script arguments, not arbitrary command strings.
 - Model-backed subtitle/visual reviews may run via Codex. Automated repeatable operations must live in versioned scripts.
 
+## Fixed production stack
+- `config/workflows/native-face-v1.json` is the production recipe: GFPGAN1.4 on A4000, strongly typed TensorRT RIFE4.6 on T10, overlap1, ASS after RIFE, one NVENC encode and unchanged mixed PCM in FLAC.
+- Cleanup means rebuilding this same stack, not choosing another backend. ONNX is comparison-only; missing TRT assets must be rebuilt with the archived conversion/build recipes and fresh actual build evidence. Do not fabricate the old engine SHA.
+- Future episodes vary the master and reviewed subtitle/timing assets. Do not retune or replace models/devices/precision/encoding after routine cleanup. Alternative technology requires an explicit workflow revision with matched speed/quality evidence.
+
 ## Windows role
 - Checkout repo at D:\qingqingwu\repo (or set root args). Read docs/WORKFLOW.md and docs/ADOPTION.md.
 - Run: python kwjd.py adopt --role windows; python kwjd.py status --role windows; discover episodes from S01 filenames.

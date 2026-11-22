@@ -113,6 +113,8 @@ def template(post, *, rife_backend='cuda_trt', input_fps=25, season='S01'):
 
 
 def prepare(post,recipe=None,validation=None,activate=False,*,rife_backend='cuda_trt',input_fps=25,season='S01'):
+    if activate and rife_backend!='cuda_trt':
+        raise ValueError('Fixed production workflow requires TensorRT; alternative runtimes are comparison-only, not cleanup recovery')
     post=Path(post).absolute();(post/'backend').mkdir(parents=True,exist_ok=True)
     cfg=template(post,rife_backend=rife_backend,input_fps=input_fps,season=season)
     output=post/'backend/runtime.native-template.json'

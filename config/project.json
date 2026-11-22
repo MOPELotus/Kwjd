@@ -141,7 +141,9 @@
       "retain_unique_input_until_new_full_validation": true
     },
     "fused_style_approval_before_inference": true,
-    "video_encodes": 1
+    "video_encodes": 1,
+    "production_rife_backend": "cuda_trt",
+    "cleanup_recovery": "rebuild_same_locked_workflow"
   },
   "receive_queue": {
     "max_total_masters": 2,
@@ -149,5 +151,6 @@
     "max_parallel_gpu_episodes": 1,
     "admitted_pending_episode": "S01E51",
     "admitted_pending_bytes": 7803409376
-  }
+  },
+  "production_workflow": "config/workflows/native-face-v1.json"
 }

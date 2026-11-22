@@ -62,6 +62,11 @@ class PrepareNativePolicyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             prepare.scheduling_profile('unknown')
 
+    def test_alternative_runtime_cannot_replace_fixed_workflow_during_activation(self):
+        with self.assertRaisesRegex(ValueError,'Fixed production workflow'):
+            prepare.prepare(self.post,activate=True,rife_backend='cuda_onnx',input_fps=30,season='S03')
+        self.assertFalse((self.post/'backend/runtime.native-template.json').exists())
+
     def test_standalone_profiles_keep_serial_gate_independent_from_overlap(self):
         expected = {'serial': (False, False, 1), 'serial-gate': (False, True, 1),
                     'overlap1-legacy': (True, False, 1),
