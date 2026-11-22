@@ -60,7 +60,10 @@ class NativeFrames:
     def __init__(self,cfg):
         options=pipeline_options(cfg)
         from face_frame_processor import GFPGANProcessor
-        from cuda_trt import CudaRife
+        if cfg.get('rife_backend')=='cuda_onnx':
+            from cuda_rife import CudaRife
+        else:
+            from cuda_trt import CudaRife
         import torch
         import cv2
         self.torch=torch;self.cv2=cv2;self.cfg=cfg
@@ -132,17 +135,19 @@ def run(master,output,episode,cfg,*,source_start=0,source_frames=None,prepared=N
     from render_face_samples import save
     from native_face_recipe import validate_recipe
     began=time.monotonic();output=Path(output)
+    from frame_clock import input_rate
+    source_fps=int(input_rate(cfg.get('input_frame_rate',25)))
     if output.exists():raise FileExistsError('Native fused output already exists')
     recipe=validate_recipe(cfg['native_recipe'],cfg['native_recipe_sha256'])
     if prepared is None:
-        reject_retired(sha256(master));info=engine.source_info(master);full=engine.source_packet_count(master)
+        reject_retired(sha256(master));info=engine.source_info(master,source_fps);full=engine.source_packet_count(master,source_fps)
     else:
         stat=Path(master).stat()
         if (stat.st_ino,stat.st_size,stat.st_mtime_ns)!=prepared['stat']:raise ValueError('Native master changed')
         info=prepared['info'];full=prepared['count']
     count=min(full-source_start,source_frames if source_frames is not None else full)
-    if source_start<0 or source_start%5 or count<=0 or abs(full/25-float(info['format']['duration']))>.08:
-        raise ValueError('Native25 segment clock invalid')
+    if source_start<0 or source_start%5 or count<=0 or abs(full/source_fps-float(info['format']['duration']))>.08:
+        raise ValueError('Configured native segment clock invalid')
     if prepared is not None and recipe['master_sha256']!=prepared['sha256']:
         raise ValueError('Fused ASS recipe belongs to another native master')
     if prepared is None and recipe['master_sha256']!=sha256(master):raise ValueError('Fused recipe master differs')
@@ -162,13 +167,13 @@ def run(master,output,episode,cfg,*,source_start=0,source_frames=None,prepared=N
     vf=('format=yuv444p,cas=strength=.6:planes=1,eq=contrast=1.03:saturation=1.02,' if light=='clarity' else '')
     vf+='scale=in_color_matrix=bt709:in_range=tv:out_range=pc,format=bgr24'
     decoder_command=['ffmpeg','-nostdin','-v','error','-xerror','-err_detect','explode','-threads','4',
-        '-filter_threads','4','-ss',str(source_start/25),'-i',str(master),'-map','0:v:0','-an','-vf',vf,
+        '-filter_threads','4','-ss',str(source_start/source_fps),'-i',str(master),'-map','0:v:0','-an','-vf',vf,
         '-frames:v',str(available),'-fps_mode','passthrough','-f','rawvideo','-']
     # Approved ASS has already had the episode's audited offset applied. Only
     # restore its program clock during each segment's final style render.
     for path in [recipe['ass_path'],recipe['fonts_path']]:
         if any(c in str(path) for c in "'\\:[],;"):raise ValueError('Unsafe FFmpeg filter path')
-    origin=float(recipe.get('program_origin_seconds',0))+source_start/25
+    origin=float(recipe.get('program_origin_seconds',0))+source_start/source_fps
     filters=(f"setpts=PTS+{origin}/TB,ass=filename={recipe['ass_path']}:fontsdir={recipe['fonts_path']},"
         'setpts=PTS-STARTPTS,scale=in_range=pc:out_range=tv:out_color_matrix=bt709,format=p010le')
     maxrate=cfg.get('max_video_mbps',16)
@@ -251,8 +256,8 @@ def run(master,output,episode,cfg,*,source_start=0,source_frames=None,prepared=N
                         times['cut_detection']+=time.monotonic()-start
                     else:following,b,cut=previous,a,False
                     if cut:cuts.append(source_start+index+1)
-                    while emitted<engine.output_count(count):
-                        left,alpha=engine.frame_position(emitted)
+                    while emitted<engine.output_count(count,source_fps):
+                        left,alpha=engine.frame_position(emitted,source_fps)
                         if left!=index:break
                         with gpu_work('native-rife'):
                             start=time.monotonic()
@@ -265,7 +270,7 @@ def run(master,output,episode,cfg,*,source_start=0,source_frames=None,prepared=N
                         start=time.monotonic();encoder.stdin.write(pixels.tobytes());times['encode_pipe']+=time.monotonic()-start
                         emitted+=1
                     previous,a=following,b
-                    if index%25==24:
+                    if index%source_fps==source_fps-1:
                         check_space(output.parent,16*1024**2,minimum_free_gib(cfg))
                         print(json.dumps(dict(episode=episode,source_start=source_start,processed=index+1,total=count,
                             output_frames=emitted,elapsed=time.monotonic()-began)),flush=True)
@@ -273,7 +278,7 @@ def run(master,output,episode,cfg,*,source_start=0,source_frames=None,prepared=N
             start=time.monotonic();encoder.stdin.close()
             if decoder.stdout.read(1) or decoder.wait() or encoder.wait():raise RuntimeError('Native decode/final encode failed')
             times['encode_flush']=time.monotonic()-start
-        if emitted!=engine.output_count(count) or coverage['processed_frames']!=available:
+        if emitted!=engine.output_count(count,source_fps) or coverage['processed_frames']!=available:
             raise ValueError('Native whole segment frame mapping incomplete')
         validate_recipe(cfg['native_recipe'],cfg['native_recipe_sha256'])
         encoder_log=output.with_name(output.name+'.encoder.log').read_text()

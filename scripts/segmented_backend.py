@@ -27,9 +27,9 @@ def fingerprint(cfg):
     return hashlib.sha256((cfg['fingerprint']+sha256(__file__)+sha256(concat_transfer.__file__)+str(frames)).encode()).hexdigest()
 
 
-def make_identity(episode,digest,fp,count,size):
+def make_identity(episode,digest,fp,count,size,source_fps=25):
     return {'episode':episode,'master_sha256':digest,'backend_fingerprint':fp,
-            'input_frames':count,'output_frames':engine.output_count(count),'segment_source_frames':size}
+            'input_frames':count,'output_frames':engine.output_count(count,source_fps),'segment_source_frames':size}
 
 
 def verified_segment_bytes(directory,digest,fp):
@@ -48,7 +48,7 @@ def plan(master,cfg,output=None,episode=None):
     if (cfg.get('restoration_backend')=='cuda_gfpgan_fused'
             and sha256(master)!=cfg['fused_subtitle_binding']['master_sha256']):
         raise ValueError('Native ASS recipe belongs to a different master')
-    result=engine.disk_plan(engine.source_info(master),cfg)
+    result=engine.disk_plan(engine.source_info(master,cfg.get('input_frame_rate',25)),cfg)
     # CUDA uses rawvideo pipes: only compressed video, receipts and logs touch disk.
     # Retain the portable PNG pipeline's8GiB bound and the25GiB filesystem floor.
     streaming=cfg.get('rife_backend') in ('cuda_onnx','cuda_trt','cuda_trt_sm86')
@@ -63,7 +63,9 @@ def plan(master,cfg,output=None,episode=None):
         result.update(max_video_bitrate=16_000_000,output_kind='ass_styled_video',
                       fused_subtitle_binding=cfg['fused_subtitle_binding'],video_encodes=1,
                       native_recipe=cfg['native_recipe'],native_recipe_sha256=cfg['native_recipe_sha256'])
-        result['precision_note']='GFPGAN uses BGR8 face/fusion; RIFE float32 IO with typed half neural layers; Main10 container is not ten-bit model restoration'
+        result['precision_note']=('GFPGAN uses BGR8 face/fusion; RIFE '+
+            ('float32 ONNX CUDA' if cfg.get('rife_backend')=='cuda_onnx' else 'float32 IO with typed half neural layers')+
+            '; Main10 container is not ten-bit model restoration')
     result['backend_fingerprint']=fingerprint(cfg)
     result['resumable_segments']=True
     if output is not None:
@@ -89,7 +91,7 @@ def plan(master,cfg,output=None,episode=None):
             result['additional_peak_bytes']=max(16*1024**2,result['additional_peak_bytes']-occupied)
         if cfg.get('post_root'):
             if not identity:
-                identity=make_identity(ep,digest,fp,engine.source_packet_count(master),cfg.get('segment_source_frames',250))
+                identity=make_identity(ep,digest,fp,engine.source_packet_count(master,cfg.get('input_frame_rate',25)),cfg.get('segment_source_frames',250),cfg.get('input_frame_rate',25))
             video_budget=int(seconds*planning_bitrate/8)+1
             _,extra=concat_transfer.choose_concat(cfg['post_root'],output,directory,identity,video_budget,
                                                   reserve_gib=minimum_free_gib(cfg),releasable_bytes=occupied)
@@ -102,7 +104,8 @@ def plan(master,cfg,output=None,episode=None):
 
 
 def context(master,output,episode,cfg):
-    if not re.fullmatch(r'S01E\d{2,3}',episode):raise ValueError('Invalid episode ID')
+    if not re.fullmatch(r'S0[1-4]E\d{2,3}',episode) or episode[:3] not in cfg.get('admitted_seasons',['S01']):
+        raise ValueError('Episode season has no explicit backend admission')
     digest=sha256(master);reject_retired(digest)
     fp=fingerprint(cfg)
     directory=Path(output).parent/(episode+'.segments')/(digest[:16]+'-'+fp[:16])
@@ -146,9 +149,10 @@ def run(master,output,episode,cfg):
     master,output=Path(master),Path(output)
     digest,fp,directory=context(master,output,episode,cfg)
     directory.mkdir(parents=True,exist_ok=True)
-    count=engine.source_packet_count(master);source=engine.source_info(master)
-    total=engine.output_count(count);size=cfg.get('segment_source_frames',250)
-    identity=make_identity(episode,digest,fp,count,size)
+    source_fps=cfg.get('input_frame_rate',25)
+    count=engine.source_packet_count(master,source_fps);source=engine.source_info(master,source_fps)
+    total=engine.output_count(count,source_fps);size=cfg.get('segment_source_frames',250)
+    identity=make_identity(episode,digest,fp,count,size,source_fps)
     header=directory/'context.json'
     if header.exists() and json.loads(header.read_text())!=identity:
         raise ValueError('Existing segment context differs; retained')
@@ -202,7 +206,7 @@ def run(master,output,episode,cfg):
     prepared={'stat':(stat.st_ino,stat.st_size,stat.st_mtime_ns),'sha256':digest,'count':count,'info':source}
     restorer=None;paths=[];receipts=[]
     for index,start in enumerate(range(0,count,size)):
-        selected=min(size,count-start);frames=engine.output_count(selected)
+        selected=min(size,count-start);frames=engine.output_count(selected,source_fps)
         target=directory/f'{index:06d}.mkv';partial=directory/f'{index:06d}.partial.mkv'
         ready=target.with_suffix('.ready.json');pending=target.with_suffix('.pending.json')
         binding={**identity,'index':index,'source_start':start,'source_frames':selected,'frames':frames}

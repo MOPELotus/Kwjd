@@ -80,6 +80,8 @@ A real authorized 56-minute ZZZ mix returned a roughly 795 MB FLAC, exceeding th
 
 用户明确授权济公传13回持续云端字幕审校，直到与原片一致再结束。识别草稿完成只是起点；逐条审图修改复核、补查漏行和边界，真正通过后逐回封存。持久监督器应在会话正常退出未完成或断开后恢复同一会话继续，终止条件是13回真实审校和SHA封存全部通过；真实额度/磁盘阻塞保存现场，不制造完成标记。字幕审校不等待母版，也不因此自动扩展整季后期生产范围。
 
+用户明确保留第一回当前30fps母版，后续按30→60处理，不为帧率重导；保留预期背景尾部和接受的远景遮罩表现。30fps须按真实时钟验证并配置后端，不把30帧输入当25帧读入；不改混音、不变速。整数倍率减少RIFE所需的时间采样复杂度，但整链速度须实测，不能据整数倍率保证比25fps更快。
+
 ## 2026-11-03: Opportunistic lossless upgrades
 
 The user requested another check of lossy candidates. `--upgrade-lossy` rechecks technically verified MP3/Vorbis receipts, admits only actual lossless codecs for upgrades, archives superseded receipts and retains the original candidate files. If no lossless candidate is returned, the existing verified file stays usable. Platform lossless labels alone do not establish codec quality or audio-version identity.

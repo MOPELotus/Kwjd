@@ -58,7 +58,7 @@ def resumable_transfer(args,source,ssh,command,ssh_binary,sftp_binary):
         log=state_path.with_suffix('.sftp.log')
         try:
             with log.open('a',encoding='utf8') as output:
-                process=subprocess.Popen([sftp_binary,'-b',batch_name,'-B','262144','-R','64','-S',ssh_binary,
+                process=subprocess.Popen([sftp_binary,'-b',batch_name,'-B','131072','-R','64','-S',ssh_binary,
                     '-o','BatchMode=yes','-o','ConnectTimeout=15','-o','ServerAliveInterval=30',
                     '-o','ServerAliveCountMax=3',args.host],stdout=output,stderr=subprocess.STDOUT)
                 changed=time.monotonic();last_check=0;size=count

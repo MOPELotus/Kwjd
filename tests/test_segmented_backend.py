@@ -11,6 +11,27 @@ from enhance_stage import GIB
 
 
 class SegmentTests(unittest.TestCase):
+    def test_cfr30_identity_and_admitted_season_use_exact_two_times_output(self):
+        identity=backend.make_identity('S03E02','source','model',60,30,30)
+        self.assertEqual(identity['output_frames'],120)
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);master=root/'master';master.write_bytes(b'original')
+            cfg={'fingerprint':'model','segment_source_frames':30,'scratch':str(root),
+                 'restore':False,'input_frame_rate':30,'admitted_seasons':['S03']}
+            output=root/'S03E02.enhanced.partial.mkv'
+            counts=[]
+            def encode(src,dest,ep,config,**kw):
+                counts.append(kw['source_frames']);Path(dest).write_bytes(str(kw).encode())
+            def concatenate(args,**kw):Path(args[-1]).write_bytes(b'joined')
+            with patch.object(backend.engine,'source_info',return_value={'format':{'duration':'2'}}), \
+                 patch.object(backend.engine,'source_packet_count',return_value=60), \
+                 patch.object(backend.engine,'run',side_effect=encode),patch.object(backend,'validate_segment'), \
+                 patch.object(backend,'check_space'),patch.object(backend.subprocess,'run',side_effect=concatenate):
+                backend.run(master,output,'S03E02',cfg)
+            self.assertEqual(counts,[30,30])
+            with self.assertRaises(ValueError):
+                backend.context(master,output,'S03E02',dict(cfg,admitted_seasons=['S01']))
+
     def test_resume_reuses_completed_ai_segments_and_accepts_completed_output(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);master=root/'master';master.write_bytes(b'original')

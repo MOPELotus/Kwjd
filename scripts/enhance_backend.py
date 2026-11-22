@@ -30,14 +30,16 @@ from master_policy import reject_retired
 from stage_storage import choose_scratch
 
 
-def frame_position(output_index):
-    position = Fraction(output_index * 25, 60)
+def frame_position(output_index,source_fps=25):
+    from frame_clock import input_rate
+    position = Fraction(output_index * input_rate(source_fps), 60)
     left = position.numerator // position.denominator
     return left, position - left
 
 
-def output_count(source_count):
-    return math.ceil(Fraction(source_count * 60, 25))
+def output_count(source_count,source_fps=25):
+    from frame_clock import input_rate
+    return math.ceil(Fraction(source_count * 60, input_rate(source_fps)))
 
 
 def is_cut(left, right, threshold=.05, center_threshold=.10):
@@ -59,6 +61,10 @@ def validate_native_scheduling(data):
 
 def config(path):
     data = json.loads(Path(path).read_text())
+    from frame_clock import input_rate
+    rate=input_rate(data.get('input_frame_rate',25))
+    if rate!=25 and data.get('restoration_backend')!='cuda_gfpgan_fused':
+        raise ValueError('CFR30 requires the explicitly adapted native face pipeline')
     if data.get('restoration_backend')=='cuda_gfpgan_fused':
         validate_native_scheduling(data)
     if type(data.get('gpu')) is not int or data['gpu'] < 0:
@@ -90,7 +96,7 @@ def config(path):
         import importlib.metadata
         from face_frame_processor import WEIGHTS
         from native_face_recipe import validate_recipe
-        if (data['restore'] is not True or data.get('rife_backend')!='cuda_trt'
+        if (data['restore'] is not True or data.get('rife_backend') not in ('cuda_trt','cuda_onnx')
                 or data.get('gpu')!=1 or data.get('restore_gpu')!=0
                 or data.get('light_filter') not in ['none','clarity']
                 or data.get('max_video_mbps')!=16):
@@ -112,7 +118,7 @@ def config(path):
         data['fingerprint']=hashlib.sha256((data['fingerprint']+sha256(Path(__file__).with_name('cuda_restore.py'))).encode()).hexdigest()
     if data.get('restoration_backend')=='cuda_gfpgan_fused':
         for name in ['native_face_pipeline.py','native_face_recipe.py','face_frame_processor.py',
-                     'render_face_samples.py','native_frame_queue.py','native_resource_gate.py']:
+                     'render_face_samples.py','native_frame_queue.py','native_resource_gate.py','frame_clock.py']:
             data['fingerprint']=hashlib.sha256((data['fingerprint']+sha256(Path(__file__).with_name(name))).encode()).hexdigest()
     if data.get('rife_backend') in ('cuda_onnx','cuda_trt','cuda_trt_sm86'):
         helper={'cuda_trt':'cuda_trt.py','cuda_trt_sm86':'cuda_trt_sm86.py','cuda_onnx':'cuda_rife.py'}[data['rife_backend']]
@@ -135,13 +141,15 @@ def _scratch_candidates(data, path):
     yield from mounted_scratch_candidates(Path(path).parent.parent)
 
 
-def source_info(path):
+def source_info(path,source_fps=25):
+    from frame_clock import input_rate
+    rate=input_rate(source_fps)
     data = probe(path)
     video = next(s for s in data['streams'] if s['codec_type']=='video')
     if (video['width'],video['height']) != (1920,1080):
         raise ValueError('Only native1920x1080 masters supported')
-    if Fraction(video['avg_frame_rate']) != 25 or Fraction(video['r_frame_rate']) != 25:
-        raise ValueError('Expected native CFR25; never force input frame rate')
+    if Fraction(video['avg_frame_rate']) != rate or Fraction(video['r_frame_rate']) != rate:
+        raise ValueError('Expected configured CFR input; never force input frame rate')
     if video.get('color_primaries') not in (None,'unknown','bt709'):
         raise ValueError('Only SDR Rec709 masters supported; HDR conversion must not be implicit')
     relative_start = float(video.get('start_time',0))-float(data['format'].get('start_time',0))
@@ -150,12 +158,14 @@ def source_info(path):
     return data
 
 
-def source_packet_count(path):
+def source_packet_count(path,source_fps=25):
+    from frame_clock import input_rate
+    step=float(1/input_rate(source_fps))
     raw = subprocess.check_output(['ffprobe','-v','error','-select_streams','v:0',
         '-show_entries','packet=pts_time','-of','csv=p=0',str(path)],text=True)
     stamps = sorted(float(line.split(',')[0]) for line in raw.splitlines() if line.strip())
-    if not stamps or any(abs(b-a-.04)>.00002 for a,b in zip(stamps,stamps[1:])):
-        raise ValueError('Master packet timestamps are not continuous CFR25')
+    if not stamps or any(abs(b-a-step)>.00002 for a,b in zip(stamps,stamps[1:])):
+        raise ValueError('Master packet timestamps do not match configured CFR')
     return len(stamps)
 
 

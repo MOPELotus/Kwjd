@@ -233,8 +233,11 @@ def preserve_source(master, enhanced, checkpoint, bundle_path, episode, log):
     frames = decoded_video_frames(enhanced,log)
     packet_count = int(subprocess.check_output(['ffprobe','-v','error','-select_streams','v:0',
         '-count_packets','-show_entries','stream=nb_read_packets','-of','csv=p=0',str(master)],text=True).strip())
-    if frames != (packet_count*12+4)//5:
-        raise ValueError('Enhanced frame count does not preserve the entire25fps master')
+    from frame_clock import output_count,input_rate
+    master_video=next(s for s in src['streams'] if s['codec_type']=='video')
+    rate=input_rate(master_video['r_frame_rate'])
+    if frames != output_count(packet_count,rate):
+        raise ValueError('Enhanced frame count does not preserve the actual master clock')
     pcm = decoded_pcm_hash(master)
     if pcm != saved_pcm:
         # FLAC truncated exactly at a complete block can probe and decode cleanly

@@ -29,7 +29,7 @@ def validate_recipe(path,expected_sha256):
     data=json.loads(path.read_text())
     if data.get('schema_version')!=1 or data.get('scope') not in ['production','bounded_test']:
         raise ValueError('Explicit production/test recipe scope required')
-    if not re.fullmatch(r'S01E\d{2,3}',data.get('episode','')):
+    if not re.fullmatch(r'S0[1-4]E\d{2,3}',data.get('episode','')):
         raise ValueError('Invalid native recipe episode')
     if not re.fullmatch('[0-9a-f]{64}',data.get('master_sha256','')):
         raise ValueError('Native recipe needs master SHA')
