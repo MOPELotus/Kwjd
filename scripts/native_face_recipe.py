@@ -27,7 +27,7 @@ def validate_recipe(path,expected_sha256):
     if path.is_symlink() or not path.is_file() or sha256(path)!=expected_sha256:
         raise ValueError('Native recipe hash changed/missing')
     data=json.loads(path.read_text())
-    if data.get('schema_version')!=1 or data.get('scope') not in ['production','bounded_test']:
+    if data.get('schema_version')!=1 or data.get('scope') not in ['production','bounded_test','technical_calibration']:
         raise ValueError('Explicit production/test recipe scope required')
     if not re.fullmatch(r'S0[1-4]E\d{2,3}',data.get('episode','')):
         raise ValueError('Invalid native recipe episode')
@@ -44,6 +44,9 @@ def validate_recipe(path,expected_sha256):
         target=fonts/name
         if Path(name).name!=name or target.is_symlink() or sha256(target)!=digest:
             raise ValueError('Fused font hash changed')
+    if data['scope']=='technical_calibration':
+        validate_calibration(data,path)
+        return data
     srt=Path(data['srt_path']);style=Path(data['style_path'])
     seal=json.loads(srt.with_name(srt.name+'.ready.json').read_text(encoding='utf-8-sig'))
     approval=json.loads(style.with_name(style.name+'.ready.json').read_text(encoding='utf-8-sig'))
@@ -65,3 +68,37 @@ def validate_recipe(path,expected_sha256):
     if timing!=data['subtitle_timing']:raise ValueError('Fused subtitle timing mapping changed')
     if sha256(path)!=expected_sha256:raise ValueError('Native recipe raced verification')
     return data
+
+
+def validate_calibration(data,path):
+    """Bounded local diagnostics cannot stand in for production approval/seals."""
+    post=Path(data['post_root']).resolve(strict=True)
+    folder=Path(data['calibration_directory'])
+    expected=post/'reports/calibration'/data['episode']/data['master_sha256']
+    if (not folder.is_absolute() or folder.is_symlink() or not folder.resolve().is_relative_to(expected)
+            or folder.resolve()==expected or Path(path).resolve().parent!=folder.resolve()):
+        raise ValueError('Technical calibration must use an isolated report directory')
+    for key in ['ass_path','srt_path','pixel_review_evidence_path']:
+        target=Path(data[key])
+        if target.is_symlink() or target.resolve().parent!=folder.resolve():
+            raise ValueError('Calibration subtitle/evidence must remain isolated')
+    proof=Path(data['pixel_review_evidence_path'])
+    if sha256(proof)!=data['pixel_review_evidence_sha256']:
+        raise ValueError('Changed technical preview pixel review')
+    evidence=json.loads(proof.read_text())
+    if (evidence.get('master_sha256')!=data['master_sha256'] or evidence.get('pixel_checked') is not True
+            or evidence.get('temporary_not_final') is not True):
+        raise ValueError('Actual temporary pixel review required')
+    start,count=data.get('source_start'),data.get('source_frames')
+    if (type(start)is not int or start<0 or start%5 or type(count)is not int or not 5<=count<=1800
+            or data.get('program_origin_seconds')!=0 or data.get('production_eligible') is not False):
+        raise ValueError('Technical calibration must be bounded to at most1800 source frames')
+
+
+def check_calibration_run(data,output,source_start,source_frames):
+    if data['scope']!='technical_calibration':return
+    folder=Path(data['calibration_directory']).resolve(strict=True)
+    target=Path(output)
+    if (target.is_symlink() or target.parent.resolve()!=folder
+            or source_start!=data['source_start'] or source_frames!=data['source_frames']):
+        raise ValueError('Technical calibration output/window escaped explicit bounds')
