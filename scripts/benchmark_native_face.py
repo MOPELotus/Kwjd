@@ -18,10 +18,10 @@ def main():
     import enhance_backend as engine
     from native_face_pipeline import run
     from face_rework_worker import validate_video
-    cfg=engine.config(args.config);info=engine.source_info(args.master)
+    cfg=engine.config(args.config);rate=cfg.get("input_frame_rate",25);info=engine.source_info(args.master,rate)
     from segmented_backend import fingerprint
     if fingerprint(cfg)!=args.backend_fingerprint:raise ValueError('Calibration requested stale backend fingerprint')
-    full=engine.source_packet_count(args.master);digest=sha256(args.master)
+    full=engine.source_packet_count(args.master,rate);digest=sha256(args.master)
     if cfg.get('restoration_backend')!='cuda_gfpgan_fused':raise ValueError('Explicit native fused config required')
     check_space(args.output,128*1024**2,minimum_free_gib(cfg));args.output.mkdir(parents=True,exist_ok=True)
     result_path=args.output/'result.json';pending=args.output/'pending.json';final=args.output/'sample.mkv'
@@ -57,7 +57,7 @@ def main():
             restored_frames=candidate_pipeline['coverage']['restored_frames'],partial=str(partial)))
         if candidate_pipeline['coverage']['restored_frames']>0:break
     elapsed=time.monotonic()-began
-    frames=engine.output_count(count);validation=validate_video(partial,frames,args.output)
+    frames=engine.output_count(count,rate);validation=validate_video(partial,frames,args.output)
     pipeline=json.loads(partial.with_name(partial.name+'.pipeline.json').read_text())
     if (pipeline['coverage']['processed_frames']!=min(count+1,full-start)
             or pipeline['coverage']['failed_frames']!=0 or pipeline['video_encodes']!=1):

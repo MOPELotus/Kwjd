@@ -17,7 +17,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-PROJECT = json.loads((HERE / "config" / "project.json").read_text(encoding="utf-8"))
+# Explicit process-wide profile is inherited by worker helper imports. Never
+# infer another season from a filename or mutate the established S01 default.
+PROJECT_PATH = Path(os.environ.get("KWJD_PROJECT", str(HERE / "config" / "project.json")))
+if not PROJECT_PATH.is_absolute():
+    PROJECT_PATH = HERE / PROJECT_PATH
+PROJECT_PATH = PROJECT_PATH.resolve(strict=True)
+if not PROJECT_PATH.is_relative_to((HERE / "config").resolve()):
+    raise ValueError("Project profile must be versioned under repository config")
+PROJECT = json.loads(PROJECT_PATH.read_text(encoding="utf-8"))
+if not re.fullmatch(r"S0[1-4]", PROJECT.get("season", "")):
+    raise ValueError("Project needs an explicit supported season")
 SEASON = PROJECT["season"]
 BOOTSTRAP = set(PROJECT.get("bootstrap_episodes", []))
 TIMING = re.compile(r"^(\d{2,}):(\d\d):(\d\d)[,.](\d{3})\s*-->\s*(\d{2,}):(\d\d):(\d\d)[,.](\d{3})(?:\s+.*)?$")

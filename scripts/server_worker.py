@@ -55,7 +55,7 @@ def check_rel(rel):
     path = Path(rel)
     if path.is_absolute() or '..' in path.parts:
         # The srt path is intentionally relative to post/; whitelist exactly.
-        if not (str(rel).startswith("../output/S01E") and str(rel).endswith(".zh.srt")):
+        if not re.fullmatch(r"\.\./output/" + re.escape(PROJECT["season"]) + r"E\d{2,3}\.zh\.srt", str(rel)):
             raise ValueError("Unsafe path in job")
     return path
 

@@ -46,3 +46,8 @@
 用户随后明确选择“后面按30处理”，并说明影响不大时继续盯上传；第一回不因帧率重导。母版验证默认仍25fps，显式30fps须提供绑定同SHA、真实完整包数和连续PTS的时钟证明，技术收据保留默认25fps门禁未通过的事实。`native_face_pipeline.py`和分段交接已支持显式25/30输入与固定60输出；30fps仅准入融合人脸链，旧未适配的其他后端拒绝30。分段源帧计数、seek、ASS时间起点、输出帧数和后续音频交接按实际输入时钟计算；S03必须在backend配置显式列入admitted_seasons。CUDA ONNX RIFE可作为独立候选，不能冒用已清理的TensorRT旧引擎验收；30fps整链仍须真实当前母版短测与样式/字幕门禁后才生产。
 
 大母版传输用Git附带的独立SSH/SFTP客户端，128KiB请求和64个并发请求；远端已有partial先核对本地等长前缀SHA，匹配才reput续传。完整SHA和远端媒体/解码通过才原子发布。Windows控制器以隐藏独立进程运行，记录实时远端字节数，连续180秒无增长只结束自有传输树并保留partial，最多4次重试；聊天会话中断不应终止该独立进程。尚未完整交接时不得宣称已上传或清理本地母版/新Mask缓存。
+
+## 显式第三季控制器配置
+
+`KWJD_PROJECT=config/projects/jigong-s03.json python3 kwjd.py status --role linux`
+为本故事选择独立profile；同一环境变量必须传给server_worker及其子进程。未设置时仍为S01，不能仅凭S03文件名自动换季。profile列出13回字幕/素材，但当前托管后期仅S03E02。worker的外部output SRT路径按当前profile季号严格匹配，拒绝跨季和路径穿越。该配置不表示后端/字幕/样式已经准入。
