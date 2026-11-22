@@ -41,6 +41,9 @@ def main():
     if not re.fullmatch(r'S\d{2}',season) or not all(isinstance(e,int) and e>0 for e in config['episodes']):
         raise ValueError('Invalid season/episodes')
     engine=args.engine.resolve(strict=True)
+    archive=engine.parents[2]/'videocr-cli-GPU-v1.6.0-CUDA-11.8-Linux.7z'
+    if sha(archive)!=config['engine_archive_sha256']:
+        raise ValueError('GPU engine archive differs from validated release')
     work=root/'ocr'/('batch-'+season.lower())
     work.mkdir(exist_ok=True)
     lock=(work/'worker.lock').open('a')

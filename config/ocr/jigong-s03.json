@@ -4,6 +4,7 @@
   "season": "S03",
   "episodes": [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
   "backend": "VideOCR-GPU-v1.6.0-CUDA-11.8",
+  "engine_archive_sha256": "fa4a404bb7f6699898ad1b9a86fe3970c309e905b830f34e20816693e54d6743",
   "gpu_physical_index": 1,
   "minimum_free_gib": 25,
   "temporary_budget_gib": 4,
@@ -15,8 +16,9 @@
   "use_server_model": true,
   "normalize_to_simplified_chinese": false,
   "post_processing": false,
-  "sample_scope": "single-line samples at 300s from all 13 chapters; additional cloud pilot required",
-  "production_admitted": false,
+  "sample_scope": "single-line samples at 300s from all 13 chapters; S03E02 290-320s GPU pilot, all 13 cue midpoint images inspected; not full-story review",
+  "pilot_findings": {"time_base_correct": true, "crop_admitted_for_draft_extraction": true, "visible_space_omissions_require_pixel_review": true},
+  "production_admitted": true,
   "outputs_are_unreviewed_drafts": true,
   "time_base": "trimmed_video_no_additional_intro_offset"
 }
