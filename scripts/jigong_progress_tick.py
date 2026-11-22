@@ -32,8 +32,8 @@ def event(snapshot,previous):
     job=snapshot['job'];state=job.get('state');previous_job=previous.get('job',{})
     clean=snapshot.get('clean_recovery_state')
     if clean=='FAILED_RETAINED_FOR_INSPECTION':return 'FIXED_CLEAN_RECOVERY_TEST_NEEDS_ATTENTION'
-    if clean=='PASSED' and previous.get('clean_recovery_state')!='PASSED':return 'FIXED_CLEAN_RECOVERY_TEST_PASSED'
     if snapshot['review_ready'] and not job:return 'FIRST_SRT_READY_START_PRODUCTION'
+    if clean=='PASSED' and not snapshot.get('clean_recovery_acknowledged',False):return 'FIXED_CLEAN_RECOVERY_TEST_PASSED'
     if state in ('FAILED','WAIT_DISK','WAIT_GPU','WAIT_BACKEND_TECHNICAL','WAIT_STYLE_APPROVAL'):
         return 'PRODUCTION_NEEDS_ATTENTION:'+state
     if state=='READY' and not snapshot['cloud_final_exists']:return 'FINAL_READY_REQUIRES_ACTUAL_CODEX_QC'
@@ -78,8 +78,9 @@ def inspect(root,area,config,thread,threshold,wake):
         online=any(peer.get('HostName','').casefold()==target.get('device_name','lotuspc').casefold()
                    and peer.get('Online') is True for peer in data.get('Peer',{}).values())
     except Exception as error:network_error=str(error)
+    clean_report=read(root/'post/reports/fixed-clean-recovery.json')
     snapshot=dict(schema_version=1,checked_at=now,main_thread_id=thread,job=job,
-        clean_recovery_state=read(root/'post/reports/fixed-clean-recovery.json').get('state'),
+        clean_recovery_state=clean_report.get('state'),clean_recovery_acknowledged=clean_report.get('main_acknowledged') is True,
         review_ready=review_ready,media_log_age_seconds=now-log.stat().st_mtime if log.exists() else 1e10,
         review_checkpoint_age_seconds=now-review_path.stat().st_mtime if review_path.exists() else 1e10,
         review_checkpoint_complete=review.get('complete') is True and len(review.get('completed_episodes',[]))==13,
@@ -98,7 +99,8 @@ def inspect(root,area,config,thread,threshold,wake):
     snapshot['model_state']='WAIT_QUOTA_READ' if remaining is None else ('PAUSED_BELOW_2_PERCENT' if remaining<threshold else 'QUOTA_AVAILABLE')
     last=read(area/'timer-last-dispatch.json')
     # Stable event keys prevent repeatedly queuing the same unresolved request.
-    signature=hashlib.sha256(json.dumps([kind,job.get('updated_at') if kind and kind.startswith('PRODUCTION_STAGE_CHANGED') else None],sort_keys=True).encode()).hexdigest()
+    signature=hashlib.sha256(json.dumps([kind,job.get('updated_at') if kind and kind.startswith('PRODUCTION_STAGE_CHANGED') else None,
+        snapshot['clean_recovery_state'] if kind=='FIRST_SRT_READY_START_PRODUCTION' else None],sort_keys=True).encode()).hexdigest()
     snapshot['dispatch']='NO_ATTENTION_EVENT' if not kind else 'MODEL_WAKE_NOT_REQUESTED'
     atomic_json(area/'timer-status.json',snapshot)
     if kind and last.get('signature')==signature and previous.get('attention_event')==kind:

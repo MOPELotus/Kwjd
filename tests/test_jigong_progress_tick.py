@@ -38,7 +38,8 @@ class ProgressTickTests(unittest.TestCase):
 
     def test_clean_deployment_completion_or_failure_wakes_same_main(self):
         self.assertEqual(event(self.snapshot(clean_recovery_state='PASSED'),{}),'FIXED_CLEAN_RECOVERY_TEST_PASSED')
-        self.assertIsNone(event(self.snapshot(clean_recovery_state='PASSED'),{'clean_recovery_state':'PASSED'}))
+        self.assertIsNone(event(self.snapshot(clean_recovery_state='PASSED',clean_recovery_acknowledged=True),{'clean_recovery_state':'PASSED'}))
+        self.assertEqual(event(self.snapshot(clean_recovery_state='PASSED'),{'clean_recovery_state':'PASSED'}),'FIXED_CLEAN_RECOVERY_TEST_PASSED')
         self.assertEqual(event(self.snapshot(clean_recovery_state='FAILED_RETAINED_FOR_INSPECTION'),{}),
                          'FIXED_CLEAN_RECOVERY_TEST_NEEDS_ATTENTION')
 

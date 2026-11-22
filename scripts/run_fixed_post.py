@@ -112,6 +112,9 @@ def submit(root,master,ass,check_only):
     ep,digest,subtitle=inputs(root,master,ass)
     timing=ensure_timing(root,ep,digest,subtitle['srt_sha256'])
     if check_only:return dict(state='INPUT_IDENTITIES_AND_CLOCK_VERIFIED',episode=ep,production_started=False,timing=timing)
+    clean_report=root/'post/reports/fixed-clean-recovery.json'
+    if clean_report.exists() and load(clean_report).get('state','').startswith('RUNNING_'):
+        raise WaitInput('First clean-deployment self-test still running; wait before sharing its GPUs')
     if root.resolve()!=(Path.home()/'qingqingwu').resolve():
         raise ValueError('The existing Worker requires its configured ~/qingqingwu data root')
     # Recovery is idempotent: exact packages/weights and the same recipe, never
