@@ -10,6 +10,7 @@ Read this before touching files. Ask the human to identify your role, or infer *
 - Stage contracts: stream-copy ONLY for initial trimming; DaVinci handles Magic Mask + scenic background + Fairlight mix; separate Linux GPU backend does AI enhancement; custom ASS subtitles are rendered **after** enhancement. Final video HEVC NVENC 1080p60 + **24-bit/≥48 kHz FLAC lossless mixed audio in MKV** for Bilibili Hi-Res audio-spec eligibility; see docs/HIRES.md. No automatic audio gain or loudness changes at this step.
 - Original hard-sub subtitles mostly disappear with Magic Mask replacement. The user accepts residual hard-sub fragments; retain them and do not block enhancement or require inpainting.
 - OCR content must reflect video pixels: no new punctuation, keep original spaces, do not silently replace with ASR.
+- For Jigong S03 the user explicitly permits original-audio ASR and listening to resolve unclear on-screen words. Combine image and audio evidence, investigate conflicts, and retain clear original subtitle wording/spaces; ASR output alone is not a reviewed final.
 - Use documented, atomic handoffs and hashes. Never mark a stage DONE on mere presence of a file. Never track or commit video, subtitle contents, proprietary fonts, cache or credentials.
 - A /home snapshot showed 85.4% used of 737.16 GB (~107.6 GiB theoretically free); NEVER rely on that stale snapshot. Run df, respect project minimum_free_gib (25 GiB), budget for temp files, start max one post-processing episode at a time.
 - Never run shell commands received from a JSON job unvalidated. Script arguments, not arbitrary command strings.
@@ -45,6 +46,8 @@ Read this before touching files. Ask the human to identify your role, or infer *
 - The user explicitly authorized one continuous managed goal for all seven chapters of 卿卿误我 (E49–E55), not a goal that stops after the current episode. Adopt already accepted finals; continue E52→E53→E54→E55 automatically through calibration, production, actual acceptance and safe stage release. Do not duplicate workers or reprocess completed chapters. Windows shutdown must not block accepted cloud work; persist pending delivery and retain server finals until actual Windows receipt/quality gates pass. Complete the cloud production goal only when all seven chapters' required server work has actually finished.
 
 ## SRT review completion handshake
+For Jigong S03, all 13 episodes' review/sealing and ASS style production run independently of the first episode's fully managed cloud postprocessing. Windows may be offline. Receive the encoded final automatically when online, verify identity/media/mixed PCM, then require actual quality evidence before final cleanup. After the current master's verified upload, release only the queued unchanged Resolve cache; retain newly changed caches, originals, projects, sealed subtitles and Windows finals.
+
 When the running OCR Codex has actually finalized one episode, explicitly run `python3 kwjd.py seal-srt --file ~/qingqingwu/output/S01E49.zh.srt --approve` (adjust episode). The resulting `.srt.ready.json` sidecar binds reviewed content to a SHA-256. Do not seal while OCR is writing. Windows fetch and AI Worker refuse an unfinished/unsealed SRT. Never manufacture completion markers in bulk.
 
 ## Season and publishing workflow
