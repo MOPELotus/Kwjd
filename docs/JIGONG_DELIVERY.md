@@ -38,3 +38,6 @@ Windows限域清理成功后再原子上传 `post/receipts/S03E02.windows-cleanu
 向当前可见会话排队，不启动 `codex exec` 或旧模型监督器。巡检记录真实状态、额度和
 排队/恢复结果；排队成功不等于恢复成功。等待第一回SRT真实封存期间不绕过字幕或
 母版时钟门禁；巡检可在输入就绪时接续主代理，不能把“等待输入”称为已开始生产。
+
+
+固定工作栈已按用户纠正恢复：`config/workflows/native-face-v1.json`和完整requirements锁确定GFPGAN/A4000、强类型TensorRT RIFE/T10及overlap1。ONNX生产准入已撤回。新TensorRT引擎按归档原配方真实重建，模型图SHA与旧版一致；当前母片900原生→1800输出帧、901含前瞻修脸、两处cut、完整解码及PCM等价短测已通过，并实际看过六组源/输出图。实际引擎/样片SHA和视觉证据留post，不进入Git。恢复后的后端准入已启用，整回仍等待第一回真实封存SRT和ASS。之后主代理使用`run_fixed_post.py --master ... --ass ...`完成门禁并提交唯一后台Worker，不再临时选择技术栈。

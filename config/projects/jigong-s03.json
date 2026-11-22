@@ -142,7 +142,7 @@
       "final_nvenc_and_lossless_mix"
     ],
     "neural_full_frame_upscale": false,
-    "production_integration_status": "requires_actual_s03_cfr30_master_chain_acceptance",
+    "production_integration_status": "fixed_trt_rebuilt_and_actual_s03_cfr30_fullchain_sample_accepted",
     "existing_60fps_final_rework": {
       "preserve_all_frames": true,
       "repeat_rife": false,

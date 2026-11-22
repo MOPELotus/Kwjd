@@ -17,6 +17,7 @@ Read this before touching files. Ask the human to identify your role, or infer *
 - Model-backed subtitle/visual reviews may run via Codex. Automated repeatable operations must live in versioned scripts.
 
 ## Fixed production stack
+- Read `docs/FIXED_WORKFLOW.md`. The normal submission entry is `scripts/run_fixed_post.py --master ... --ass ...`; it recovers the locked assets and uses the existing queue/Worker. It never treats missing review or backend acceptance as ready.
 - `config/workflows/native-face-v1.json` is the production recipe: GFPGAN1.4 on A4000, strongly typed TensorRT RIFE4.6 on T10, overlap1, ASS after RIFE, one NVENC encode and unchanged mixed PCM in FLAC.
 - Cleanup means rebuilding this same stack, not choosing another backend. ONNX is comparison-only; missing TRT assets must be rebuilt with the archived conversion/build recipes and fresh actual build evidence. Do not fabricate the old engine SHA.
 - Future episodes vary the master and reviewed subtitle/timing assets. Do not retune or replace models/devices/precision/encoding after routine cleanup. Alternative technology requires an explicit workflow revision with matched speed/quality evidence.
