@@ -22,16 +22,17 @@ def wait(root,kind,poll=30,timeout=0):
     progress=root/'post/managed-S03E02/progress.json'
     began=time.monotonic();last_quota=-float('inf')
     while True:
+        quota_fresh=False
         if time.monotonic()-last_quota>=120:
             try:remaining=quota()
             except Exception as error:
                 data=json.loads(progress.read_text()) if progress.exists() else {}
                 data.update(stage='QUOTA_READ_ERROR',quota_read_error=str(error),updated_at=time.time())
                 save(progress,data)
-                time.sleep(60)
-                continue
-            last_quota=time.monotonic()
-            if remaining<5:
+                last_quota=time.monotonic()-60
+            else:
+                quota_fresh=True;last_quota=time.monotonic()
+            if quota_fresh and remaining<5:
                 data=json.loads(progress.read_text()) if progress.exists() else {}
                 data.update(stage='WAIT_QUOTA_RECOVERY',quota_remaining_percent=remaining,updated_at=time.time())
                 save(progress,data);return 75
@@ -40,7 +41,9 @@ def wait(root,kind,poll=30,timeout=0):
             from subtitle_review_supervisor import validate_episode
             ready=validate_episode(root,EPISODE)
         data=json.loads(progress.read_text()) if progress.exists() else {}
-        data.update(episode=EPISODE,updated_at=time.time(),quota_remaining_percent=remaining,
+        if quota_fresh:
+            data.update(quota_remaining_percent=remaining,quota_last_success_at=time.time())
+        data.update(episode=EPISODE,updated_at=time.time(),
                     input_wait={'kind':kind,'ready':ready,'checked_at':time.time()})
         if kind=='master':
             partial=root/'post/incoming'/(EPISODE+'.clean-master.mov.uploading')
