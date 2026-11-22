@@ -1,0 +1,55 @@
+import json
+from pathlib import Path
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
+import jigong_quality as m
+
+class QualityTests(unittest.TestCase):
+    def fixture(self,root):
+        post=root/'post';(post/'reports').mkdir(parents=True);(post/'receipts').mkdir()
+        evidence=post/'evidence.json';evidence.write_text('actual review fixture')
+        digest='a'*64
+        report=dict(master_sha256=m.MASTER,sha256=digest,bytes=10,final_decode_checked=True,final_pcm_equivalent=True,decoded_pcm_sha256='b'*64,srt_sha256='c'*64,fused_subtitle_binding=dict(ass_sha256='d'*64))
+        (post/'reports'/f'{m.EPISODE}.json').write_text(json.dumps(report))
+        quality=dict(schema_version=1,episode=m.EPISODE,master_sha256=m.MASTER,final_sha256=digest,final_bytes=10,review_complete=True,reviewed_by=dict(kind='codex',session_id='01a203ac-7e99-7153-a57a-e82c19cd6fd1'),accepted_limitations=['bounded actual visual samples'])
+        for name in ['visual','subtitles','synchronization','audio']:
+            quality[name]=dict(checked=True,scope='actual fixture review',issues=[],evidence=[dict(path=str(evidence),sha256=m.sha256(evidence))])
+        quality['subtitles'].update(srt_sha256='c'*64,ass_sha256='d'*64)
+        quality['audio'].update(source_pcm_equal=True,decoded_pcm_sha256='b'*64)
+        path=post/'reports'/f'{m.EPISODE}.quality.json';path.write_text(json.dumps(quality))
+        return path,quality,evidence
+
+    def test_complete_quality_binds_all_evidence(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);path,data,evidence=self.fixture(root)
+            self.assertEqual(m.verify_quality(root)['final_bytes'],10)
+            evidence.write_text('changed')
+            with self.assertRaises(ValueError):m.verify_quality(root)
+
+    def test_unchecked_section_refused(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);path,data,evidence=self.fixture(root);data['audio']['checked']=False;path.write_text(json.dumps(data))
+            with self.assertRaises(ValueError):m.verify_quality(root)
+
+    def test_no_receipt_waits_without_cleanup(self):
+        with tempfile.TemporaryDirectory() as temp,patch.object(m,'cleanup') as clean:
+            self.assertEqual(m.delivery_step(Path(temp))['stage'],'WAIT_DELIVERY');clean.assert_not_called()
+
+    def test_windows_receipt_requires_quality_digest(self):
+        with tempfile.TemporaryDirectory() as temp,patch.object(m,'cleanup') as clean:
+            root=Path(temp);path,data,evidence=self.fixture(root)
+            receipt=dict(schema_version=1,episode=m.EPISODE,received=True,technical_checked=True,quality_checked=True,remote_final_name=f'{m.EPISODE}.final-1080p60.mkv',sha256=data['final_sha256'],master_sha256=m.MASTER,bytes=10,quality_evidence_sha256='0'*64)
+            target=root/'post/receipts'/f'{m.EPISODE}.json';target.write_text(json.dumps(receipt))
+            with self.assertRaises(ValueError):m.delivery_step(root)
+            clean.assert_not_called()
+            receipt['quality_evidence_sha256']=m.sha256(path);target.write_text(json.dumps(receipt))
+            clean.return_value=dict(state='CLEANED')
+            self.assertEqual(m.delivery_step(root)['stage'],'WAIT_WINDOWS_CLEANUP')
+            local=dict(episode=m.EPISODE,role='windows',state='CLEANED',final_sha256=receipt['sha256'])
+            (root/'post/receipts'/f'{m.EPISODE}.windows-cleanup.json').write_text(json.dumps(local))
+            self.assertEqual(m.delivery_step(root)['stage'],'DELIVERED_AND_GENERATED_ARTIFACTS_CLEANED')
+
+if __name__=='__main__':unittest.main()
