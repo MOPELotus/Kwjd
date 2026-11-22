@@ -21,6 +21,17 @@ def sha(path):
     with path.open('rb') as f:return hashlib.file_digest(f,'sha256').hexdigest()
 
 
+def ensure_asset(target,url,digest):
+    if target.exists():
+        if sha(target)!=digest:raise ValueError('Existing asset differs: '+target.name)
+        return
+    temp=target.with_suffix('.pth.downloading')
+    subprocess.run(['curl','-fL','--retry','5','--retry-all-errors','--connect-timeout','20',
+                    '--max-time','1200','-C','-','-o',str(temp),url],check=True)
+    if sha(temp)!=digest:raise ValueError('Asset SHA mismatch; partial retained: '+target.name)
+    temp.rename(target)
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--post',type=Path,required=True)
@@ -51,12 +62,7 @@ def main():
     weights=post/'tools/face-candidates/weights';weights.mkdir(parents=True,exist_ok=True)
     for name,(url,digest) in ASSETS.items():
         target=weights/name
-        if not target.exists():
-            temp=target.with_suffix('.pth.downloading')
-            subprocess.run(['curl','-fL','--retry','3','-C','-','-o',str(temp),url],check=True)
-            if sha(temp)!=digest:raise ValueError('Asset SHA mismatch; partial retained: '+name)
-            temp.rename(target)
-        if sha(target)!=digest:raise ValueError('Existing asset differs: '+name)
+        ensure_asset(target,url,digest)
     reports=post/'reports';reports.mkdir(exist_ok=True)
     result={'state':'DEPENDENCIES_AND_WEIGHTS_ONLY','backend_activated':False,
             'requirements_sha256':sha(REQUIREMENTS),'packages':verified,

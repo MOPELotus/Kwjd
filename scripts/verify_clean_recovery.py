@@ -50,19 +50,50 @@ def smoke(root,test_post,output):
     atomic_json(output/'smoke.json',report)
 
 
+def resume_area(root,previous):
+    area=Path(previous['test_root'])
+    token=previous['temporary_artifact_manifest']['owner_token']
+    if (not area.is_absolute() or area.parent!=Path('/var/tmp')
+            or not area.name.startswith('kwjd-fixed-clean-check-') or area.is_symlink()
+            or area.stat().st_uid!=os.getuid()):
+        raise ValueError('Retained self-test directory identity invalid')
+    owner=json.loads((area/'owner.json').read_text())
+    if owner.get('token')!=token or owner.get('root')!=str(root):
+        raise ValueError('Retained self-test ownership token/root differs')
+    for entry in Path('/proc').iterdir():
+        if not entry.name.isdigit() or int(entry.name)==os.getpid():continue
+        try:
+            if entry.stat().st_uid==os.getuid() and str(area).encode() in (entry/'cmdline').read_bytes():
+                raise ValueError('A retained self-test process is still active; no duplicate resume')
+        except (FileNotFoundError,ProcessLookupError,PermissionError):continue
+    return area,token
+
+
 def verify(root):
     root=root.resolve(strict=True);reports=root/'post/reports/fixed-clean-recovery';reports.mkdir(parents=True,exist_ok=True)
     status=root/'post/reports/fixed-clean-recovery.json'
     with (reports/'selftest.lock').open('a') as lease:
         fcntl.flock(lease,fcntl.LOCK_EX|fcntl.LOCK_NB)
-        check_space(Path('/var/tmp'),22*2**30,25)
-        area=Path(tempfile.mkdtemp(prefix='kwjd-fixed-clean-check-',dir='/var/tmp'))
-        token=str(uuid.uuid4());atomic_json(area/'owner.json',dict(token=token,root=str(root),created_at=time.time()))
-        test_post=area/'post';test_post.mkdir()
+        previous=json.loads(status.read_text()) if status.exists() else {}
+        resumed=previous.get('state')=='FAILED_RETAINED_FOR_INSPECTION'
+        if resumed:
+            if previous.get('requirements_sha256')!=sha256(REQUIREMENTS):
+                raise ValueError('Retained test uses another environment lock; preserve before a new test')
+            area,token=resume_area(root,previous)
+            check_space(area,2*2**30,25)
+            history=reports/'attempt-history'/str(time.time_ns());history.mkdir(parents=True)
+            for path in [status,*[reports/name for name in ('install.log','pip-check.log','smoke.log')]]:
+                if path.exists():shutil.copy2(path,history/path.name)
+        else:
+            check_space(Path('/var/tmp'),22*2**30,25)
+            area=Path(tempfile.mkdtemp(prefix='kwjd-fixed-clean-check-',dir='/var/tmp'))
+            token=str(uuid.uuid4());atomic_json(area/'owner.json',dict(token=token,root=str(root),created_at=time.time()))
+        test_post=area/'post';test_post.mkdir(exist_ok=resumed)
         state=dict(schema_version=1,state='RUNNING_CLEAN_INSTALL',started_at=time.time(),
             test_root=str(area),requirements_sha256=sha256(REQUIREMENTS),original_media_untouched=True,
             main_runtime_untouched=True,temporary_artifact_manifest={'path':str(area),'owner_token':token,
                 'kind':'private_generated_clean_environment_test','cleanup_after_verified_smoke':True})
+        if resumed:state.update(resumed_existing_clean_install=True,original_started_at=previous.get('original_started_at',previous['started_at']),resume_count=previous.get('resume_count',0)+1)
         atomic_json(status,state)
         try:
             command=[sys.executable,str(Path(__file__).with_name('bootstrap_face_runtime.py')),'--post',str(test_post)]
