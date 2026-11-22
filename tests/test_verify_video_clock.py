@@ -3,6 +3,7 @@ import sys
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
+from types import SimpleNamespace
 
 import numpy as np
 
@@ -29,17 +30,18 @@ class NativeClockTests(unittest.TestCase):
             box if detected_anchors is None or i in detected_anchors else []
             for i in range(11)]
 
-        def decode(command):
-            if command[0] == 'ffprobe':
-                rate = master_rate if command[-1] == 'master.mov' else 25
-                return ('{"streams":[{"avg_frame_rate":"%s/1","r_frame_rate":"%s/1"}]}' % (rate, rate)).encode()
-            if command[command.index('-frames:v') + 1] != '1':
-                self.assertEqual(int(command[command.index('-frames:v') + 1]), window_count)
-            return (source if command[command.index('-frames:v') + 1] == '1'
-                    else candidates).tobytes()
+        def probe(command):
+            rate = master_rate if command[-1] == 'master.mov' else 25
+            return ('{"streams":[{"avg_frame_rate":"%s/1","r_frame_rate":"%s/1"}]}' % (rate, rate)).encode()
+
+        def decode(path,start,count):
+            if count==1:return source[None], [start]
+            self.assertEqual(count,window_count)
+            return candidates,[start+i/master_rate for i in range(count)]
 
         with patch.object(clock.cv2, 'CascadeClassifier', return_value=detector), \
-                patch.object(clock.subprocess, 'check_output', side_effect=decode):
+                patch.object(clock.subprocess, 'check_output', side_effect=probe), \
+                patch.object(clock, 'decode_frames', side_effect=decode):
             return clock.check(Path('source.mp4'), Path('master.mov'), -.093)
 
     def test_matching_face_survives_different_surrounding_scenery(self):
@@ -70,6 +72,18 @@ class NativeClockTests(unittest.TestCase):
     def test_30fps_drift_over_one_source_frame_is_rejected(self):
         result = self.check_synthetic(matching_index=4, master_rate=30)
         self.assertFalse(result['verified'])
+
+    def test_decoded_pts_keep_seek_rounding_instead_of_inventing_grid(self):
+        output=SimpleNamespace(stdout=np.zeros((2,540,960),dtype=np.uint8).tobytes(),
+            stderr=b'n: 0 pts: 451 pts_time:0.029362\nn: 1 pts: 963 pts_time:0.0626953\n')
+        with patch.object(clock.subprocess,'run',return_value=output):
+            images,pts=clock.decode_frames(Path('master.mov'),59.704,2)
+        self.assertEqual(len(images),2)
+        self.assertAlmostEqual(pts[0],59.733362)
+        self.assertAlmostEqual(pts[1],59.7666953)
+        output.stderr=b'n: 0 pts: 451 pts_time:0.029362\n'
+        with patch.object(clock.subprocess,'run',return_value=output):
+            with self.assertRaises(ValueError):clock.decode_frames(Path('master.mov'),59.704,2)
 
 
 if __name__ == '__main__':
