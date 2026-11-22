@@ -31,6 +31,11 @@ class ProgressTickTests(unittest.TestCase):
         self.assertEqual(event(self.snapshot(job={'state':'PROCESSING'},media_log_age_seconds=3601),{}),
                          'PRODUCTION_LOG_UNCHANGED_OVER_ONE_HOUR')
 
+    def test_stalled_subtitle_checkpoint_wakes_main_until_all13_complete(self):
+        self.assertEqual(event(self.snapshot(review_checkpoint_age_seconds=3601),{}),
+                         'SUBTITLE_REVIEW_CHECKPOINT_UNCHANGED_OVER_ONE_HOUR')
+        self.assertIsNone(event(self.snapshot(review_checkpoint_age_seconds=3601,review_checkpoint_complete=True),{}))
+
     def test_quota_uses_real_percent_and_rejects_rpc_error_with_zero_exit(self):
         with patch('jigong_progress_tick.subprocess.run',return_value=SimpleNamespace(stdout='remaining 1.5%\npoints 62500')):
             self.assertEqual(quota(),1.5)

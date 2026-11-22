@@ -39,6 +39,8 @@ def event(snapshot,previous):
     if snapshot['receipt_exists'] and not snapshot['both_cleaned']:return 'WINDOWS_RECEIPT_REQUIRES_VERIFICATION'
     if state in ('ENHANCING','PROCESSING') and snapshot['media_log_age_seconds']>3600:
         return 'PRODUCTION_LOG_UNCHANGED_OVER_ONE_HOUR'
+    if not snapshot.get('review_checkpoint_complete',False) and snapshot.get('review_checkpoint_age_seconds',0)>3600:
+        return 'SUBTITLE_REVIEW_CHECKPOINT_UNCHANGED_OVER_ONE_HOUR'
     if snapshot['both_cleaned'] and not previous.get('both_cleaned'):return 'DELIVERY_AND_CLEANUP_COMPLETED'
     if state and state!=previous_job.get('state') and state not in ('ENHANCING','PROCESSING','WAIT_SUBTITLE'):
         return 'PRODUCTION_STAGE_CHANGED:'+state
@@ -65,6 +67,7 @@ def inspect(root,area,config,thread,threshold,wake):
     log=root/'post/logs/S03E02.log';now=time.time()
     from subtitle_review_supervisor import validate_episode
     review_ready=validate_episode(root,'S03E02')
+    review_path=root/'ocr/subtitle-review/progress.json';review=read(review_path)
     target=read(area/'windows-target.json');online=False;network_error=None
     try:
         data=json.loads(subprocess.check_output([str(Path.home()/'.local/bin/tailscale'),
@@ -74,6 +77,10 @@ def inspect(root,area,config,thread,threshold,wake):
     except Exception as error:network_error=str(error)
     snapshot=dict(schema_version=1,checked_at=now,main_thread_id=thread,job=job,
         review_ready=review_ready,media_log_age_seconds=now-log.stat().st_mtime if log.exists() else 1e10,
+        review_checkpoint_age_seconds=now-review_path.stat().st_mtime if review_path.exists() else 1e10,
+        review_checkpoint_complete=review.get('complete') is True and len(review.get('completed_episodes',[]))==13,
+        subtitle_episode=review.get('episode'),subtitle_stage=review.get('stage'),
+        subtitle_text_cues_checked=len(review.get('text_reviewed_original_cue_ids',[])),
         cloud_final_exists=(root/'post/handoffs/S03E02.cloud-final.json').is_file(),
         receipt_exists=(root/'post/receipts/S03E02.json').is_file(),
         both_cleaned=read(area/'progress.json').get('stage')=='DELIVERED_AND_GENERATED_ARTIFACTS_CLEANED',
@@ -90,7 +97,8 @@ def inspect(root,area,config,thread,threshold,wake):
     signature=hashlib.sha256(json.dumps([kind,job.get('updated_at') if kind and kind.startswith('PRODUCTION_STAGE_CHANGED') else None],sort_keys=True).encode()).hexdigest()
     snapshot['dispatch']='NO_ATTENTION_EVENT' if not kind else 'MODEL_WAKE_NOT_REQUESTED'
     atomic_json(area/'timer-status.json',snapshot)
-    if kind and last.get('signature')==signature:snapshot['dispatch']='ALREADY_QUEUED_EVENT'
+    if kind and last.get('signature')==signature and previous.get('attention_event')==kind:
+        snapshot['dispatch']='ALREADY_QUEUED_EVENT'
     elif kind and wake and remaining is not None and remaining>=threshold:
         message=('【云端半小时巡检】事件 '+kind+'。读取 post/managed-S03E02/timer-status.json 与 progress.json，'
             '接续同一济公传任务，不重复原生字幕子代理/生产Worker，不启动codex exec监督器。'

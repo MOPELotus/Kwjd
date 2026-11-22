@@ -14,11 +14,11 @@ from ffmpeg_timestamps import showinfo_frames
 
 
 def decode_frames(path,start,count):
-    result=subprocess.run(['ffmpeg','-v','info','-nostdin','-ss',str(start),'-i',str(path),
+    result=subprocess.run(['ffmpeg','-v','info','-nostdin','-copyts','-seek_timestamp','1','-ss',str(start),'-i',str(path),
         '-map','0:v:0','-frames:v',str(count),'-vf',f'trim=end_frame={count},scale=960:540,format=gray,showinfo',
         '-fps_mode','passthrough','-f','rawvideo','-'],capture_output=True,check=True)
     images=np.frombuffer(result.stdout,np.uint8).reshape(-1,540,960)
-    stamps=[row['seconds']+start for row in showinfo_frames(result.stderr.decode())]
+    stamps=[row['seconds'] for row in showinfo_frames(result.stderr.decode())]
     if len(images)!=count or len(stamps)!=count:
         raise ValueError('Native clock frames and actual decoded PTS are incomplete')
     return images,stamps
