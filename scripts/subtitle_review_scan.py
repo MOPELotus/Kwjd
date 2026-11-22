@@ -17,6 +17,7 @@ from PIL import Image, ImageDraw
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.subtitle_review_evidence import sha
+from scripts.ffmpeg_timestamps import showinfo_frames
 
 
 def scan(root, episode, start, end, output):
@@ -92,11 +93,14 @@ def scan(root, episode, start, end, output):
             if process.poll() is None:
                 process.terminate()
                 process.wait()
-    pts = [float(x) for x in re.findall(r'\bn:\s*\d+\s+pts:.*?pts_time:([\d.e+-]+)', (output/'decode.log').read_text())]
+    stamps = showinfo_frames((output/'decode.log').read_text())
+    pts = [row['seconds'] for row in stamps]
     if not metrics or len(pts) != len(metrics):
         raise ValueError('Frame count/PTS mismatch')
-    for row, timestamp in zip(metrics, pts):
+    for row, timestamp, stamp in zip(metrics, pts, stamps):
         row['source_pts_seconds'] = timestamp
+        row['source_pts'] = stamp['pts']
+        row['source_time_base'] = stamp['time_base']
     for row in candidates:
         row['source_pts_seconds'] = pts[row['frame_index']]
         if 'before' in row:
@@ -116,6 +120,9 @@ def scan(root, episode, start, end, output):
         sheet.save(path, quality=97, subsampling=0)
         pages.append(dict(path=str(path), sha256=sha(path)))
     result = dict(scope='ALL_DECODED_FRAMES_MACHINE_SCAN_NOT_REVIEW', episode=episode,
+                  timestamp_method='integer_showinfo_pts_times_input_time_base',
+                  source_time_base=stamps[0]['time_base'],
+                  decode_log=dict(path=str(output/'decode.log'),sha256=sha(output/'decode.log')),
                   source=str(source), source_sha256=source_sha, command=command,
                   requested_start=start, requested_end=end, first_pts=pts[0], last_pts=pts[-1],
                   decoded_frame_count=len(pts), pts_deltas=sorted(set(round(b-a,6) for a,b in zip(pts,pts[1:]))),

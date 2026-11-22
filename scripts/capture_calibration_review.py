@@ -2,10 +2,10 @@
 import argparse
 import json
 from pathlib import Path
-import re
 import subprocess
 
 from enhance_stage import atomic_json, sha256, check_space
+from ffmpeg_timestamps import showinfo_frames
 
 
 def capture(result_path, output, times, gpu=1):
@@ -45,10 +45,11 @@ def capture(result_path, output, times, gpu=1):
                 '-fps_mode','passthrough',str(image)]
             process=subprocess.run(command,capture_output=True,text=True,check=True)
             log=output/f'{number:02d}-{kind}.decode.log';log.write_text(process.stderr)
-            pts=re.findall(r'\bn:\s*0\s+pts:.*?pts_time:([\d.eE+-]+)',process.stderr)
+            pts=showinfo_frames(process.stderr)
             if len(pts)!=1:raise ValueError('Actual decoded frame PTS missing')
             row['images'][kind]={'path':str(image),'sha256':sha256(image),
-                'requested_seconds':seek,'decoded_pts_seconds':float(pts[0]),
+                'requested_seconds':seek,'decoded_pts_seconds':pts[0]['seconds'],
+                'decoded_pts':pts[0]['pts'],'source_time_base':pts[0]['time_base'],
                 'log_path':str(log),'log_sha256':sha256(log),'command':command}
         sheet=Image.new('RGB',(1920,580),'#151515');draw=ImageDraw.Draw(sheet)
         for column,kind in enumerate(('master','sample')):

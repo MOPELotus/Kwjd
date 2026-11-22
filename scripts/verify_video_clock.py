@@ -7,10 +7,10 @@ import argparse
 import json
 from pathlib import Path
 import subprocess
-import re
 import cv2
 import numpy as np
 from frame_clock import input_rate
+from ffmpeg_timestamps import showinfo_frames
 
 
 def decode_frames(path,start,count):
@@ -18,7 +18,7 @@ def decode_frames(path,start,count):
         '-map','0:v:0','-frames:v',str(count),'-vf',f'trim=end_frame={count},scale=960:540,format=gray,showinfo',
         '-fps_mode','passthrough','-f','rawvideo','-'],capture_output=True,check=True)
     images=np.frombuffer(result.stdout,np.uint8).reshape(-1,540,960)
-    stamps=[float(value)+start for value in re.findall(r'\bn:\s*\d+\s+pts:\s*-?\d+\s+pts_time:([\d.eE+-]+)',result.stderr.decode())]
+    stamps=[row['seconds']+start for row in showinfo_frames(result.stderr.decode())]
     if len(images)!=count or len(stamps)!=count:
         raise ValueError('Native clock frames and actual decoded PTS are incomplete')
     return images,stamps

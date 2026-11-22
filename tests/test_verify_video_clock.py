@@ -75,13 +75,13 @@ class NativeClockTests(unittest.TestCase):
 
     def test_decoded_pts_keep_seek_rounding_instead_of_inventing_grid(self):
         output=SimpleNamespace(stdout=np.zeros((2,540,960),dtype=np.uint8).tobytes(),
-            stderr=b'n: 0 pts: 451 pts_time:0.029362\nn: 1 pts: 963 pts_time:0.0626953\n')
+            stderr=b'config in time_base: 1/15360\nn: 0 pts: 451 pts_time:0.029362\nn: 1 pts: 963 pts_time:0.0626953\n')
         with patch.object(clock.subprocess,'run',return_value=output):
             images,pts=clock.decode_frames(Path('master.mov'),59.704,2)
         self.assertEqual(len(images),2)
-        self.assertAlmostEqual(pts[0],59.733362)
-        self.assertAlmostEqual(pts[1],59.7666953)
-        output.stderr=b'n: 0 pts: 451 pts_time:0.029362\n'
+        self.assertAlmostEqual(pts[0],59.704+451/15360)
+        self.assertAlmostEqual(pts[1],59.704+963/15360)
+        output.stderr=b'config in time_base: 1/15360\nn: 0 pts: 451 pts_time:0.029362\n'
         with patch.object(clock.subprocess,'run',return_value=output):
             with self.assertRaises(ValueError):clock.decode_frames(Path('master.mov'),59.704,2)
 

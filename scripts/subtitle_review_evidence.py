@@ -9,6 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from kwjd import read_srt
+from scripts.ffmpeg_timestamps import showinfo_frames
 
 def sha(path):
     with Path(path).open("rb") as stream:
@@ -17,13 +18,14 @@ def sha(path):
 def capture(source,seconds,output):
     command=["ffmpeg","-v","info","-nostdin","-threads","2","-copyts",
              "-seek_timestamp","1","-ss",f"{seconds:.6f}","-i",str(source),
-             "-frames:v","1","-filter_threads","1","-vf","crop=1920:220:0:800,showinfo",
+             "-frames:v","1","-filter_threads","1","-vf","trim=end_frame=1,crop=1920:220:0:800,showinfo",
              "-fps_mode","passthrough","-n",str(output)]
     result=subprocess.run(command,capture_output=True,text=True,check=True)
-    matches=re.findall(r"\bn:\s*0\s+pts:.*?pts_time:([\d.e+-]+)",result.stderr)
-    if not matches or not output.is_file():
+    stamps=showinfo_frames(result.stderr)
+    if len(stamps)!=1 or not output.is_file():
         raise ValueError("No decoded source timestamp")
-    return float(matches[0])
+    output.with_suffix(output.suffix+'.decode.log').write_text(result.stderr)
+    return stamps[0]['seconds']
 
 def prepare(root,episode,srt,start,count,output,times=None):
     from PIL import Image,ImageDraw
@@ -59,7 +61,10 @@ def prepare(root,episode,srt,start,count,output,times=None):
                 frame=output/f"cue-{row['cue_id']}-{labels[variant]}.jpg"
                 actual=capture(source,seconds,frame)
                 row.setdefault("frames",[]).append(dict(kind=labels[variant],
-                    path=str(frame),source_pts_seconds=actual,sha256=sha(frame)))
+                    path=str(frame),source_pts_seconds=actual,sha256=sha(frame),
+                    timestamp_method='integer_showinfo_pts_times_input_time_base',
+                    decode_log_path=str(frame.with_suffix(frame.suffix+'.decode.log')),
+                    decode_log_sha256=sha(frame.with_suffix(frame.suffix+'.decode.log'))))
                 image=Image.open(frame);image.thumbnail((960,110))
                 sheet.paste(image,(0,j*140+25))
                 ImageDraw.Draw(sheet).text((8,j*140+6),
