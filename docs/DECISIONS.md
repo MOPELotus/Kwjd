@@ -78,6 +78,8 @@ A real authorized 56-minute ZZZ mix returned a roughly 795 MB FLAC, exceeding th
 
 用户进一步明确Mask验收：远景偶发或几个短段桌子丢失可以接受，中/近景丢桌子需要修正；判断前应对照原片景别与实际桌子是否入镜。多出的背景尾部是预期行为，保留其本来长度，不据此要求重导；母版的具体时长例外仍绑定真实SHA和用户原话，不篡改裁片参考时长。此决定不自动豁免帧率、字幕或同步校验。
 
+用户明确授权济公传13回持续云端字幕审校，直到与原片一致再结束。识别草稿完成只是起点；逐条审图修改复核、补查漏行和边界，真正通过后逐回封存。持久监督器应在会话正常退出未完成或断开后恢复同一会话继续，终止条件是13回真实审校和SHA封存全部通过；真实额度/磁盘阻塞保存现场，不制造完成标记。字幕审校不等待母版，也不因此自动扩展整季后期生产范围。
+
 ## 2026-11-03: Opportunistic lossless upgrades
 
 The user requested another check of lossy candidates. `--upgrade-lossy` rechecks technically verified MP3/Vorbis receipts, admits only actual lossless codecs for upgrades, archives superseded receipts and retains the original candidate files. If no lossless candidate is returned, the existing verified file stays usable. Platform lossless labels alone do not establish codec quality or audio-version identity.
