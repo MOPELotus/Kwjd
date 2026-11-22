@@ -17,7 +17,7 @@ from face_frame_processor import WEIGHTS
 from cuda_trt import validate_assets
 
 SOURCES=['enhance_backend.py','enhance_stage.py','segmented_backend.py','concat_transfer.py',
-    'linux_stage_handoff.py','cuda_trt.py','native_face_pipeline.py','native_face_recipe.py',
+    'linux_stage_handoff.py','cuda_trt.py','cuda_rife.py','frame_clock.py','native_face_pipeline.py','native_face_recipe.py',
     'native_frame_queue.py','native_resource_gate.py',
     'native_face_job.py','benchmark_native_face.py','face_frame_processor.py',
     'render_face_samples.py','server_worker.py','subtitle_timing.py','font_preflight.py','prepare_native_face_backend.py','storage_policy.py','stage_storage.py']
@@ -50,11 +50,31 @@ def scheduling_profile(name=PRODUCTION_SCHEDULING_PROFILE):
                 benchmark_native_frame_sha256=False)
 
 
-def template(post):
-    post=Path(post).absolute();base=json.loads((post/'backend/runtime.trt.json').read_text())
-    _,_,provenance=validate_assets(base)
-    paths=[base[k] for k in ['rife_trt_engine','rife_trt_model','rife_trt_provenance','rife_onnx']]
-    paths += [provenance[key] for key in ['source_model','conversion_recipe','build_recipe','benchmark_report','conversion_report']]
+def onnx_base(post, input_fps, season):
+    """Independent inactive FP32 CUDA candidate; no inherited TRT evidence."""
+    from frame_clock import input_rate
+    from cuda_rife import MODEL_SHA256
+    import re
+    rate=int(input_rate(input_fps))
+    if not re.fullmatch(r'S0[1-4]',season):raise ValueError('Explicit admitted season required')
+    model=post/'tools/rife-onnx/rife_v4.6.onnx'
+    if sha256(model)!=MODEL_SHA256:raise ValueError('Official ONNX model SHA differs')
+    return dict(rife_backend='cuda_onnx',rife_onnx=str(model),rife_precision='float32',
+        gpu=1,gpu_name='Tesla T10',encoder_gpu=1,input_frame_rate=rate,
+        admitted_seasons=[season],nvidia_icd='/usr/share/vulkan/icd.d/nvidia_icd.json'),[str(model)]
+
+
+def template(post, *, rife_backend='cuda_trt', input_fps=25, season='S01'):
+    post=Path(post).absolute()
+    if rife_backend=='cuda_onnx':
+        base,paths=onnx_base(post,input_fps,season)
+    elif rife_backend=='cuda_trt':
+        if input_fps!=25 or season!='S01':raise ValueError('Legacy TRT template remains S01/25')
+        base=json.loads((post/'backend/runtime.trt.json').read_text())
+        _,_,provenance=validate_assets(base)
+        paths=[base[k] for k in ['rife_trt_engine','rife_trt_model','rife_trt_provenance','rife_onnx']]
+        paths += [provenance[key] for key in ['source_model','conversion_recipe','build_recipe','benchmark_report','conversion_report']]
+    else:raise ValueError('Unknown explicit native RIFE candidate')
     weights=post/'tools/face-candidates/weights'
     for name,expected in WEIGHTS.items():
         if sha256(weights/name)!=expected:raise ValueError('Changed official face weight '+name)
@@ -62,7 +82,15 @@ def template(post):
     paths += [str(Path(__file__).with_name(name).resolve()) for name in SOURCES]
     paths.append(str(Path(__file__).parent.parent/'kwjd.py'))
     packages=['torch','torchvision','basicsr','facexlib','gfpgan','numpy','opencv-python-headless']
+    if rife_backend=='cuda_onnx':packages+=['onnxruntime-gpu','Pillow']
     versions={p:importlib.metadata.version(p) for p in packages}
+    if rife_backend=='cuda_onnx':
+        # Pin installed package manifests and actual compiled modules, including
+        # CUDA/ORT kernels, rather than borrowing removed TRT runtime hashes.
+        for package in packages:
+            distribution=importlib.metadata.distribution(package)
+            paths += [str(distribution.locate_file(p)) for p in distribution.files
+                      if str(p).endswith(('.so','/RECORD')) or '.so.' in str(p)]
     for package in ['basicsr','facexlib','gfpgan']:
         location=Path(next(iter(importlib.util.find_spec(package).submodule_search_locations)))
         paths += [str(p) for p in location.rglob('*.py')]
@@ -71,15 +99,16 @@ def template(post):
         face_versions=versions,restore_gpu=0,restore_gpu_name='NVIDIA RTX A4000',
         restore_memory_gib=2.5,restore_free_reserve_gib=3.0,light_filter='clarity',max_video_mbps=16,
         segment_source_frames=250,
-        scratch=str(post/'cache/scratch'),minimum_free_gib=minimum_free_gib(),
+        scratch=str(post/'cache/scratch'),minimum_free_gib=max(25,minimum_free_gib()),
         file_sha256={p:sha256(p) for p in sorted(set(paths))})
     cfg.update(scheduling_profile())
     cfg.pop('native_recipe',None);cfg.pop('native_recipe_sha256',None)
     return cfg
 
 
-def prepare(post,recipe=None,validation=None,activate=False):
-    post=Path(post).absolute();cfg=template(post)
+def prepare(post,recipe=None,validation=None,activate=False,*,rife_backend='cuda_trt',input_fps=25,season='S01'):
+    post=Path(post).absolute();(post/'backend').mkdir(parents=True,exist_ok=True)
+    cfg=template(post,rife_backend=rife_backend,input_fps=input_fps,season=season)
     output=post/'backend/runtime.native-template.json'
     if output.exists() and json.loads(output.read_text())!=cfg:
         archive=post/'backend/native-template-history';archive.mkdir(exist_ok=True)
@@ -103,7 +132,7 @@ def prepare(post,recipe=None,validation=None,activate=False):
     if activate:
         # New defaults apply only to fresh jobs. Do not strand an in-flight
         # legacy checkpoint by replacing its validated launcher/fingerprint.
-        for job_path in (post/'jobs').glob('S01E*.json'):
+        for job_path in (post/'jobs').glob('S0*E*.json'):
             job=json.loads(job_path.read_text(encoding='utf-8-sig'))
             if job.get('state')=='READY':continue
             episode=job_path.stem
@@ -139,4 +168,8 @@ if __name__=='__main__':
     parser.add_argument('--recipe',type=Path)
     parser.add_argument('--validation',type=Path)
     parser.add_argument('--activate',action='store_true')
-    args=parser.parse_args();print(json.dumps(prepare(args.post,args.recipe,args.validation,args.activate)))
+    parser.add_argument('--rife-backend',choices=['cuda_trt','cuda_onnx'],default='cuda_trt')
+    parser.add_argument('--input-fps',type=int,choices=[25,30],default=25)
+    parser.add_argument('--season',default='S01')
+    args=parser.parse_args();print(json.dumps(prepare(args.post,args.recipe,args.validation,args.activate,
+        rife_backend=args.rife_backend,input_fps=args.input_fps,season=args.season)))

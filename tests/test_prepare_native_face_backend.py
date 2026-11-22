@@ -117,6 +117,28 @@ class PrepareNativePolicyTests(unittest.TestCase):
         self.assertEqual(prepare.prepare(self.post), result)
         self.assertEqual(len(list((self.post / 'backend/native-template-history').glob('*.json'))), 1)
 
+    def test_onnx_candidate_is_independent_of_removed_trt_and_explicit_clock(self):
+        (self.post/'backend/runtime.trt.json').unlink()
+        model=self.post/'tools/rife-onnx/rife_v4.6.onnx'
+        model.parent.mkdir(parents=True);model.write_bytes(b'official model stand-in')
+        from types import SimpleNamespace
+        distribution=SimpleNamespace(files=[],locate_file=lambda p:p)
+        with patch('cuda_rife.MODEL_SHA256',prepare.sha256(model)), \
+                patch.object(prepare.importlib.metadata,'distribution',return_value=distribution):
+            cfg=prepare.template(self.post,rife_backend='cuda_onnx',input_fps=30,season='S03')
+        self.assertEqual(cfg['input_frame_rate'],30)
+        self.assertEqual(cfg['admitted_seasons'],['S03'])
+        self.assertEqual(cfg['rife_backend'],'cuda_onnx')
+        self.assertEqual(cfg['file_sha256'][str(model)],prepare.sha256(model))
+        self.assertEqual(cfg['gpu_name'],'Tesla T10')
+        self.assertGreaterEqual(cfg['minimum_free_gib'],25)
+        self.assertFalse(any(k.startswith('rife_trt') for k in cfg))
+        self.assertFalse((self.post/'backend/native-enabled.json').exists())
+        with self.assertRaises(ValueError):
+            prepare.template(self.post,rife_backend='cuda_trt',input_fps=30,season='S03')
+        with patch('cuda_rife.MODEL_SHA256','0'*64),self.assertRaises(ValueError):
+            prepare.onnx_base(self.post,30,'S03')
+
 
 if __name__ == '__main__':
     unittest.main()
