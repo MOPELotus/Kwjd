@@ -139,10 +139,17 @@ class PrepareNativePolicyTests(unittest.TestCase):
         self.assertGreaterEqual(cfg['minimum_free_gib'],25)
         self.assertFalse(any(k.startswith('rife_trt') for k in cfg))
         self.assertFalse((self.post/'backend/native-enabled.json').exists())
-        with self.assertRaises(ValueError):
+        with self.assertRaises(FileNotFoundError):
             prepare.template(self.post,rife_backend='cuda_trt',input_fps=30,season='S03')
         with patch('cuda_rife.MODEL_SHA256','0'*64),self.assertRaises(ValueError):
             prepare.onnx_base(self.post,30,'S03')
+
+    def test_fixed_trt_accepts_30fps_clock_without_replacing_models(self):
+        restored=prepare.template(self.post,rife_backend='cuda_trt',input_fps=30,season='S03')
+        self.assertEqual(restored['input_frame_rate'],30)
+        self.assertEqual(restored['admitted_seasons'],['S03'])
+        self.assertEqual(restored['rife_backend'],'cuda_trt')
+        self.assertEqual(restored['rife_trt_model'],self.base['rife_trt_model'])
 
 
 if __name__ == '__main__':

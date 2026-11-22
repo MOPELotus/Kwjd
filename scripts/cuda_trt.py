@@ -14,6 +14,7 @@ MODEL_SHA256 = '2888b81b22c2e7b5488a656dd9403cd86afc6a6eb126426962f54ffcbc72b7f4
 SOURCE_SHA256 = '6294aab9a9704f085caa65ab5bc897ac3a3ed0d054200e40b66bd7e43523e969'
 ENGINE_SHA256 = '6d8fdb10f8505a863084f29b2f1ff74b9cf68aa6bd0245ad081492ab489f5f0b'
 CONVERSION_SHA256 = 'ed9c8e6ef07a2845230a2b4b3cd5ba29ac86a1240544653afacbd1cbdc386440'
+BUILD_SHA256 = 'bc596e572c50540b3ed04da3eb26f4a53eaefbdf99e29aa0eb33905311b5d237'
 TRT_VERSION = '10.13.3.9'
 DRIVER_VERSION = '580.178.04'
 
@@ -28,10 +29,14 @@ def validate_assets(cfg):
         if actual != pins[path] or (expected is not None and actual != expected):
             raise ValueError('Changed or unreviewed TRT asset: ' + path)
         return path
-    engine = checked(cfg['rife_trt_engine'], ENGINE_SHA256)
-    model = checked(cfg['rife_trt_model'], MODEL_SHA256)
     provenance = json.loads(Path(checked(cfg['rife_trt_provenance'])).read_text())
-    expected = {'schema': 1, 'engine_sha256': ENGINE_SHA256,
+    rebuilt=provenance.get('schema')==2
+    engine_sha=provenance.get('engine_sha256') if rebuilt else ENGINE_SHA256
+    if not isinstance(engine_sha,str) or len(engine_sha)!=64 or any(c not in '0123456789abcdef' for c in engine_sha):
+        raise ValueError('A real engine SHA256 is required')
+    engine = checked(cfg['rife_trt_engine'], engine_sha)
+    model = checked(cfg['rife_trt_model'], MODEL_SHA256)
+    expected = {'schema': 2 if rebuilt else 1, 'engine_sha256': engine_sha,
         'typed_model_sha256': MODEL_SHA256, 'source_model_sha256': SOURCE_SHA256,
         'conversion_recipe_sha256': CONVERSION_SHA256, 'tensorrt_version': TRT_VERSION,
         'torch_version': '2.6.0+cu126', 'driver_version': DRIVER_VERSION,
@@ -46,11 +51,37 @@ def validate_assets(cfg):
     for name in ('build_recipe', 'benchmark_report', 'conversion_report'):
         checked(provenance[name], provenance[name + '_sha256'])
     bench = json.loads(Path(provenance['benchmark_report']).read_text())
-    if (bench.get('status') != 'completed' or bench.get('engine_sha256') != ENGINE_SHA256
+    if (bench.get('status') != 'completed' or bench.get('engine_sha256') != engine_sha
             or bench.get('model_sha256') != MODEL_SHA256
             or bench.get('reference_sha256') != SOURCE_SHA256
             or bench.get('strongly_typed') is not True):
         raise ValueError('TRT benchmark does not attest this engine')
+    if rebuilt:
+        checked(provenance['build_recipe'],BUILD_SHA256)
+        lock=Path(__file__).resolve().parents[1]/'config/workflows/native-face-v1.json'
+        if Path(provenance['workflow_lock']).resolve()!=lock:
+            raise ValueError('Rebuild must bind the repository fixed workflow')
+        checked(str(lock),provenance['workflow_lock_sha256'])
+        conversion=json.loads(Path(provenance['conversion_report']).read_text())
+        if (conversion.get('output_sha256')!=MODEL_SHA256 or conversion.get('source_sha256')!=SOURCE_SHA256
+                or conversion.get('script_sha256')!=CONVERSION_SHA256 or conversion.get('onnx_version')!='1.20.1'):
+            raise ValueError('Rebuilt typed graph is not from the unchanged fixed conversion')
+        errors=bench.get('numeric_error_vs_official_fp32',[])
+        if (len(errors)!=2 or sorted(row.get('timestep') for row in errors)!=[.4,.8]
+                or any(not isinstance(row.get('psnr_db'),(int,float)) or not math.isfinite(row['psnr_db'])
+                       or row['psnr_db']<60 for row in errors)):
+            raise ValueError('Rebuilt engine lacks the actual fixed FP32 equivalence comparison')
+        for name in ('trt_seconds','ort_reference_seconds'):
+            costs=bench.get(name,[])
+            if len(costs)<8 or any(type(x) not in (int,float) or not math.isfinite(x) or x<=0 for x in costs):
+                raise ValueError('Rebuilt engine lacks actual bounded timing evidence')
+        pair=json.loads(Path(checked(provenance['footage_pair_manifest'],provenance['footage_pair_manifest_sha256'])).read_text())
+        if len(pair.get('frames',[]))!=2 or len(pair.get('master_sha256',''))!=64:
+            raise ValueError('Actual footage pair identity required')
+        for number,row in enumerate(pair['frames'],1):
+            path=Path(provenance['build_recipe']).parent/f'rife_pair_{number:02d}.png'
+            if row.get('path')!=str(path) or checked(str(path),row['sha256'])!=str(path):
+                raise ValueError('Build comparison footage differs from captured master pair')
     if cfg.get('gpu') != 1 or type(cfg.get('gpu')) is not int or cfg.get('gpu_name') != 'Tesla T10':
         raise ValueError('Reviewed TRT production engine requires physical GPU1 Tesla T10')
     return engine, model, provenance
@@ -126,15 +157,16 @@ class CudaRife:
         inspector = self.engine.create_engine_inspector()
         inspector.execution_context = self.context
         inspection = inspector.get_engine_information(trt.LayerInformationFormat.JSON)
-        evidence = Path(cfg['rife_trt_provenance']).parent / ('inspector-' + ENGINE_SHA256[:16] + '.json')
-        record = {'engine_sha256': ENGINE_SHA256, 'typed_onnx_audit': dtype_audit,
+        engine_sha=provenance['engine_sha256']
+        evidence = Path(cfg['rife_trt_provenance']).parent / ('inspector-' + engine_sha[:16] + '.json')
+        record = {'engine_sha256': engine_sha, 'typed_onnx_audit': dtype_audit,
             'inspector_json': json.loads(inspection),
             'inspector_limitation': 'Engine built with default layer-name verbosity; dtype proof comes from pinned typed ONNX and hash-bound strongly typed build recipe'}
         if evidence.exists() and json.loads(evidence.read_text()) != record:
             raise ValueError('Existing TRT precision evidence differs; retained')
         if not evidence.exists():
             with evidence.open('x') as handle: json.dump(record, handle, indent=2)
-        print(json.dumps({'rife': 'native-tensorrt-strongly-typed', 'engine_sha256': ENGINE_SHA256,
+        print(json.dumps({'rife': 'native-tensorrt-strongly-typed', 'engine_sha256': engine_sha,
             'gpu': 'Tesla T10', 'logical_cuda_device': 1, 'tensorrt': trt.__version__,
             'precision_evidence': str(evidence), 'grid_sample_count': len(dtype_audit['grid_sample_float32']),
             'neural_half_count': len(dtype_audit['neural_float16'])}), flush=True)

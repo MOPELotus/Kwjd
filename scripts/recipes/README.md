@@ -1,9 +1,10 @@
 # Archived TensorRT conversion and build recipes
 
 These files are byte-for-byte copies of the locally executed recipes. They are
-provenance evidence, not the production backend or an instruction to rebuild an
-engine during installation. `prepare_trt_backend.py` only checks existing assets
-and publishes an inactive candidate.
+provenance evidence, not the production backend. Following the user's explicit
+fixed-workflow recovery instruction, `bootstrap_fixed_trt.py` copies these exact
+bytes into a new isolated original-layout directory and rebuilds missing assets.
+`prepare_trt_backend.py` remains a legacy existing-assets-only preparer.
 
 | File | Original location | SHA-256 |
 | --- | --- | --- |
@@ -16,6 +17,13 @@ its own path to find `post/tools` and `post/reports`; the benchmark also reads
 the unchanged recipes in the original `post/bench/` layout, the existing isolated
 `post/cuda-venv`, all pinned source assets, and the actual native footage pair.
 Never overwrite the original evidence or existing models, engine, or reports.
+The recovery entry uses the pinned ONNX1.20.1 converter and TensorRT10.13.3.9
+builder, verifies the identical typed graph SHA, captures an actual verified
+master frame pair, builds only on the physical T10 and compares against the
+official FP32 model. A schema2 provenance binds the new actual engine SHA,
+unchanged recipes, fixed workflow lock, footage, numeric errors and timings.
+Historical schema1 still accepts only its exact original engine SHA. No rebuilt
+engine inherits historical quality or current-master production approval.
 An independent experiment must preserve that relative layout in a separate
 workspace and produce separate evidence; it does not inherit production approval.
 
