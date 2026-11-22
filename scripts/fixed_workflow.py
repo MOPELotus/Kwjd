@@ -4,6 +4,28 @@ from pathlib import Path
 
 
 LOCK=Path(__file__).resolve().parents[1]/'config/workflows/native-face-v1.json'
+REQUIREMENTS=LOCK.with_suffix('.requirements.txt')
+
+
+def locked_packages():
+    packages={}
+    for line in REQUIREMENTS.read_text().splitlines():
+        line=line.strip()
+        if line and not line.startswith('#'):
+            name,version=line.split('==')
+            packages[name]=version
+    return packages
+
+
+def verify_fixed_environment():
+    import importlib.metadata
+    expected=locked_packages();actual={}
+    for name in expected:
+        try:actual[name]=importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:actual[name]=None
+    changed={name:actual[name] for name,version in expected.items() if actual[name]!=version}
+    if changed:raise ValueError('Fixed environment differs from locked versions: '+str(changed))
+    return actual
 
 
 def validate_fixed_profile(cfg):

@@ -1,9 +1,10 @@
 import sys
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from fixed_workflow import validate_fixed_profile
+from fixed_workflow import validate_fixed_profile,verify_fixed_environment
 
 
 class FixedWorkflowTests(unittest.TestCase):
@@ -27,6 +28,11 @@ class FixedWorkflowTests(unittest.TestCase):
                           ('input_frame_rate',24),('gpu',True)]:
             with self.subTest(key=key),self.assertRaises(ValueError):
                 validate_fixed_profile({**self.cfg,key:value})
+
+    def test_runtime_version_drift_is_not_accepted_as_cleanup_recovery(self):
+        with patch('fixed_workflow.locked_packages',return_value={'torch':'2.6.0+cu126'}), \
+             patch('importlib.metadata.version',return_value='2.7.0'):
+            with self.assertRaisesRegex(ValueError,'Fixed environment differs'):verify_fixed_environment()
 
 
 if __name__=='__main__':unittest.main()

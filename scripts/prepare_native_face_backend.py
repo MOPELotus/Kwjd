@@ -87,6 +87,7 @@ def template(post, *, rife_backend='cuda_trt', input_fps=25, season='S01'):
     paths += [str(Path(__file__).with_name(name).resolve()) for name in SOURCES]
     paths.append(str(Path(__file__).parent.parent/'kwjd.py'))
     paths.append(str(Path(__file__).parent.parent/'config/workflows/native-face-v1.json'))
+    paths.append(str(Path(__file__).parent.parent/'config/workflows/native-face-v1.requirements.txt'))
     packages=['torch','torchvision','basicsr','facexlib','gfpgan','numpy','opencv-python-headless']
     rebuilt_trt=rife_backend=='cuda_trt' and provenance.get('schema')==2
     if rebuilt_trt:packages+=['tensorrt-cu12','tensorrt-cu12-bindings','tensorrt-cu12-libs','onnx']

@@ -18,9 +18,11 @@ from enhance_stage import atomic_json,sha256,check_space
 from cuda_trt import (validate_assets,audit_typed_model,SOURCE_SHA256,MODEL_SHA256,
                       CONVERSION_SHA256,BUILD_SHA256,TRT_VERSION,DRIVER_VERSION)
 from ffmpeg_timestamps import showinfo_frames
+from fixed_workflow import verify_fixed_environment,REQUIREMENTS
 
 
 def versions():
+    verify_fixed_environment()
     required={'torch':'2.6.0+cu126','torchvision':'0.21.0+cu126','gfpgan':'1.3.8',
               'basicsr':'1.4.2','facexlib':'0.3.0','tensorrt-cu12':TRT_VERSION,'onnx':'1.20.1'}
     actual={name:importlib.metadata.version(name) for name in required}
@@ -136,7 +138,7 @@ def rebuild(post,master):
     for key,path in [('build_recipe',bench/'benchmark_rife_tensorrt.py'),('benchmark_report',benchmark),('conversion_report',conversion)]:
         proof[key]=str(path);proof[key+'_sha256']=sha256(path)
     provenance=reports/'provenance.json';atomic_json(provenance,proof)
-    assets=[source,models/source.name,typed,engine,provenance,conversion,benchmark,pair,lock,
+    assets=[source,models/source.name,typed,engine,provenance,conversion,benchmark,pair,lock,REQUIREMENTS,
             bench/'prepare_rife_neural_fp16.py',bench/'benchmark_rife_tensorrt.py',*[Path(row['path']) for row in frames]]
     cfg=dict(rife_backend='cuda_trt',rife_trt_engine=str(engine),rife_trt_model=str(typed),
         rife_trt_provenance=str(provenance),rife_onnx=str(source),gpu=1,gpu_name='Tesla T10',
