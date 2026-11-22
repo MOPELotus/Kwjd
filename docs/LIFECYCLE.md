@@ -45,6 +45,8 @@
 
 `receive_managed_finals.py --root <Windows数据根> --config <本机配置>`可在登录时隐藏启动，配置明确SSH alias、remote_root和episodes；单实例锁避免重复下载。仅接收标准post/reports报告中与当前母版一致、完整解码且混音PCM等价的成片，以SHA命名暂存断点续传，检查最终SHA/字节数/完整音频PCM/媒体/首中尾解码，按已登记回目命名。不同本地版本不覆盖。接收收据保持quality_checked=false；真实画面/字幕/同步/声音验收证据通过后，才执行现有收据门禁清理。离线、文件尚未发布、空间不足或失败都保留云端成片及恢复资料。
 
+全托管可复用云端Codex对同SHA最终片实际完成的质量审查：`post/reports/<EP>.quality.json`必须绑定本次master/final SHA、字节数、Codex会话、画面/字幕/同步/声音四项实际检查及各自非空证据列表。Windows对证据逐一远端fresh SHA，比较审校SRT/ASS身份与混音PCM报告，并重新哈希本地完全相同成片后才写quality_checked。该证据不是无人元数据脚本生成的质量批准。原子上传`post/receipts/<EP>.json`后，按既有登记清单清理本地本集生成物；再上传真实`<EP>.windows-cleanup.json`，云端持久流程只有双方清理收据都匹配才完成。原始素材、工程、封存字幕/ASS/字体、质量证据和Windows最终片保留。
+
 
 每次新约定必须同步修改AGENTS/决策文档/配置/实现；独立步骤验证后立即commit/push，另一端fetch+普通merge/pull确认HEAD。实际媒体、收据和绝对环境路径不进Git。
 
