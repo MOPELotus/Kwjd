@@ -6,7 +6,7 @@ master. Never change the cut manifest's expected duration to hide the mismatch,
 trim/re-encode the exported master, or reuse approval after its SHA changes.
 
 Windows `send-master` automatically supplies an existing file at
-`.kwjd/master-duration-approvals/S01Exx.json` to `validate_master.py` through
+`.kwjd/master-duration-approvals/<episode>.json` to `validate_master.py` through
 `--duration-approval`. The file must have this schema (replace placeholders with
 actual measured values and the actual human decision):
 
@@ -31,6 +31,11 @@ positive extension, and requires the explicit approval/attribution/reason. A sta
 or malformed approval fails even when supplied for an otherwise ordinary master.
 This checks a recorded decision; it does not infer background-only content from
 duration or replace visual/sync review.
+
+Known-season identifiers S01–S04 are supported, including S03E02; episode/SHA
+matching remains mandatory. The Jigong user explicitly accepts the scenic tail
+left by the longer background slice. Record that real decision against the
+measured master hash instead of truncating the tail or changing program duration.
 
 The technical receipt preserves `duration_audit.default_duration_gate_passed`
 (false for an accepted extension beyond0.5s), the actual delta, complete approval

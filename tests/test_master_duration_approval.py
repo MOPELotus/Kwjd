@@ -36,6 +36,18 @@ class DurationApprovalTests(unittest.TestCase):
         self.assertEqual(len(result['exception']['approval_sha256']),64)
         self.assertAlmostEqual(result['delta_seconds'],0.507)
 
+    def test_third_season_approval_still_requires_matching_episode_and_sha(self):
+        self.path=self.root/'S03E02.clean-master.mov'
+        self.data['episode']='S03E02'
+        self.assertFalse(self.check()['default_duration_gate_passed'])
+        self.data['episode']='S01E02'
+        with self.assertRaises(ValueError):self.check()
+
+    def test_unknown_season_cannot_inherit_tail_approval(self):
+        self.path=self.root/'S99E02.clean-master.mov'
+        self.data['episode']='S99E02'
+        with self.assertRaises(ValueError):self.check()
+
     def test_stale_or_unapproved_records_never_waive_duration(self):
         original=copy.deepcopy(self.data)
         for key,value in [('master_sha256','b'*64),('episode','S01E51'),

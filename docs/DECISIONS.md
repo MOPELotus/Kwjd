@@ -76,6 +76,8 @@ A real authorized 56-minute ZZZ mix returned a roughly 795 MB FLAC, exceeding th
 
 背景原样stream copy，保留右下曲名条，不为关键帧误差重编码，允许背景略长于节目。两条背景必须按给定顺序构成连续素材；跨源章节切成前后两段并建立拼接关系，不按章节重新分配背景源。`split_background_sequence.py`保存原始各段并附达芬奇FCPXML，无渲染，不擅自统一原生帧率或音频采样率。13回字幕继续云端OCR；本地只抽样校准。旧云端任务已完成清理，待用户处理服务器空间后复用仓库重新初始化，不因目录已清理就默认改为本地整批识别。
 
+用户进一步明确Mask验收：远景偶发或几个短段桌子丢失可以接受，中/近景丢桌子需要修正；判断前应对照原片景别与实际桌子是否入镜。多出的背景尾部是预期行为，保留其本来长度，不据此要求重导；母版的具体时长例外仍绑定真实SHA和用户原话，不篡改裁片参考时长。此决定不自动豁免帧率、字幕或同步校验。
+
 ## 2026-11-03: Opportunistic lossless upgrades
 
 The user requested another check of lossy candidates. `--upgrade-lossy` rechecks technically verified MP3/Vorbis receipts, admits only actual lossless codecs for upgrades, archives superseded receipts and retains the original candidate files. If no lossless candidate is returned, the existing verified file stays usable. Platform lossless labels alone do not establish codec quality or audio-version identity.

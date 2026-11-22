@@ -24,7 +24,7 @@ def duration_check(path, duration, expected, approval_path=None, master_sha256=N
            'default_duration_gate_passed':abs(delta)<=0.5,'exception':None}
     if approval_path is not None:
         raw=Path(approval_path).read_bytes(); approval=json.loads(raw.decode('utf-8-sig'))
-        match=re.fullmatch(r'(S01E[0-9]{2,3})[.]clean-master[.](mov|mp4|mkv)',Path(path).name)
+        match=re.fullmatch(r'(S0[1-4]E[0-9]{2,3})[.]clean-master[.](mov|mp4|mkv)',Path(path).name)
         if (not match or type(approval.get('schema_version')) is not int
                 or approval.get('schema_version')!=1 or approval.get('approved') is not True
                 or approval.get('approved_by')!='human'
