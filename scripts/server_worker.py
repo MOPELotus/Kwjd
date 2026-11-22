@@ -478,7 +478,7 @@ def do_job(job_path):
             or approved_fonts(current_approval) != font_hashes):
         raise ValueError("Source asset or approval changed during final encoding; partial retained")
     report = {
-        "episode": ep, "completed_at": now(), "sha256": digest.hexdigest(),
+        "episode": ep, "completed_at": now(), "sha256": digest.hexdigest(), "bytes": temp.stat().st_size,
         "master_sha256": receipt["master_sha256"],
         "enhanced_sha256": receipt["sha256"], "srt_sha256": current_hash,
         "style_sha256": style_hash,

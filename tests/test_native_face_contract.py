@@ -297,6 +297,7 @@ class NativeWorkerLifecycleTests(unittest.TestCase):
             self.assertTrue((self.post/'final/out.mkv').exists())
             report=json.loads((self.post/'reports/S01E49.json').read_text())
             self.assertTrue(report['final_decode_checked']);self.assertTrue(report['final_pcm_equivalent'])
+            self.assertEqual(report['bytes'],(self.post/'final/out.mkv').stat().st_size)
             self.assertEqual(report['video_encodes'],1)
             self.mocks['decoded_pcm_hash'].assert_called_once()
             self.mocks['decoded_video_frames'].assert_called_once()

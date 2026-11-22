@@ -11,6 +11,10 @@ from enhance_stage import sha256, WaitDisk
 
 
 class TransferTests(unittest.TestCase):
+    def test_s03_identity_supported_with_unchanged_full_hash_requirement(self):
+        identity=dict(episode='S03E02',master_sha256='a'*64,backend_fingerprint='b'*64)
+        self.assertEqual(transfer._key(identity),('S03E02','a'*16+'-'+'b'*16))
+        with self.assertRaises(ValueError):transfer._key({**identity,'episode':'../S03E02'})
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
         self.post=Path(self.tmp.name);self.identity={'episode':'S01E49',

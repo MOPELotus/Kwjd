@@ -34,7 +34,7 @@ def _nosymlinks(path, boundary):
 def _key(identity):
     ep=identity['episode'];master=identity['master_sha256'];fp=identity['backend_fingerprint']
     import re
-    if not re.fullmatch(r'S01E\d{2,3}',ep):raise ValueError('Invalid episode')
+    if not re.fullmatch(r'S0[1-4]E\d{2,3}',ep):raise ValueError('Invalid episode')
     if any(not re.fullmatch(r'[0-9a-f]{64}',x) for x in (master,fp)):
         raise ValueError('Full lowercase master/profile SHA256 required')
     return ep,master[:16]+'-'+fp[:16]

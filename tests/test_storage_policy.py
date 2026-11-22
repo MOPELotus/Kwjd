@@ -2,12 +2,18 @@ import math
 from pathlib import Path
 import sys
 import unittest
+from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 from storage_policy import minimum_free_gib
 from queue_storage import phase_peaks,evaluate,GIB
 
 
 class PolicyTests(unittest.TestCase):
+    def test_explicit_jigong_profile_keeps_25gib_without_changing_default(self):
+        with patch.dict('os.environ',{'KWJD_PROJECT':'config/projects/jigong-s03.json'}):
+            self.assertEqual(minimum_free_gib(),25)
+        with patch.dict('os.environ',{'KWJD_PROJECT':'../outside.json'}),self.assertRaises((ValueError,FileNotFoundError)):
+            minimum_free_gib()
     def test_runtime_reserve_is_validated(self):
         self.assertEqual(minimum_free_gib({'minimum_free_gib':15}),15)
         for invalid in [True,0,-1,9,math.nan,math.inf,'15']:
