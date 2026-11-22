@@ -31,7 +31,9 @@
 监督器不是内容正确性的替代者。它校验逐回正式SRT/ready的实际SHA、原片和原草稿身份、
 原cue完整处置索引、空档/短句/双行/边界检查声明、未解决问题和真实证据索引；
 这些声明必须由实际执行的审图与复核支持。不得为了满足门禁编造true或批量seal。
-源图不清楚时继续扩大原生像素/邻帧核对，不用ASR/常识补字，不造标点、不擅自简繁转换。
+2026-11-22用户新增并强化明确授权：持续视听等多维度综合校对，可用原片听音转文字辅助并回图综合判定，不仅限于模糊字场景。
+因此不再绝对排除ASR。清晰字幕仍忠实保留画面原字、措辞和空格，不能盲目用ASR全文替换，
+不能根据常识润色或补造标点；画音冲突留存双方证据，判断清楚后才定稿，未解不得seal。
 
 必须补查初次OCR可能遗漏的短句、短行和双行，以及首尾、原SRT空档和异常长空档。
 不能只看草稿中已有cue，也不能把少量时间点抽查写成整片覆盖。
@@ -46,7 +48,9 @@
 时间轴仍以裁片源PTS为准，实测其起点；不得再减片头，也不得无证据整体平移。
 修订后的内容和边界再次核对，通过后才正式发布并逐集 `kwjd.py seal-srt --approve`。
 
-只在13回所有正式字幕都具有真实完整审校证据、无未解决项且封存SHA一致时结束。
+只在13回所有正式字幕都具有真实完整审校证据、无未解决项且封存SHA一致，并且13份ASS
+样式版全部通过SRT/模板/字体/真实预览的绑定校验后结束。逐回真实seal后即可生成ASS，
+不必等所有回目审完；等待共享字体/样式预检时继续其它回目审校。
 会话正常退出但未完成时自动恢复；连续CLI错误保留现场等待排查，不伪称完成。
 磁盘按实际余量至少保留25GiB及2GiB当次证据空间；真实账户额度低于5%立即停止自身审校
 进程组并保存WAIT_QUOTA_RECOVERY。无法读取真实额度必须记录异常、排查，不编造余额。
@@ -61,3 +65,29 @@
 `evidence`列出实际索引路径和SHA，`model_review_sessions`列出真实会话ID。
 单元测试仅证明门禁拒绝缺失/不匹配/覆盖不全的收据，不证明视频内容已正确。
 
+
+## 不清楚文字的原音辅助
+
+`subtitle_review_asr.py`只抽取不超过120秒的原片音轨区间，保留原片SHA、区间、WAV和
+ASR文本/概率证据。使用只读现有ASR环境（不修改依赖）：
+`/home/lotus/.local/share/lotus-asr/venv/bin/python repo/scripts/subtitle_review_asr.py --root DATA --episode S03E02 --start 9 --end 20 --output NEW_EVIDENCE_DIR --cache DATA/ocr/subtitle-review/asr-models`。
+模型为faster-whisper small，CPU int8四线程，缓存独立于OCR和后期，不占GPU。
+证据明确标记为辅助而非字幕权威，不自动修改SRT/标点/简繁，也不声称执行了人工试听。
+有真正试听工具时可进一步听原音；只有模型转写时如实记录，不能把ASR文本说成已经听过。
+
+## ASS样式版及资产所有权
+
+用户授权沿用MiSans Subtitle、84字号、variation weight450、描边3.5、阴影1、marginV54。
+独立后期会话拥有 `post/styles/template.ass`、`post/styles/fonts/`和
+`post/styles/style-preflight.json` 的字体恢复及实际本次母版画面预览，不由审校器重复生成。
+该proof必须实际有technical_checked和visual_checked真值、模板SHA、fonts文件SHA、
+真实libass字体选择及实际预览证据路径/SHA、authorized_design和真实master_sha256。
+证据尚未完成时等待，不能仅因为模板/字体文件存在就批准样式。
+
+`subtitle_review_ass.py --root DATA --episode S03E02`只接受已完成所有审校门禁、正式seal的SRT，
+验证共享样式proof的实际绑定后调用既有make-ass，写 `output/ass/S03E02.ass`及其ready sidecar。
+ASS保持原裁片源PTS时基，记录未施加母版偏移、不能直接作为已批准生产烧录；
+正式后期仍须绑定各回实际母版和时钟映射。SRT毫秒值保留，ASS采用格式要求的百分之一秒舍入。
+完成收据绑定SRT/封存收据/模板/字体/样式预检SHA，旧输出绑定变化时保留并拒绝静默覆盖。
+监督器在审校会话运行期间也检查新seal并逐回生成ASS；全部SRT审完但样式未就绪时只等待
+共享proof，不反复创建无事可做的审校会话。最终状态为ALL_13_REVIEWED_SEALED_AND_ASS_READY。
