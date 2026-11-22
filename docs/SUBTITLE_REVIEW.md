@@ -10,6 +10,13 @@
 横向全宽、纵向800–1020，图中内容是视频原有像素，草稿文字只在JSON里作为待校对候选。
 证据生成本身没有审核或封存含义，不能只生成图就把条目标作已看。
 
+逐批决定保存在数据根 `ocr/subtitle-review/decisions/S03E##/*.json`，绑定原草稿SHA、
+真实会话、原cue ID、原文字、已查看帧、像素文字和显式替换分段。
+`subtitle_review_journal.py --root DATA --episode S03E02`核验决定引用的证据SHA后，
+只重建 `output/reviewing/` 工作稿和 `ocr/subtitle-review/working/` 的原cue映射。
+未审条目保持草稿文字；空分段表示经看图删除的非正文。文字已核对、边界待查的条目须明确
+记录待查状态，不能当作完成审核。该工具不发布、不封存，也不将逐批记录升级为全片通过。
+
 运行工具使用已存在的项目独立Pillow环境，例如：
 `post/face-venv/bin/python repo/scripts/subtitle_review_evidence.py --root DATA --episode S03E02 --srt DATA/output/drafts/S03E02.zh.srt --start-index 0 --count 16 --output DATA/ocr/subtitle-review/evidence/S03E02/0000-v1`。
 
