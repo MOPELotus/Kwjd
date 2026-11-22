@@ -154,5 +154,13 @@
   },
   "managed_post_episodes": [
     "S03E02"
-  ]
+  ],
+  "cloud_supervision": {
+    "progress_interval_seconds": 1800,
+    "model_pause_below_remaining_percent": 2,
+    "continue_media_processes_when_model_paused": true,
+    "automatic_reset_cards": false,
+    "paid_credit_fallback": false,
+    "prefer_scheduled_checks": true
+  }
 }

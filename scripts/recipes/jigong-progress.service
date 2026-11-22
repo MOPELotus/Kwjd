@@ -1,0 +1,9 @@
+[Unit]
+Description=Jigong pure-tool progress check and existing-main-chat wakeup
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/qingqingwu/repo
+Environment=KWJD_PROJECT=config/projects/jigong-s03.json
+ExecStart=/usr/bin/python3 %h/qingqingwu/repo/scripts/jigong_progress_tick.py --config %h/qingqingwu/.kwjd/progress-timer.json --wake
+TimeoutStartSec=180
