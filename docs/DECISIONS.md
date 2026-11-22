@@ -83,5 +83,7 @@ A real authorized 56-minute ZZZ mix returned a roughly 795 MB FLAC, exceeding th
 用户明确保留第一回当前30fps母版，后续按30→60处理，不为帧率重导；保留预期背景尾部和接受的远景遮罩表现。30fps须按真实时钟验证并配置后端，不把30帧输入当25帧读入；不改混音、不变速。整数倍率减少RIFE所需的时间采样复杂度，但整链速度须实测，不能据整数倍率保证比25fps更快。
 
 ## 2026-11-03: Opportunistic lossless upgrades
+2026-11-22济公传补充授权：云端全托管到最终压制与验收，Windows在线时自动续传接收，匹配接收和实际质量证据后清理对应生成产物。当前母版上传校验后先释放排队时冻结且始终未变化的CacheClip，其他新任务缓存保留。13回字幕独立持续审校、逐回真实封存SRT并生成ASS样式版，与第一回后期并行。字幕画面疑字可结合原片听音/ASR辅助判断，冲突回查，清晰原字幕的空格和措辞仍保留，不能将ASR直接标为定稿。
+
 
 The user requested another check of lossy candidates. `--upgrade-lossy` rechecks technically verified MP3/Vorbis receipts, admits only actual lossless codecs for upgrades, archives superseded receipts and retains the original candidate files. If no lossless candidate is returned, the existing verified file stays usable. Platform lossless labels alone do not establish codec quality or audio-version identity.
