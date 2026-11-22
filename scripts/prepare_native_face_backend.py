@@ -19,7 +19,7 @@ from cuda_trt import validate_assets
 SOURCES=['enhance_backend.py','enhance_stage.py','segmented_backend.py','concat_transfer.py',
     'linux_stage_handoff.py','cuda_trt.py','cuda_rife.py','frame_clock.py','native_face_pipeline.py','native_face_recipe.py',
     'native_frame_queue.py','native_resource_gate.py',
-    'native_face_job.py','benchmark_native_face.py','face_frame_processor.py',
+    'native_face_job.py','benchmark_native_face.py','face_frame_processor.py','fixed_workflow.py',
     'render_face_samples.py','server_worker.py','subtitle_timing.py','font_preflight.py','prepare_native_face_backend.py','storage_policy.py','stage_storage.py']
 
 
@@ -86,6 +86,7 @@ def template(post, *, rife_backend='cuda_trt', input_fps=25, season='S01'):
         paths.append(str(weights/name))
     paths += [str(Path(__file__).with_name(name).resolve()) for name in SOURCES]
     paths.append(str(Path(__file__).parent.parent/'kwjd.py'))
+    paths.append(str(Path(__file__).parent.parent/'config/workflows/native-face-v1.json'))
     packages=['torch','torchvision','basicsr','facexlib','gfpgan','numpy','opencv-python-headless']
     rebuilt_trt=rife_backend=='cuda_trt' and provenance.get('schema')==2
     if rebuilt_trt:packages+=['tensorrt-cu12','tensorrt-cu12-bindings','tensorrt-cu12-libs','onnx']

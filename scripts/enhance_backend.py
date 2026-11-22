@@ -107,8 +107,9 @@ def config(path):
         for name,expected in WEIGHTS.items():
             if sha256(Path(data['face_weights'])/name)!=expected:raise ValueError('Changed official face weight')
         recipe=validate_recipe(data['native_recipe'],data['native_recipe_sha256'])
-        if recipe.get('scope')=='production' and data.get('rife_backend')!='cuda_trt':
-            raise ValueError('Fixed GFPGAN/TensorRT production workflow cannot silently substitute ONNX or another backend')
+        if recipe.get('scope')=='production':
+            from fixed_workflow import validate_fixed_profile
+            validate_fixed_profile(data)
         data['fused_subtitle_binding']={key:recipe[key] for key in
             ['master_sha256','srt_sha256','style_sha256','fonts','subtitle_timing','ass_sha256']}
     if any(n not in data['file_sha256'] for n in needed):
