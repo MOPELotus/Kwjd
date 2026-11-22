@@ -216,6 +216,11 @@ def backend_technically_ready(master, master_hash):
     return record.get('backend_fingerprint') == plan['backend_fingerprint']
 
 
+def retain_received_master():
+    """Explicit project retention overrides stage-release eligibility."""
+    return PROJECT.get('lifecycle',{}).get('release_cloud_master_after_verified_lossless_audio_handoff',True) is False
+
+
 def do_job(job_path):
     job = json.loads(job_path.read_text(encoding="utf-8-sig"))
     ep = job["episode"]
@@ -264,7 +269,7 @@ def do_job(job_path):
         if not final.exists():
             os.link(final_partial,final);final_partial.unlink()
         if not report_path.exists():write_json(report_path,report)
-        if native_context is not None and master.exists():
+        if native_context is not None and master.exists() and not retain_received_master():
             upload_path=POST/'receipts'/f'{ep}.upload.json'
             upload=json.loads(upload_path.read_text()) if upload_path.exists() else {}
             if (upload.get('episode')==ep and upload.get('sha256')==expected
@@ -273,10 +278,10 @@ def do_job(job_path):
                                     worker_lock_held=WORKER_LOCK_HELD)
         # A late upload/local-master-deleted receipt still needs these exact
         # handoff assets to validate master release. Retain them until then.
-        if native_context is None or not master.exists():
+        if native_context is None or not master.exists() or retain_received_master():
             release_enhancement_inputs(POST,ep,enhanced,source_bundle.with_name(ep+'.mixed.flac'),
                                       final,report,worker_lock_held=WORKER_LOCK_HELD)
-        job['native_source_release_pending']=native_context is not None and master.exists()
+        job['native_source_release_pending']=native_context is not None and master.exists() and not retain_received_master()
         register_completed_assets(ep,expected,final,enhanced.parent)
         update(job_path,job,'READY','Verified final retained; previous-stage inputs retained pending upload receipt'
             if job['native_source_release_pending'] else 'Verified final retained; previous-stage inputs released')
@@ -362,7 +367,7 @@ def do_job(job_path):
     upload = json.loads(upload_receipt.read_text()) if upload_receipt.is_file() else {}
     may_release = (upload.get('episode') == ep and upload.get('sha256') == master_hash
                    and upload.get('verified') is True and upload.get('local_master_deleted') is True)
-    if (released or may_release) and native_context is None:
+    if (released or may_release) and native_context is None and not retain_received_master():
         release_master_copy(POST, master, source_bundle, enhanced, master_hash,
                             worker_lock_held=WORKER_LOCK_HELD)
     job["enhanced_sha256"] = receipt["sha256"]
@@ -510,13 +515,13 @@ def do_job(job_path):
     os.link(temp, final)  # Refuse to replace a final that appeared during encoding.
     temp.unlink()
     write_json(report_path, report)
-    if native_context is not None and (released or may_release):
+    if native_context is not None and (released or may_release) and not retain_received_master():
         release_master_copy(POST,master,source_bundle,enhanced,master_hash,
                             worker_lock_held=WORKER_LOCK_HELD)
-    if native_context is None or not master.exists():
+    if native_context is None or not master.exists() or retain_received_master():
         release_enhancement_inputs(POST,ep,enhanced,mixed_audio,final,report,
                                   worker_lock_held=WORKER_LOCK_HELD)
-    job['native_source_release_pending']=native_context is not None and master.exists()
+    job['native_source_release_pending']=native_context is not None and master.exists() and not retain_received_master()
     register_completed_assets(ep,master_hash,final,enhanced.parent)
     update(job_path, job, "READY", "Final passed structural checks; download with SHA-256 validation")
     queue_completion_notice(ep,report,final)

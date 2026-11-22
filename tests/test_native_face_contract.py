@@ -318,6 +318,16 @@ class NativeWorkerLifecycleTests(unittest.TestCase):
         self.mocks['release_master_copy'].assert_called_once()
         self.assertEqual(json.loads(self.job.read_text())['state'],'READY')
 
+    def test_explicit_project_retention_keeps_master_despite_upload_receipt(self):
+        with patch.dict(worker.PROJECT,{'lifecycle':{'release_cloud_master_after_verified_lossless_audio_handoff':False}}):
+            worker.do_job(self.job)
+            self.mocks['release_master_copy'].assert_not_called()
+            self.assertTrue(self.master.exists())
+            self.mocks['release_enhancement_inputs'].assert_called_once()
+            self.assertFalse(json.loads(self.job.read_text())['native_source_release_pending'])
+            worker.do_job(self.job)
+            self.mocks['release_master_copy'].assert_not_called()
+
     def test_pending_final_recovery_requires_prior_complete_qc_before_master_release(self):
         worker.do_job(self.job)
         final=self.post/'final/out.mkv';partial=self.post/'final/out.partial.mkv'
