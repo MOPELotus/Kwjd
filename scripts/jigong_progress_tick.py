@@ -96,7 +96,7 @@ def inspect(root,area,config,thread,threshold,wake):
             '接续同一济公传任务，不重复原生字幕子代理/生产Worker，不启动codex exec监督器。'
             '第一回真实SRT封存后先绑定实际母版时钟再生产；实际质量证据与lotuspc收据才交付清理。'
             '真实额度低于2%保存并暂停模型，后台实际媒体继续。只在需要动作/新结果时回复；处理后交回定时巡检。')
-        command=[config.get('codex_binary','/usr/bin/codex'),'queue','--thread',thread,'--message',message,'--resume']
+        command=[config.get('codex_binary',str(Path.home()/'.local/bin/codex')),'queue','--thread',thread,'--message',message,'--resume']
         try:
             result=subprocess.run(command,capture_output=True,text=True,timeout=60)
             dispatch=dict(signature=signature,event=kind,at=time.time(),returncode=result.returncode,
