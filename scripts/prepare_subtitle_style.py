@@ -13,21 +13,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from kwjd import cmd_make_ass, read_srt
 
 
-def main():
-    p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--font', type=Path, required=True)
-    p.add_argument('--root', type=Path, required=True)
-    p.add_argument('--master', type=Path, required=True)
-    p.add_argument('--episode', default='S01E49')
-    args = p.parse_args()
+def prepare_assets(source_font, styles):
+    """Restore the delegated design without claiming review or approval."""
     from fontTools.ttLib import TTFont
     from fontTools.varLib.instancer import instantiateVariableFont
-    styles = args.root / 'styles'
+    styles = Path(styles)
     fonts = styles / 'fonts'
     fonts.mkdir(parents=True, exist_ok=True)
     static = fonts / 'MiSans-Subtitle-Demibold.ttf'
     if not static.exists():
-        font = TTFont(args.font)
+        font = TTFont(source_font)
         instance = next(i for i in font['fvar'].instances
                         if font['name'].getDebugName(i.subfamilyNameID) == 'Demibold')
         font = instantiateVariableFont(font, instance.coordinates, inplace=False)
@@ -41,7 +36,7 @@ def main():
         font.save(static)
     template = styles / 'template.ass'
     if template.exists():
-        raise FileExistsError(f'Refusing to overwrite existing style: {template}')
+        return static, template
     template.write_text('''[Script Info]
 Title: MiSans readable 1080p subtitles
 ScriptType: v4.00+
@@ -58,6 +53,17 @@ Style: Default,MiSans Subtitle,84,&H00FFFFFF,&H00FFFFFF,&H00101010,&H90000000,0,
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 ''', encoding='utf-8')
+    return static, template
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--font', type=Path, required=True)
+    p.add_argument('--root', type=Path, required=True)
+    p.add_argument('--master', type=Path, required=True)
+    p.add_argument('--episode', default='S01E49')
+    args = p.parse_args()
+    static, template = prepare_assets(args.font, args.root / 'styles')
     ass = args.root / 'subtitles' / f'{args.episode}.styled.ass'
     srt = args.root / 'subtitles' / f'{args.episode}.zh.srt'
     cmd_make_ass(argparse.Namespace(srt=str(srt), template=str(template), output=str(ass)))
