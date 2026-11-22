@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "story": "济公传 / 罗汉爷捉拿华云龙",
+  "season": "S03",
+  "episodes": [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
+  "backend": "VideOCR-GPU-v1.6.0-CUDA-11.8",
+  "gpu_physical_index": 1,
+  "minimum_free_gib": 25,
+  "temporary_budget_gib": 4,
+  "crop": {"x": 0, "y": 820, "width": 1920, "height": 180},
+  "subtitle_position": "left",
+  "frames_to_skip": 1,
+  "ocr_image_max_width": 1920,
+  "ssim_threshold": 94,
+  "use_server_model": true,
+  "normalize_to_simplified_chinese": false,
+  "post_processing": false,
+  "sample_scope": "single-line samples at 300s from all 13 chapters; additional cloud pilot required",
+  "production_admitted": false,
+  "outputs_are_unreviewed_drafts": true,
+  "time_base": "trimmed_video_no_additional_intro_offset"
+}
