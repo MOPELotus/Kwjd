@@ -156,7 +156,8 @@ def record_final(root, ep, file, remote_report):
     if upload.get('verified') is not True or upload.get('sha256') != report['master_sha256']:
         raise ValueError('Returned final used a different master than the verified current upload')
     info = json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-show_format',
-                                              '-show_streams', '-of', 'json', str(file)]))
+                                              '-show_streams', '-of', 'json', str(file)],
+                     **({'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {})))
     check_final_media(info)
     duration = float(info['format']['duration'])
     if abs(duration - float(report['master_duration'])) > 1:
@@ -164,7 +165,8 @@ def record_final(root, ep, file, remote_report):
     for start in (0, duration / 2, max(0, duration - 4)):
         subprocess.run(['ffmpeg', '-v', 'error', '-xerror', '-nostdin', '-ss', str(start),
                         '-i', str(file), '-t', '3', '-map', '0:v:0', '-map', '0:a:0',
-                        '-f', 'null', '-'], check=True)
+                        '-f', 'null', '-'], check=True,
+                       **({'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}))
     record = {'schema_version': 1, 'episode': ep, 'local_path': str(file), 'sha256': digest,
               'remote_final_name': f'{ep}.final-1080p60.mkv', 'received': True,
               'technical_checked': True, 'quality_checked': False, 'received_at': now(),

@@ -17,6 +17,8 @@ import time
 from episode_lifecycle import (load, save, now, catalog, record_final, sha256,
                                cleanup, register_artifact, check_final_media)
 
+BACKGROUND_PROCESS = {'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}
+
 
 def remote(config, arguments, input_text=None):
     import shlex
@@ -24,7 +26,8 @@ def remote(config, arguments, input_text=None):
     client = str(git) if git.exists() else 'ssh'
     return subprocess.run([client, '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15',
                            config['host'], shlex.join(arguments)], capture_output=True,
-                          text=True, encoding='utf-8', timeout=60, input=input_text)
+                          text=True, encoding='utf-8', timeout=60, input=input_text,
+                          **BACKGROUND_PROCESS)
 
 
 def quality_identity(quality, receipt):
@@ -157,12 +160,13 @@ def receive(root, config, ep):
         subprocess.run([sys.executable, str(Path(__file__).with_name('resume_sftp_download.py')),
                         '--ssh-alias', config['host'], '--remote',
                         base + '/post/final/' + ep + '.final-1080p60.mkv',
-                        '--part', str(part), '--sha256', digest], check=True)
+                        '--part', str(part), '--sha256', digest], check=True, **BACKGROUND_PROCESS)
         if part.stat().st_size != report['bytes']:
             raise ValueError('Downloaded byte count differs')
     candidate = target if target.exists() else part
     info = json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-show_format',
-                       '-show_streams', '-of', 'json', str(candidate)], text=True, encoding='utf-8'))
+                       '-show_streams', '-of', 'json', str(candidate)], text=True, encoding='utf-8',
+                       **BACKGROUND_PROCESS))
     check_final_media(info)
     video = next(s for s in info['streams'] if s['codec_type'] == 'video')
     duration = float(info['format']['duration'])
@@ -172,11 +176,12 @@ def receive(root, config, ep):
     for seek in (0, duration / 2, max(0, duration - 4)):
         subprocess.run(['ffmpeg', '-v', 'error', '-xerror', '-nostdin', '-ss', str(seek),
                         '-i', str(candidate), '-t', '3', '-map', '0:v:0', '-map', '0:a:0',
-                        '-f', 'null', '-'], check=True)
+                        '-f', 'null', '-'], check=True, **BACKGROUND_PROCESS)
     # Compare the complete decoded mix with the cloud's original-mix proof.
     pcm = subprocess.check_output(['ffmpeg', '-v', 'error', '-xerror', '-nostdin',
                                   '-i', str(candidate), '-map', '0:a:0', '-vn', '-c:a',
-                                  'pcm_s32le', '-f', 'hash', '-hash', 'sha256', '-'], text=True)
+                                  'pcm_s32le', '-f', 'hash', '-hash', 'sha256', '-'], text=True,
+                                  **BACKGROUND_PROCESS)
     if pcm.strip().split('=')[-1].lower() != report['decoded_pcm_sha256']:
         raise ValueError('Returned mix differs from cloud lossless evidence')
     if candidate == part:

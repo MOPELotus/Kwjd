@@ -17,6 +17,7 @@ Read this before touching files. Ask the human to identify your role, or infer *
 - Model-backed subtitle/visual reviews may run via Codex. Automated repeatable operations must live in versioned scripts.
 
 ## Windows role
+- Background receivers and all of their SSH, SFTP, Python and media-tool child processes must launch without console windows (CREATE_NO_WINDOW for Python subprocesses). Hiding only the parent pythonw process is insufficient; preserve captured errors and transfer receipts.
 - Checkout repo at D:\qingqingwu\repo (or set root args). Read docs/WORKFLOW.md and docs/ADOPTION.md.
 - Run: python kwjd.py adopt --role windows; python kwjd.py status --role windows; discover episodes from S01 filenames.
 - Respect existing D:\qingqingwu\videos and manifests. The included scripts/cut/qqw-local-cut-upload-v2.ps1 is **the previous confirmed working cutter**, not a request to recut.
