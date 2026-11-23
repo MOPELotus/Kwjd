@@ -31,7 +31,7 @@ def capture(result_path, output, times, gpu=1):
     output=Path(output).absolute()
     if output.is_symlink() or output.parent!=area:
         raise ValueError('Frame evidence must be a new directory inside the trial')
-    check_space(area,128*1024**2,25);output.mkdir(exist_ok=False)
+    check_space(area,128*1024**2,5);output.mkdir(exist_ok=False)
     physical=subprocess.check_output(['nvidia-smi','--id='+str(gpu),
         '--query-gpu=name,uuid,driver_version','--format=csv,noheader'],text=True).strip()
     rows=[];sheets=[]

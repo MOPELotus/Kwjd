@@ -24,7 +24,7 @@ class StorageTests(unittest.TestCase):
                 selected,record=storage.choose_scratch(tmp,42,candidates=[candidate])
             self.assertEqual(selected,candidate);self.assertTrue(selected.is_dir())
             self.assertEqual(record['additional_peak_bytes'],42)
-            check.assert_called_once_with(candidate,42,25)
+            check.assert_called_once_with(candidate,42,5)
 
     def test_two_directories_on_same_full_disk_are_not_two_capacities(self):
         with tempfile.TemporaryDirectory() as tmp:

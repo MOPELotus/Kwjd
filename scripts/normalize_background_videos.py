@@ -30,7 +30,7 @@ try:
             old=json.loads(receipt.read_text(encoding='utf8'))
             if old.get('state')!='TECHNICAL_VERIFIED_VISUAL_PENDING' or sha(dest)!=old['sha256']:raise RuntimeError('Existing receipt or SHA mismatch')
             completed.append(index);continue
-        if shutil.disk_usage(dest.parent).free<25*1024**3:raise RuntimeError('Less than 25 GiB free, stopped without deleting sources')
+        if shutil.disk_usage(dest.parent).free<5*1024**3:raise RuntimeError('Less than 5 GiB free, stopped without deleting sources')
         source_sha=sha(item['source'])
         if item.get('expected_source_sha256') and source_sha!=item['expected_source_sha256']:raise RuntimeError('Reviewed source SHA mismatch')
         partial=work/'encoded.partial.mp4'

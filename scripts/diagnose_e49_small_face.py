@@ -44,8 +44,8 @@ def main():
         raise RuntimeError('WAIT_GPU: full rework service has not terminated')
     lease = (args.work.parent.parent / '.face-compute.lock').open('a+')
     fcntl.flock(lease, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    if shutil.disk_usage(args.work).free < 25 * 2**30:
-        raise RuntimeError('WAIT_DISK: preserve 25GiB floor')
+    if shutil.disk_usage(args.work).free < 5 * 2**30:
+        raise RuntimeError('WAIT_DISK: preserve 5GiB floor')
     weights = args.weights / 'detection_Resnet50_Final.pth'
     expected = '6d1de9c2944f2ccddca5f5e010ea5ae64a39845a86311af6fdf30841b0a5a16d'
     if digest(weights) != expected:

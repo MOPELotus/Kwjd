@@ -16,6 +16,6 @@ def minimum_free_gib(config=None):
         if not project.is_relative_to((repo/'config').resolve()):
             raise ValueError('Project storage policy must remain inside repository config')
         value = json.loads(project.read_text())['minimum_free_gib']
-    if type(value) not in (int, float) or not math.isfinite(value) or not 10 <= value <= 100:
-        raise ValueError('Disk reserve must be a finite number from10 through100GiB')
+    if type(value) not in (int, float) or not math.isfinite(value) or not 5 <= value <= 100:
+        raise ValueError('Disk reserve must be a finite number from5 through100GiB')
     return value

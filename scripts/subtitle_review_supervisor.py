@@ -92,7 +92,7 @@ PROMPT = """
 3. 核对原片有字的所有时间段，包括草稿空档、首尾、异常长空档、漏短行/双行。可用机器视觉或针对性独立OCR作为查漏工具，不能用ASR盲目替换，也不要重复原先整批OCR；模糊疑点可按最新用户授权结合音频辅助。保留查漏的实际覆盖范围与疑点处置证据；不要以稀疏抽样冒充全覆盖。
 4. 时间戳仍以裁片为基准，不再扣片头。原video PTS有约0.096秒起点，必须实测帧时钟，不盲目整体偏移。用原片边界邻帧确认出现/消失及分段；不得仅沿用原时间戳就声称校准完成。
 5. 对修正后的工作稿再进行文字/边界复核，有差异继续。每回完成后才能正式发布及seal，再自动下一回。整个13回未完成不得宣布任务全部完成。
-6. 配额实际读取~/.local/bin/codex-quota-status；低于5%停下保存现场。磁盘真实df，至少留25GiB，不动原片/现有草稿/母版/达芬奇/其他用户任务。当前使用GPU0的其他服务约10GB，不能停止、重启或改变。仅CPU即可完成可读图审校；需要额外小型工具时新建隔离环境并预算。
+6. 配额实际读取~/.local/bin/codex-quota-status；低于5%停下保存现场。磁盘真实df，至少留5GiB，不动原片/现有草稿/母版/达芬奇/其他用户任务。当前使用GPU0的其他服务约10GB，不能停止、重启或改变。仅CPU即可完成可读图审校；需要额外小型工具时新建隔离环境并预算。
 
 每回完成报告 ROOT/ocr/subtitle-review/reports/S03E##.json 必须有：
 complete:true, source_sha256, draft_sha256, final_srt_sha256,
@@ -198,7 +198,7 @@ def main():
         if remaining<5:
             state.update(stage="WAIT_QUOTA_RECOVERY",quota_remaining_percent=remaining)
             save(state_path,state);return
-        if shutil.disk_usage(review).free<27*1024**3:
+        if shutil.disk_usage(review).free<7*1024**3:
             state["stage"]="WAIT_DISK_RESERVE";save(state_path,state);return
         completed=[ep for ep in episodes if validate_episode(root,ep)]
         styled=refresh_ass(root,state)

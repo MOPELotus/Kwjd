@@ -25,8 +25,8 @@ def scan(root, episode, start, end, output):
         raise ValueError('Episode outside scope')
     if not 0 <= start < end or end - start > 120:
         raise ValueError('Expected bounded interval <=120 seconds')
-    if shutil.disk_usage(root).free < 27 * 1024**3:
-        raise ValueError('Need 25 GiB reserve plus 2 GiB evidence allowance')
+    if shutil.disk_usage(root).free < 7 * 1024**3:
+        raise ValueError('Need 5 GiB reserve plus 2 GiB evidence allowance')
     source = root / 'input' / (episode + '.mp4')
     source_sha = sha(source)
     receipt = json.loads(source.with_suffix('.mp4.transfer.json').read_text())

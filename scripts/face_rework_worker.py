@@ -92,8 +92,8 @@ def fingerprint(manifest):
 
 
 def guard(folder):
-    if shutil.disk_usage(folder).free<25*GIB:
-        raise RuntimeError('WAIT_DISK:25GiB floor')
+    if shutil.disk_usage(folder).free<5*GIB:
+        raise RuntimeError('WAIT_DISK:5GiB floor')
     rows=subprocess.check_output(['nvidia-smi','--id=0',
         '--query-gpu=temperature.gpu,memory.free','--format=csv,noheader,nounits'],text=True)
     temperature,free=map(int,rows.strip().split(','))
@@ -147,8 +147,8 @@ def run(manifest_path):
         # Existing, hash-bound media only needs verification and small receipt
         # publication; do not require room for another full output copy.
         additional=64*1024**2
-    if shutil.disk_usage(folder).free<25*GIB+additional:
-        raise RuntimeError('WAIT_DISK:bounded final+segments+mix budget above25GiB floor')
+    if shutil.disk_usage(folder).free<5*GIB+additional:
+        raise RuntimeError('WAIT_DISK:bounded final+segments+mix budget above5GiB floor')
     state_path=folder/'status.json'
     state=dict(fingerprint=fp,stage='STARTING',frames_completed=0,total_frames=total,fps=60,
         source=str(source),source_sha256=manifest['source_sha256'],source_retained=True,

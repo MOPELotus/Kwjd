@@ -9,14 +9,15 @@ from queue_storage import phase_peaks,evaluate,GIB
 
 
 class PolicyTests(unittest.TestCase):
-    def test_explicit_jigong_profile_keeps_25gib_without_changing_default(self):
+    def test_explicit_jigong_profile_uses_5gib_without_changing_default(self):
         with patch.dict('os.environ',{'KWJD_PROJECT':'config/projects/jigong-s03.json'}):
-            self.assertEqual(minimum_free_gib(),25)
+            self.assertEqual(minimum_free_gib(),5)
         with patch.dict('os.environ',{'KWJD_PROJECT':'../outside.json'}),self.assertRaises((ValueError,FileNotFoundError)):
             minimum_free_gib()
     def test_runtime_reserve_is_validated(self):
+        self.assertEqual(minimum_free_gib({'minimum_free_gib':5}),5)
         self.assertEqual(minimum_free_gib({'minimum_free_gib':15}),15)
-        for invalid in [True,0,-1,9,math.nan,math.inf,'15']:
+        for invalid in [True,0,-1,4,math.nan,math.inf,'15']:
             with self.assertRaises(ValueError):minimum_free_gib({'minimum_free_gib':invalid})
 
     def test_split_volumes_do_not_add_free_space_or_disjoint_phases(self):

@@ -34,7 +34,7 @@
     "preserve_native_rate_if_at_least": 96000,
     "minimum_channels": 1
   },
-  "minimum_free_gib": 15,
+  "minimum_free_gib": 5,
   "keep_enhanced": false,
   "note": "First season profile shared by all discovered S01 episodes; existing E49–E55 bootstrap without restricting later episodes.",
   "master_export": {

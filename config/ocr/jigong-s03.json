@@ -6,7 +6,7 @@
   "backend": "VideOCR-GPU-v1.6.0-CUDA-11.8",
   "engine_archive_sha256": "fa4a404bb7f6699898ad1b9a86fe3970c309e905b830f34e20816693e54d6743",
   "gpu_physical_index": 1,
-  "minimum_free_gib": 25,
+  "minimum_free_gib": 5,
   "temporary_budget_gib": 4,
   "crop": {"x": 0, "y": 820, "width": 1920, "height": 180},
   "subtitle_position": "left",

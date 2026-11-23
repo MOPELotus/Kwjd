@@ -93,6 +93,7 @@ def ensure_timing(root,ep,master_sha,srt_sha):
         if (type(offset) is not int or not -1000<=offset<=1000 or observation.get('verified') is not True
                 or abs(observation['offset_seconds']*1000-offset)>1e-6):
             raise ValueError('Program clock evidence and reviewed offset differ')
+        receipt.parent.mkdir(parents=True,exist_ok=True)
         atomic_json(receipt,dict(schema_version=1,reviewed=True,episode=ep,master_sha256=master_sha,
             srt_sha256=srt_sha,offset_ms=offset,evidence_path=str(evidence),evidence_sha256=sha256(evidence)))
     return read_mapping(post,ep,master_sha,srt_sha)
@@ -139,7 +140,9 @@ def submit(root,master,ass,check_only):
         prior=load(job_path)
         if any(prior.get(key)!=value for key,value in identity.items()):raise ValueError('Existing job input binding differs; retained')
         if prior.get('state') in ('READY','FAILED'):return dict(state=prior['state'],episode=ep,job_retained=True)
-    else:atomic_json(job_path,{**identity,'state':'QUEUED','created_at':time.time()})
+    else:
+        job_path.parent.mkdir(parents=True,exist_ok=True)
+        atomic_json(job_path,{**identity,'state':'QUEUED','created_at':time.time()})
     unit='kwjd-fixed-'+ep.lower()
     active=subprocess.run(['systemctl','--user','is-active','--quiet',unit+'.service']).returncode==0
     if not active:
