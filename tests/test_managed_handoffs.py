@@ -3,11 +3,32 @@ from pathlib import Path
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from cache_after_master_handoff import admit
+from cache_after_master_handoff import admit, prepare
+import json
+import tempfile
+from unittest.mock import patch
 from receive_managed_finals import report_identity, quality_identity
 
 
 class ManagedHandoffs(unittest.TestCase):
+    def test_precleaned_cache_does_not_snapshot_a_later_episode(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            validation=root/'.kwjd/master-validation/S03E04.json'
+            validation.parent.mkdir(parents=True)
+            validation.write_text(json.dumps(dict(state='TECHNICALLY_VALIDATED',sha256='a'*64,
+                                                  path='master',bytes=12)))
+            prior=root/'.kwjd/cache-cleanup/S03E04.local-anchor.json'
+            prior.parent.mkdir(parents=True)
+            prior.write_text(json.dumps(dict(state='LOCAL_ANCHORED_CACHE_CLEANED',master_sha256='a'*64)))
+            with patch('cache_after_master_handoff.snapshot', side_effect=AssertionError('new cache must not be sampled')):
+                result=prepare(root,'S03E04',root/'receipt.json','host','/var/tmp/receive-root')
+            self.assertTrue(result['cache_precleaned'])
+            self.assertIsNone(result['cache_snapshot'])
+            handoff=dict(episode='S03E04',sha256='a'*64,bytes=12,transfer_verified=True,
+                         remote_sampled_decode_verified=True,path='/var/tmp/receive-root/post/incoming/S03E04.clean-master.mov')
+            self.assertEqual(admit(result,handoff)['remote_path'],handoff['path'])
+
     def test_quality_requires_actual_four_part_evidence(self):
         receipt = dict(episode='S03E02', master_sha256='a'*64, sha256='b'*64, bytes=12)
         quality = dict(schema_version=1, episode='S03E02', master_sha256='a'*64,
