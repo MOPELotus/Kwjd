@@ -94,3 +94,12 @@ A real authorized 56-minute ZZZ mix returned a roughly 795 MB FLAC, exceeding th
 
 
 The user requested another check of lossy candidates. `--upgrade-lossy` rechecks technically verified MP3/Vorbis receipts, admits only actual lossless codecs for upgrades, archives superseded receipts and retains the original candidate files. If no lossless candidate is returned, the existing verified file stays usable. Platform lossless labels alone do not establish codec quality or audio-version identity.
+
+
+2026-11-22 云端恢复：旧可见主会话被中断并归档，用户在当前云端聊天继续，明确主代理负责仓库、第一回成片及原Windows制作电脑交接，单一原生子代理接续13回视听综合审校、逐回真实封存SRT及ASS。继承现有数据检查点，不运行旧模型监督器，不向当前聊天设备或任意Windows主机误投递。用户本次重新给出的全局真实额度低于5%即保存停止规则优先于此前2%重置卡例外；保持不消费点数。
+
+
+2026-11-22 后续明确云端规矩（覆盖本日恢复时临时沿用的5%条款）：第一回实际生产挂起后约每30分钟定时检查；模型对话无需持续活跃。真实额度低于2%时暂停模型对话/字幕审校，后台实际处理继续，不杀Worker/推理/编码，不重置卡或回退点数。仅云端适用。Windows原制作端由用户明确确认为lotuspc，离线时记录待同步通知，上线后同步规矩并核实HEAD，保留Windows本身额度规则。
+
+
+2026-11-22 用户纠正固定工作流接管：仓库用于锁定环境、工作栈及全链条细节，后续更换母片与ASS即可重复运行。正常清理后的缺失资产必须按既定GFPGAN/A4000+强类型TensorRT RIFE/T10+overlap1配方重新部署；不得以资产已清理为理由改成未证明更快的ONNX方案。此前S03 ONNX短测的生产准入已撤回，未启动整回、无既有成片受影响。固定配方见config/workflows/native-face-v1.json；替代方案只有经过同条件速度与质量验收并明确修订工作流后才可采用。

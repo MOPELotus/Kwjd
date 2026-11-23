@@ -37,6 +37,8 @@ python3 kwjd.py status --role linux
 
 具体命令见 [工作流](docs/WORKFLOW.md)、[接管说明](docs/ADOPTION.md)、[后端约定](docs/BACKENDS.md)。
 
+固定后期入口及清理后恢复见 [固定工作流](docs/FIXED_WORKFLOW.md)。日常提交只指定已交接母片与已审定ASS，环境、GFPGAN/TensorRT模型、双卡分工和参数由版本锁恢复。
+
 ## 绝对约束
 
 1. **只在去片头片尾时**使用 `ffmpeg -c copy`；Magic Mask 合成、AI 增强和烧录字幕必须允许重新编码。
@@ -76,4 +78,4 @@ tests/                    不依赖 GPU 的回归测试
 
 ## 当前工作约定
 
-以 [决策记录](docs/DECISIONS.md)、[工作流](docs/WORKFLOW.md)、[回传与单集清理](docs/LIFECYCLE.md) 为准。默认直接从 DaVinci 导出高质量 HEVC Main10 + PCM 的 MOV；保留已接受的字幕残片和混音，不设置 AI 样片人工审批门槛。增强先跑，样式确认后再烧录。最终以 `第X回 回目标题.mkv` 回传，按阶段校验交接后清理不再需要的已登记中间物；母片上传SHA校验后即释放本地母片和CacheClip，Windows可准备下一集。云端后处理全托管，服务器最终片仍等Windows回传验收收据才删。
+以 [决策记录](docs/DECISIONS.md)、[工作流](docs/WORKFLOW.md)、[回传与单集清理](docs/LIFECYCLE.md) 为准。默认直接从 DaVinci 导出高质量 HEVC Main10 + PCM 的 MOV；保留已接受的字幕残片和混音，不设置 AI 样片人工审批门槛。当前固定原生链先绑定定版ASS与母片时钟，再以轻量处理→GFPGAN→TensorRT RIFE→ASS后烧完成一次视频编码；旧样式独立增强入口仅用于已有历史检查点。最终以 `第X回 回目标题.mkv` 回传，按阶段校验交接后清理不再需要的已登记中间物；母片上传SHA校验后即释放本地母片和CacheClip，Windows可准备下一集。云端后处理全托管，服务器最终片仍等Windows回传验收收据才删。

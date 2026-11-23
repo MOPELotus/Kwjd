@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Jigong progress every half hour
+
+[Timer]
+OnCalendar=*-*-* *:00,30:00 Asia/Shanghai
+Persistent=true
+AccuracySec=1min
+Unit=jigong-progress.service
+
+[Install]
+WantedBy=timers.target

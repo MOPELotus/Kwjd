@@ -142,7 +142,7 @@
       "final_nvenc_and_lossless_mix"
     ],
     "neural_full_frame_upscale": false,
-    "production_integration_status": "requires_actual_s03_cfr30_master_chain_acceptance",
+    "production_integration_status": "fixed_trt_rebuilt_and_actual_s03_cfr30_fullchain_sample_accepted",
     "existing_60fps_final_rework": {
       "preserve_all_frames": true,
       "repeat_rife": false,
@@ -150,9 +150,20 @@
       "retain_unique_input_until_new_full_validation": true
     },
     "fused_style_approval_before_inference": true,
-    "video_encodes": 1
+    "video_encodes": 1,
+    "production_rife_backend": "cuda_trt",
+    "cleanup_recovery": "rebuild_same_locked_workflow"
   },
   "managed_post_episodes": [
     "S03E02"
-  ]
+  ],
+  "cloud_supervision": {
+    "progress_interval_seconds": 1800,
+    "model_pause_below_remaining_percent": 2,
+    "continue_media_processes_when_model_paused": true,
+    "automatic_reset_cards": false,
+    "paid_credit_fallback": false,
+    "prefer_scheduled_checks": true
+  },
+  "production_workflow": "config/workflows/native-face-v1.json"
 }

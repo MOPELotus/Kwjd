@@ -1,6 +1,24 @@
 # Linux enhancement backend contract (implementation handoff)
 
-## Independent native CUDA ONNX recovery (S03E02)
+## Fixed production workflow and cleanup recovery
+
+`config/workflows/native-face-v1.json` locks the established GFPGAN1.4/A4000,
+strongly typed TensorRT RIFE4.6/T10, overlap1 producer queue, fixed picture/encode
+parameters and original-mix FLAC. Routine cleanup does not authorize technology
+selection. Rebuild missing dependencies/models/engines with the same recipes,
+then validate the new local build and current master; never manufacture an old
+engine SHA or inherit deleted runtime evidence. A different engine binary after
+recompilation is a new build of the same fixed recipe, not a backend switch.
+
+The temporary S03 ONNX replacement admission was revoked before full production:
+its short test had not established a speed non-regression against the fixed TRT
+stack. ONNX remains an explicit diagnostic reference, not a production fallback.
+Changing the locked stack needs an explicit workflow revision supported by a
+matched performance and quality comparison. Per-job variation is the actual
+master, reviewed subtitle assets and their timing/identity evidence, not a new
+choice of models, devices or tuning parameters.
+
+## Independent native CUDA ONNX comparison (not production recovery)
 
 `KWJD_PROJECT=config/projects/jigong-s03.json post/face-venv/bin/python
 scripts/prepare_native_face_backend.py --post ~/qingqingwu/post --rife-backend

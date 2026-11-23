@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 from cuda_trt import (validate_assets, ENGINE_SHA256, MODEL_SHA256, SOURCE_SHA256,
-                      CONVERSION_SHA256, TRT_VERSION, DRIVER_VERSION)
+                      CONVERSION_SHA256, BUILD_SHA256, TRT_VERSION, DRIVER_VERSION)
 
 
 class TensorRTAssetContractTests(unittest.TestCase):
@@ -86,6 +86,43 @@ class TensorRTAssetContractTests(unittest.TestCase):
         for gpu in (0, True):
             self.cfg['gpu'] = gpu
             with self.assertRaises(ValueError): self.validate()
+
+    def rebuilt_proof(self):
+        root=Path(self.tmp.name);build=root/'bench/build.py';build.parent.mkdir()
+        pair=root/'pair.json';conversion=root/'conversion.json'
+        lock=Path(__file__).resolve().parents[1]/'config/workflows/native-face-v1.json'
+        rebuilt='a'*64
+        self.provenance.update(schema=2,engine_sha256=rebuilt,build_recipe=str(build),
+            build_recipe_sha256=BUILD_SHA256,workflow_lock=str(lock),workflow_lock_sha256='lockhash',
+            conversion_report=str(conversion),conversion_report_sha256='conversionreporthash',
+            footage_pair_manifest=str(pair),footage_pair_manifest_sha256='pairhash')
+        conversion.write_text(json.dumps(dict(output_sha256=MODEL_SHA256,source_sha256=SOURCE_SHA256,
+            script_sha256=CONVERSION_SHA256,onnx_version='1.20.1')))
+        frames=[]
+        for n in (1,2):
+            path=build.parent/f'rife_pair_{n:02d}.png';frames.append(dict(path=str(path),sha256=f'frame{n}'))
+            self.cfg['file_sha256'][str(path)]=self.hashes[str(path)]=f'frame{n}'
+        pair.write_text(json.dumps(dict(master_sha256='b'*64,frames=frames)))
+        for path,digest in [(str(build),BUILD_SHA256),(str(lock),'lockhash'),(str(pair),'pairhash'),
+                            (str(conversion),'conversionreporthash'),('engine',rebuilt)]:
+            self.cfg['file_sha256'][path]=self.hashes[path]=digest
+        self.bench.update(engine_sha256=rebuilt,trt_seconds=[.025]*8,ort_reference_seconds=[.047]*8,
+            numeric_error_vs_official_fp32=[dict(timestep=.4,psnr_db=77),dict(timestep=.8,psnr_db=78)])
+
+    def test_rebuilt_engine_needs_fixed_recipes_actual_comparison_and_new_hash(self):
+        self.rebuilt_proof();self.assertEqual(self.validate()[2]['engine_sha256'],'a'*64)
+        self.bench['numeric_error_vs_official_fp32'][0]['psnr_db']=20
+        with self.assertRaisesRegex(ValueError,'equivalence'):self.validate()
+
+    def test_rebuild_cannot_change_original_build_recipe_or_omit_timings(self):
+        self.rebuilt_proof();path=self.provenance['build_recipe']
+        self.cfg['file_sha256'][path]=self.hashes[path]='changed'
+        self.provenance['build_recipe_sha256']='changed'
+        with self.assertRaises(ValueError):self.validate()
+        self.cfg['file_sha256'][path]=self.hashes[path]=BUILD_SHA256
+        self.provenance['build_recipe_sha256']=BUILD_SHA256
+        self.bench['trt_seconds']=[]
+        with self.assertRaisesRegex(ValueError,'timing'):self.validate()
 
 
 if __name__ == '__main__': unittest.main()

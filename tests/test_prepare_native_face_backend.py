@@ -62,6 +62,11 @@ class PrepareNativePolicyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             prepare.scheduling_profile('unknown')
 
+    def test_alternative_runtime_cannot_replace_fixed_workflow_during_activation(self):
+        with self.assertRaisesRegex(ValueError,'Fixed production workflow'):
+            prepare.prepare(self.post,activate=True,rife_backend='cuda_onnx',input_fps=30,season='S03')
+        self.assertFalse((self.post/'backend/runtime.native-template.json').exists())
+
     def test_standalone_profiles_keep_serial_gate_independent_from_overlap(self):
         expected = {'serial': (False, False, 1), 'serial-gate': (False, True, 1),
                     'overlap1-legacy': (True, False, 1),
@@ -134,10 +139,17 @@ class PrepareNativePolicyTests(unittest.TestCase):
         self.assertGreaterEqual(cfg['minimum_free_gib'],25)
         self.assertFalse(any(k.startswith('rife_trt') for k in cfg))
         self.assertFalse((self.post/'backend/native-enabled.json').exists())
-        with self.assertRaises(ValueError):
+        with self.assertRaises(FileNotFoundError):
             prepare.template(self.post,rife_backend='cuda_trt',input_fps=30,season='S03')
         with patch('cuda_rife.MODEL_SHA256','0'*64),self.assertRaises(ValueError):
             prepare.onnx_base(self.post,30,'S03')
+
+    def test_fixed_trt_accepts_30fps_clock_without_replacing_models(self):
+        restored=prepare.template(self.post,rife_backend='cuda_trt',input_fps=30,season='S03')
+        self.assertEqual(restored['input_frame_rate'],30)
+        self.assertEqual(restored['admitted_seasons'],['S03'])
+        self.assertEqual(restored['rife_backend'],'cuda_trt')
+        self.assertEqual(restored['rife_trt_model'],self.base['rife_trt_model'])
 
 
 if __name__ == '__main__':

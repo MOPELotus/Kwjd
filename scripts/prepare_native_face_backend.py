@@ -19,7 +19,7 @@ from cuda_trt import validate_assets
 SOURCES=['enhance_backend.py','enhance_stage.py','segmented_backend.py','concat_transfer.py',
     'linux_stage_handoff.py','cuda_trt.py','cuda_rife.py','frame_clock.py','native_face_pipeline.py','native_face_recipe.py',
     'native_frame_queue.py','native_resource_gate.py',
-    'native_face_job.py','benchmark_native_face.py','face_frame_processor.py',
+    'native_face_job.py','benchmark_native_face.py','face_frame_processor.py','fixed_workflow.py',
     'render_face_samples.py','server_worker.py','subtitle_timing.py','font_preflight.py','prepare_native_face_backend.py','storage_policy.py','stage_storage.py']
 
 
@@ -69,10 +69,15 @@ def template(post, *, rife_backend='cuda_trt', input_fps=25, season='S01'):
     if rife_backend=='cuda_onnx':
         base,paths=onnx_base(post,input_fps,season)
     elif rife_backend=='cuda_trt':
-        if input_fps!=25 or season!='S01':raise ValueError('Legacy TRT template remains S01/25')
+        from frame_clock import input_rate
+        import re
+        rate=int(input_rate(input_fps))
+        if not re.fullmatch(r'S0[1-4]',season):raise ValueError('Explicit admitted season required')
         base=json.loads((post/'backend/runtime.trt.json').read_text())
         _,_,provenance=validate_assets(base)
+        base.update(input_frame_rate=rate,admitted_seasons=[season])
         paths=[base[k] for k in ['rife_trt_engine','rife_trt_model','rife_trt_provenance','rife_onnx']]
+        paths+=list(base.get('file_sha256',{}))
         paths += [provenance[key] for key in ['source_model','conversion_recipe','build_recipe','benchmark_report','conversion_report']]
     else:raise ValueError('Unknown explicit native RIFE candidate')
     weights=post/'tools/face-candidates/weights'
@@ -81,7 +86,11 @@ def template(post, *, rife_backend='cuda_trt', input_fps=25, season='S01'):
         paths.append(str(weights/name))
     paths += [str(Path(__file__).with_name(name).resolve()) for name in SOURCES]
     paths.append(str(Path(__file__).parent.parent/'kwjd.py'))
+    paths.append(str(Path(__file__).parent.parent/'config/workflows/native-face-v1.json'))
+    paths.append(str(Path(__file__).parent.parent/'config/workflows/native-face-v1.requirements.txt'))
     packages=['torch','torchvision','basicsr','facexlib','gfpgan','numpy','opencv-python-headless']
+    rebuilt_trt=rife_backend=='cuda_trt' and provenance.get('schema')==2
+    if rebuilt_trt:packages+=['tensorrt-cu12','tensorrt-cu12-bindings','tensorrt-cu12-libs','onnx']
     if rife_backend=='cuda_onnx':
         packages+=['onnxruntime-gpu','Pillow']
         # GFPGAN's dependencies may install a second OpenCV distribution over
@@ -90,7 +99,7 @@ def template(post, *, rife_backend='cuda_trt', input_fps=25, season='S01'):
         except importlib.metadata.PackageNotFoundError:pass
         else:packages.append('opencv-python')
     versions={p:importlib.metadata.version(p) for p in packages}
-    if rife_backend=='cuda_onnx':
+    if rife_backend=='cuda_onnx' or rebuilt_trt:
         # Pin installed package manifests and actual compiled modules, including
         # CUDA/ORT kernels, rather than borrowing removed TRT runtime hashes.
         for package in packages:
@@ -113,6 +122,8 @@ def template(post, *, rife_backend='cuda_trt', input_fps=25, season='S01'):
 
 
 def prepare(post,recipe=None,validation=None,activate=False,*,rife_backend='cuda_trt',input_fps=25,season='S01'):
+    if activate and rife_backend!='cuda_trt':
+        raise ValueError('Fixed production workflow requires TensorRT; alternative runtimes are comparison-only, not cleanup recovery')
     post=Path(post).absolute();(post/'backend').mkdir(parents=True,exist_ok=True)
     cfg=template(post,rife_backend=rife_backend,input_fps=input_fps,season=season)
     output=post/'backend/runtime.native-template.json'

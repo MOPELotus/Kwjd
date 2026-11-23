@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "workflow_id": "native-light-gfpgan14-trt-rife46-overlap1-v1",
+  "production_rife_backend": "cuda_trt",
+  "cleanup_recovery": "rebuild_the_same_locked_stack_never_select_a_fallback",
+  "replacement_policy": "explicit_workflow_revision_after_matched_throughput_and_quality_acceptance",
+  "runtime": {
+    "torch": "2.6.0+cu126",
+    "torchvision": "0.21.0+cu126",
+    "gfpgan": "1.3.8",
+    "basicsr": "1.4.2",
+    "facexlib": "0.3.0",
+    "tensorrt": "10.13.3.9",
+    "onnx_conversion": "1.20.1"
+  },
+  "rife": {
+    "model": "official_vs_ml_rt_rife_v4.6",
+    "source_sha256": "6294aab9a9704f085caa65ab5bc897ac3a3ed0d054200e40b66bd7e43523e969",
+    "typed_model_sha256": "2888b81b22c2e7b5488a656dd9403cd86afc6a6eb126426962f54ffcbc72b7f4",
+    "conversion_recipe_sha256": "ed9c8e6ef07a2845230a2b4b3cd5ba29ac86a1240544653afacbd1cbdc386440",
+    "build_recipe_sha256": "bc596e572c50540b3ed04da3eb26f4a53eaefbdf99e29aa0eb33905311b5d237",
+    "precision": "strongly_typed_fp16_neural_fp32_flow_grid_warp_blend_and_io",
+    "input_shape": [1, 7, 1080, 1920],
+    "workspace_gib": 2,
+    "builder_optimization_level": 2,
+    "avg_timing_iterations": 1
+  },
+  "devices": {
+    "face": {"index": 0, "name": "NVIDIA RTX A4000", "allocation_cap_gib": 2.5, "free_reserve_gib": 3},
+    "rife": {"index": 1, "name": "Tesla T10", "compute_capability": [7, 5]},
+    "nvenc_index": 1,
+    "software_fallback": false
+  },
+  "scheduling": {"profile": "overlap1-legacy", "queued_cpu_frames": 1, "persistent_models": true, "resource_wait_in_process": false, "segment_source_frames": 250},
+  "picture": {"width": 1920, "height": 1080, "input_fps": [25, 30], "output_fps": 60, "light_filter": "clarity", "cas_strength": 0.6, "contrast": 1.03, "saturation": 1.02, "scene_cut_handling": true, "ass_after_rife": true, "video_encodes": 1},
+  "encode": {"codec": "hevc_nvenc", "profile": "main10", "preset": "p6", "tune": "hq", "cq": 16, "maxrate_mbps": 16, "bufsize_mbps": 32, "color": "bt709_tv"},
+  "audio": {"codec": "flac", "bits": 24, "minimum_sample_rate": 48000, "preserve_original_mix_pcm": true, "gain_changes": false}
+}
