@@ -25,6 +25,7 @@ Read this before touching files. Ask the human to identify your role, or infer *
 - Future episodes vary the master and reviewed subtitle/timing assets. Do not retune or replace models/devices/precision/encoding after routine cleanup. Alternative technology requires an explicit workflow revision with matched speed/quality evidence.
 
 ## Windows role
+- For Jigong exports, prioritize CacheClip release after completed local technical/visual sampling and a fresh master-SHA anchor, before upload, so the user can immediately track the next episode. Save a hash-bound local cleanup authorization/receipt, retain the master for verified transfer, and never clean or resnapshot the next Mask cache when the earlier upload finishes.
 - Background receivers and all of their SSH, SFTP, Python and media-tool child processes must launch without console windows (CREATE_NO_WINDOW for Python subprocesses). Hiding only the parent pythonw process is insufficient; preserve captured errors and transfer receipts.
 - Checkout repo at D:\qingqingwu\repo (or set root args). Read docs/WORKFLOW.md and docs/ADOPTION.md.
 - Run: python kwjd.py adopt --role windows; python kwjd.py status --role windows; discover episodes from S01 filenames.
