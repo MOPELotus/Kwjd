@@ -41,6 +41,10 @@
 - 若用户明确退役某个失败母片（本次E49），记录该次哈希与授权、只删除明确指定输出，不等同完成整集，不允许因此清理其他素材。
 
 ## 同步与当前状态
+后续母版可以在上一回生产期间完成云端接收，但不得并发生产。
+`receive_master_handoff.py`的5GiB保底按incoming真实文件系统检查，仅计本次尚未传完的母版字节；
+不再把cache/final的整链临时峰值重复计入incoming。接收收据仍明确backend_started=false，
+不构成后期准入；Worker开始本回时必须重新核对cache/final各自实际挂载的生产峰值预算。
 2026-11-22济公传使用`cache_after_master_handoff.py prepare/run`在用户排队时冻结CacheClip（当前上传已开始时也允许补拍，但只释放此后不变的快照），等待真实`receive_master_handoff.py`的SHA/字节数/远端抽样解码收据。它转存可追溯上传收据，随后重新检查本地/远端哈希、固定目录和两次快照，再只清CacheClip内容；当前本地母片保留到最终交接阶段。
 
 `receive_managed_finals.py --root <Windows数据根> --config <本机配置>`可在登录时隐藏启动，配置明确SSH alias、remote_root和episodes；单实例锁避免重复下载。仅接收标准post/reports报告中与当前母版一致、完整解码且混音PCM等价的成片，以SHA命名暂存断点续传，检查最终SHA/字节数/完整音频PCM/媒体/首中尾解码，按已登记回目命名。不同本地版本不覆盖。接收收据保持quality_checked=false；真实画面/字幕/同步/声音验收证据通过后，才执行现有收据门禁清理。离线、文件尚未发布、空间不足或失败都保留云端成片及恢复资料。

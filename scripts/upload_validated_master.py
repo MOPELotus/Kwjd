@@ -10,11 +10,13 @@ import tempfile
 import time
 from pathlib import Path
 
+BACKGROUND = {'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}
+
 
 def remote(ssh,command):
     result=None
     for attempt in range(4):
-        try:result=subprocess.run([*ssh,shlex.join(command)],capture_output=True,text=True,timeout=180)
+        try:result=subprocess.run([*ssh,shlex.join(command)],capture_output=True,text=True,encoding='utf-8',timeout=180, **BACKGROUND)
         except subprocess.TimeoutExpired:
             if attempt==3:raise
         else:
@@ -60,7 +62,7 @@ def resumable_transfer(args,source,ssh,command,ssh_binary,sftp_binary):
             with log.open('a',encoding='utf8') as output:
                 process=subprocess.Popen([sftp_binary,'-b',batch_name,'-B','131072','-R','64','-S',ssh_binary,
                     '-o','BatchMode=yes','-o','ConnectTimeout=15','-o','ServerAliveInterval=30',
-                    '-o','ServerAliveCountMax=3',args.host],stdout=output,stderr=subprocess.STDOUT)
+                    '-o','ServerAliveCountMax=3',args.host],stdout=output,stderr=subprocess.STDOUT, **BACKGROUND)
                 changed=time.monotonic();last_check=0;size=count
                 while process.poll() is None:
                     if time.monotonic()-last_check>=30:
@@ -71,7 +73,7 @@ def resumable_transfer(args,source,ssh,command,ssh_binary,sftp_binary):
                             state('UPLOADING',attempt=attempt,remote_bytes=size,total_bytes=source.stat().st_size)
                     if time.monotonic()-changed>180:
                         if os.name=='nt':
-                            subprocess.run(['taskkill','/PID',str(process.pid),'/T','/F'],capture_output=True)
+                            subprocess.run(['taskkill','/PID',str(process.pid),'/T','/F'],capture_output=True, **BACKGROUND)
                         else:process.terminate()
                         process.wait();break
                     time.sleep(5)

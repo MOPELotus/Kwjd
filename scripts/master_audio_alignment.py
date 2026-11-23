@@ -1,6 +1,7 @@
 """Measure voice-track alignment after Fairlight mixing; never change audio."""
 import argparse
 import json
+import os
 import subprocess
 from pathlib import Path
 import numpy as np
@@ -26,7 +27,8 @@ def lag(reference,mixed,rate=8000,max_seconds=.5):
 
 def audio(path,start):
     raw=subprocess.check_output(['ffmpeg','-v','error','-nostdin','-ss',str(start),'-i',str(path),
-        '-t','12','-map','0:a:0','-vn','-ac','1','-ar','8000','-f','f32le','-'])
+        '-t','12','-map','0:a:0','-vn','-ac','1','-ar','8000','-f','f32le','-'],
+        **({'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}))
     return np.frombuffer(raw,dtype='<f4').copy()
 
 

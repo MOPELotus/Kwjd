@@ -84,7 +84,8 @@ def main():
     path = args.file.resolve(strict=True)
     before = path.stat()
     info = json.loads(subprocess.check_output([
-        'ffprobe', '-v', 'error', '-show_format', '-show_streams', '-of', 'json', str(path)]))
+        'ffprobe', '-v', 'error', '-show_format', '-show_streams', '-of', 'json', str(path)],
+        **({'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {})))
     video = next(s for s in info['streams'] if s['codec_type'] == 'video')
     audio = next(s for s in info['streams'] if s['codec_type'] == 'audio')
     duration = float(info['format']['duration'])
@@ -98,10 +99,12 @@ def main():
     for start in samples:
         subprocess.run(['ffmpeg', '-v', 'error', '-xerror', '-nostdin', '-ss', str(start),
                         '-i', str(path), '-t', '3', '-map', '0:v:0', '-map', '0:a:0',
-                        '-f', 'null', '-'], check=True)
+                        '-f', 'null', '-'], check=True,
+                       **({'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}))
     peaks = subprocess.run(['ffmpeg', '-hide_banner', '-nostdin', '-i', str(path),
                             '-map', '0:a:0', '-af', 'volumedetect', '-vn', '-sn', '-dn',
-                            '-f', 'null', '-'], capture_output=True, text=True, check=True)
+                            '-f', 'null', '-'], capture_output=True, text=True, check=True,
+                           **({'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}))
     peak = re.search(r'max_volume: ([-\d.]+) dB', peaks.stderr)
     digest = digest or hashlib.file_digest(path.open('rb'), 'sha256').hexdigest()
     after = path.stat()

@@ -2,12 +2,15 @@
 import argparse
 import hashlib
 import json
+import os
 import subprocess
 from pathlib import Path
 
+BACKGROUND = {'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}
+
 
 def probe(path):
-    return json.loads(subprocess.check_output(['ffprobe','-v','error','-show_format','-show_streams','-of','json',str(path)]))
+    return json.loads(subprocess.check_output(['ffprobe','-v','error','-show_format','-show_streams','-of','json',str(path)], **BACKGROUND))
 
 
 def main():
@@ -33,9 +36,9 @@ def main():
     for i,start in enumerate(samples):
         start=max(0,min(start,duration-.1))
         subprocess.run(['ffmpeg','-v','error','-xerror','-nostdin','-threads','2','-ss',str(start),'-i',str(args.file),
-                        '-t','1','-map','0:v:0','-map','0:a:0','-f','null','-'],check=True)
+                        '-t','1','-map','0:v:0','-map','0:a:0','-f','null','-'],check=True, **BACKGROUND)
         subprocess.run(['ffmpeg','-v','error','-nostdin','-threads','2','-ss',str(start),'-i',str(args.file),
-                        '-frames:v','1','-vf','scale=640:360','-n',str(args.output/f'sample-{i}.png')],check=True)
+                        '-frames:v','1','-vf','scale=640:360','-n',str(args.output/f'sample-{i}.png')],check=True, **BACKGROUND)
     with args.file.open('rb') as f:digest=hashlib.file_digest(f,'sha256').hexdigest()
     after=args.file.stat()
     if (before.st_size,before.st_mtime_ns)!=(after.st_size,after.st_mtime_ns):raise ValueError('Master changed')

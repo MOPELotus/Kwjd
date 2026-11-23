@@ -4,8 +4,11 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import subprocess
 from pathlib import Path
+
+BACKGROUND = {'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}
 
 
 def input_rate(value):
@@ -30,7 +33,7 @@ def verify(path,rate):
     rate=input_rate(rate)
     data=json.loads(subprocess.check_output(['ffprobe','-v','error','-select_streams','v:0',
         '-show_streams','-show_packets','-show_entries',
-        'stream=time_base,r_frame_rate,avg_frame_rate,nb_frames:packet=pts','-of','json',str(path)]))
+        'stream=time_base,r_frame_rate,avg_frame_rate,nb_frames:packet=pts','-of','json',str(path)], **BACKGROUND))
     video=data['streams'][0]
     if Fraction(video['r_frame_rate'])!=rate or Fraction(video['avg_frame_rate'])!=rate:
         raise ValueError('Metadata rate mismatch')

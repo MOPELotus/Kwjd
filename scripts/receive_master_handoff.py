@@ -9,6 +9,21 @@ import time
 from pathlib import Path
 
 
+def incoming_budget(incoming, total_bytes, partial=None, free_bytes=None):
+    """Reserve only incoming's remaining bytes; production has separate gates."""
+    present = partial.stat().st_size if partial is not None and partial.is_file() else 0
+    if present > total_bytes:
+        raise ValueError('Partial longer than master; retain for inspection')
+    remaining = total_bytes - present
+    reserve = 5 * 1024**3
+    free = shutil.disk_usage(incoming).free if free_bytes is None else free_bytes
+    if free < reserve + remaining:
+        raise RuntimeError('Incoming needs remaining master bytes plus 5GiB reserve')
+    return dict(scope='incoming_transfer_only_not_production_admission',
+                remaining_master_bytes=remaining, reserve_bytes=reserve, free_bytes=free,
+                downstream_budget='Worker checks cache/final peak on their real filesystems before production')
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root',type=Path,required=True)
@@ -38,8 +53,7 @@ def main():
         return
     candidate=target if target.exists() else partial if args.finalize else None
     if candidate is None or not candidate.exists():
-        if shutil.disk_usage(incoming).free<5*1024**3+3*args.bytes:
-            raise RuntimeError('Need 5GiB reserve plus master/downstream budget')
+        incoming_budget(incoming,args.bytes,partial)
         raise SystemExit(44)
     if candidate.stat().st_size!=args.bytes:raise ValueError('Remote size mismatch; preserved')
     with candidate.open('rb') as f: digest=hashlib.file_digest(f,'sha256').hexdigest()
