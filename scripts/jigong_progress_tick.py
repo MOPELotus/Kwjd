@@ -34,9 +34,15 @@ def event(snapshot,previous):
     if clean=='FAILED_RETAINED_FOR_INSPECTION':return 'FIXED_CLEAN_RECOVERY_TEST_NEEDS_ATTENTION'
     if snapshot['review_ready'] and not job:return 'FIRST_SRT_READY_START_PRODUCTION'
     if clean=='PASSED' and not snapshot.get('clean_recovery_acknowledged',False):return 'FIXED_CLEAN_RECOVERY_TEST_PASSED'
+    following=snapshot.get('following_episode',{})
+    if following.get('handoff_present') and not following.get('master_verified'):
+        return 'FOLLOWING_MASTER_HANDOFF_REQUIRES_VERIFICATION:S03E03'
     if state in ('FAILED','WAIT_DISK','WAIT_GPU','WAIT_BACKEND_TECHNICAL','WAIT_STYLE_APPROVAL'):
         return 'PRODUCTION_NEEDS_ATTENTION:'+state
     if state=='READY' and not snapshot['cloud_final_exists']:return 'FINAL_READY_REQUIRES_ACTUAL_CODEX_QC'
+    if (state=='READY' and snapshot['cloud_final_exists'] and following.get('master_verified')
+            and following.get('review_ready') and not following.get('job_exists')):
+        return 'FOLLOWING_EPISODE_READY_FOR_SERIAL_PRODUCTION:S03E03'
     if snapshot['windows_online'] and not snapshot['windows_rule_acknowledged']:
         return 'ORIGINAL_WINDOWS_ONLINE_RULE_HANDOFF_PENDING'
     if snapshot['receipt_exists'] and not snapshot['both_cleaned']:return 'WINDOWS_RECEIPT_REQUIRES_VERIFICATION'
@@ -92,6 +98,13 @@ def inspect(root,area,config,thread,threshold,wake):
         windows_online=online,network_error=network_error,
         windows_rule_acknowledged=target.get('cloud_rule_acknowledged') is True,
         media_processes_untouched=True)
+    following=read(root/'post/managed-S03E03/progress.json')
+    if following.get('serial_after')=='S03E02':
+        snapshot['following_episode']=dict(episode='S03E03',
+            handoff_present=(root/'post/handoffs/S03E03.master-received.json').is_file(),
+            master_verified=following.get('master_handoff_verified') is True,
+            review_ready=validate_episode(root,'S03E03'),
+            job_exists=(root/'post/jobs/S03E03.json').is_file())
     try:snapshot['quota_remaining_percent']=quota()
     except Exception as error:snapshot.update(quota_remaining_percent=None,quota_error=str(error))
     kind=event(snapshot,previous);snapshot['attention_event']=kind
@@ -109,6 +122,7 @@ def inspect(root,area,config,thread,threshold,wake):
         message=('【云端半小时巡检】事件 '+kind+'。读取 post/managed-S03E02/timer-status.json 与 progress.json，'
             '接续同一济公传任务，不重复原生字幕子代理/生产Worker，不启动codex exec监督器。'
             '第一回真实SRT封存后先绑定实际母版时钟再生产；实际质量证据与lotuspc收据才交付清理。'
+            '第二回观察post/managed-S03E03/progress.json；真实到货须核验，逐回绑定字幕/母版时钟/样式，首回后串行推进，不等本地再次发命令。'
             '真实额度低于2%保存并暂停模型，后台实际媒体继续。只在需要动作/新结果时回复；处理后交回定时巡检。')
         command=[config.get('codex_binary',str(Path.home()/'.local/bin/codex')),'queue','--thread',thread,'--message',message,'--resume']
         try:

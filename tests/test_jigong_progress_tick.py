@@ -20,6 +20,22 @@ class ProgressTickTests(unittest.TestCase):
     def test_waiting_for_review_does_not_wake_model(self):
         self.assertIsNone(event(self.snapshot(),{}))
 
+    def test_following_upload_is_not_received_until_handoff_exists(self):
+        following=dict(handoff_present=False,master_verified=False,review_ready=False,job_exists=False)
+        self.assertIsNone(event(self.snapshot(following_episode=following),{}))
+        following['handoff_present']=True
+        self.assertEqual(event(self.snapshot(following_episode=following),{}),
+                         'FOLLOWING_MASTER_HANDOFF_REQUIRES_VERIFICATION:S03E03')
+
+    def test_following_episode_waits_for_serial_slot_and_independent_gates(self):
+        following=dict(handoff_present=True,master_verified=True,review_ready=True,job_exists=False)
+        self.assertIsNone(event(self.snapshot(job={'state':'PROCESSING'},following_episode=following),{}))
+        self.assertEqual(event(self.snapshot(job={'state':'READY'},cloud_final_exists=True,following_episode=following),{}),
+                         'FOLLOWING_EPISODE_READY_FOR_SERIAL_PRODUCTION:S03E03')
+        following['job_exists']=True
+        self.assertIsNone(event(self.snapshot(job={'state':'READY'},cloud_final_exists=True,following_episode=following),
+                                {'job':{'state':'READY'}}))
+
     def test_real_first_seal_can_wake_main_but_active_media_does_not(self):
         self.assertEqual(event(self.snapshot(review_ready=True),{}),'FIRST_SRT_READY_START_PRODUCTION')
         self.assertIsNone(event(self.snapshot(review_ready=True,job={'state':'PROCESSING'}),{}))
