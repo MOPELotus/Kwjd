@@ -7,7 +7,7 @@ from unittest.mock import patch
 from types import SimpleNamespace
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from jigong_progress_tick import event,quota,tick,additional_master_observations,quota_resume_state,event_signature
+from jigong_progress_tick import event,quota,tick,additional_master_observations,quota_resume_state,event_signature,recover_enospc
 
 
 class ProgressTickTests(unittest.TestCase):
@@ -19,6 +19,22 @@ class ProgressTickTests(unittest.TestCase):
 
     def test_waiting_for_review_does_not_wake_model(self):
         self.assertIsNone(event(self.snapshot(),{}))
+
+    def test_enospc_preserves_failed_receipt_and_reuses_queue_without_media_change(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);jobs=root/'post/jobs';jobs.mkdir(parents=True)
+            (root/'post/reports').mkdir()
+            old=dict(episode='S03E02',state='FAILED',detail='[Errno 28] No space left on device',master_sha256='fixed')
+            path=jobs/'S03E02.json';path.write_text(json.dumps(old))
+            media=root/'post/retained.mkv';media.write_bytes(b'verified-prefix')
+            updated=recover_enospc(root,'S03E02',old)
+            self.assertEqual(updated['state'],'WAIT_DISK')
+            self.assertEqual(updated['master_sha256'],'fixed')
+            self.assertEqual(json.loads(Path(updated['enospc_recovery_evidence']).read_text())['previous_job'],old)
+            self.assertEqual(media.read_bytes(),b'verified-prefix')
+            self.assertEqual(recover_enospc(root,'S03E02',updated),updated)
+            unrelated=dict(old,detail='Changed model hash')
+            self.assertEqual(recover_enospc(root,'S03E02',unrelated),unrelated)
 
     def test_quota_resume_survives_unknown_and_each_pause_has_distinct_signature(self):
         paused=quota_resume_state({},1.9,100)

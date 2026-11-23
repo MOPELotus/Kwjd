@@ -20,6 +20,28 @@ def read(path):
     return json.loads(path.read_text()) if path.is_file() else {}
 
 
+def recover_enospc(root,episode,job):
+    """Return an idle disk-full failure to the same queue without launching work."""
+    if job.get('state')!='FAILED' or '[Errno 28]' not in job.get('detail',''):
+        return job
+    path=root/'post/jobs'/(episode+'.json')
+    with (path.parent/'.worker.lock').open('a') as lease:
+        try:fcntl.flock(lease,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        except BlockingIOError:return job
+        current=read(path)
+        if current!=job:return current
+        stamp=time.time_ns()
+        evidence=root/'post/reports'/(episode+f'.enospc-{stamp}.json')
+        atomic_json(evidence,dict(schema_version=1,at=time.time(),previous_job=current,
+            action='Return ENOSPC to WAIT_DISK on existing Worker; capacity and resume checks still mandatory',
+            new_worker=False,media_deleted=False))
+        updated={**current,'state':'WAIT_DISK','updated_at':time.time(),
+            'detail':'Recovered disk-full exception; await actual per-filesystem capacity on existing Worker',
+            'enospc_recovery_evidence':str(evidence)}
+        atomic_json(path,updated)
+        return updated
+
+
 def quota():
     result=subprocess.run([str(Path.home()/'.local/bin/codex-quota-status')],
         capture_output=True,text=True,check=True,timeout=45)
@@ -113,6 +135,7 @@ def tick(config,wake=False):
 
 def inspect(root,area,config,thread,threshold,wake):
     previous=read(area/'timer-status.json');job=read(root/'post/jobs/S03E02.json')
+    job=recover_enospc(root,'S03E02',job)
     log=root/'post/logs/S03E02.log';now=time.time()
     from subtitle_review_supervisor import validate_episode
     review_ready=validate_episode(root,'S03E02')
