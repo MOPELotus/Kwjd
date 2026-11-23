@@ -3,6 +3,16 @@
 本流程专用于已完成OCR的草稿复核，不能把“又跑一次OCR”或文件存在当作审校。
 原始裁片、草稿和字幕正文不提交Git。所有证据和可恢复状态放数据根的 `ocr/subtitle-review/`。
 
+## 已确认的节目字形
+
+2026-11-23用户确认：《坑王驾到》原字幕字体中，内部笔画明显断开的这一字形是“逮”。
+S03E02原cue 1303、1351的两处均已由用户看图确认；卿卿误我也出现过相同字形。
+后续各回遇到相同字形直接识别为“逮”，不再重复列为“建／達／逮”疑难项。
+此规则依据同一原字幕字形，不按语义全局替换其他字，也不改变输出ASS字体。
+原图对照及用户确认保存在数据根
+`ocr/subtitle-review/evidence/S03E02/jian-glyph-reference-comparison-v1.png`、
+`ocr/subtitle-review/evidence/S03E02/parent-user-glyph-resolution-1303-1351.json`。
+
 ## 实际源图证据
 
 `subtitle_review_evidence.py`从已核对SHA的裁片抽取每条指定字幕的首/中/末帧，
