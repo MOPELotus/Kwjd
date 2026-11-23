@@ -6,6 +6,7 @@ An upload-start snapshot protects caches changed by a newer Resolve task.
 """
 import argparse
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -59,7 +60,8 @@ def cleanup(root, ep, execute=False):
     if not re.fullmatch(r'[A-Za-z0-9_.-]+', alias) or alias.startswith('-'):
         raise ValueError('Unsafe SSH alias')
     answer = subprocess.check_output(['ssh.exe', '-o', 'BatchMode=yes', alias,
-                                      f"sha256sum '{remote}'"], text=True)
+                                      f"sha256sum '{remote}'"], text=True,
+                                     **({'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}))
     if answer.split()[0].lower() != receipt['sha256']:
         raise ValueError('Remote master no longer matches uploaded master')
     if CACHE.resolve() != CACHE.absolute() or CACHE.parent.resolve() != Path('D:/ResolveWork').absolute():
@@ -101,7 +103,8 @@ def delete_uploaded_master(root, ep):
     if remote != f'qingqingwu/post/incoming/{target.name}' or not re.fullmatch(r'[A-Za-z0-9_.-]+', alias) or alias.startswith('-'):
         raise ValueError('Unsafe remote verification target')
     answer = subprocess.check_output(['ssh.exe', '-o', 'BatchMode=yes', alias,
-                                      f"sha256sum '{remote}'"], text=True)
+                                      f"sha256sum '{remote}'"], text=True,
+                                     **({'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}))
     if answer.split()[0].lower() != receipt['sha256']:
         raise ValueError('Remote copy hash differs; local master retained')
     if target.exists():

@@ -35,6 +35,12 @@ def prefix_hash(path,count):
     return digest.hexdigest()
 
 
+def sftp_upload_line(source,destination,count):
+    # reput requires an existing remote target; new targets start with put.
+    verb='reput' if count else 'put'
+    return verb+' "'+source.as_posix()+'" "'+destination+'"\n'
+
+
 def resumable_transfer(args,source,ssh,command,ssh_binary,sftp_binary):
     destination=args.remote_root+'/post/incoming/'+source.name+'.uploading'
     state_path=args.receipt.with_suffix('.transfer-state.json')
@@ -55,7 +61,7 @@ def resumable_transfer(args,source,ssh,command,ssh_binary,sftp_binary):
         state('UPLOADING',attempt=attempt,remote_bytes=count,total_bytes=source.stat().st_size)
         print('RESUMING_FROM_BYTES '+str(count),flush=True)
         with tempfile.NamedTemporaryFile('w',suffix='.sftp',encoding='utf8',delete=False) as batch:
-            batch.write('reput "'+source.as_posix()+'" "'+destination+'"\n')
+            batch.write(sftp_upload_line(source,destination,count))
             batch_name=batch.name
         log=state_path.with_suffix('.sftp.log')
         try:

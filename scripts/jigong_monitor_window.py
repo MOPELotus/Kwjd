@@ -139,6 +139,8 @@ class Monitor:
             data = json.loads(result.stdout)
             data['local_receiver'] = read(self.root / '.kwjd/managed-receiver.json')
             data['upload'] = read(self.root / '.kwjd/jigong-s03/S03E02.master-upload.json')
+            data['upload_transfers'] = [read(p) for p in sorted(
+                (self.root / '.kwjd/jigong-s03').glob('S03E*.master-upload.transfer-state.json'))]
             data['received'] = read(self.root / '.kwjd/receipts/S03E02.json')
             report = read(self.root / '.kwjd/remote-reports/S03E02.json')
             wanted = report.get('sha256')
@@ -190,6 +192,23 @@ class Monitor:
         self.set('review.all', f"全部 13 回：SRT 已封存 {len(review['sealed'])}/13  ·  ASS 样式版 {len(review['ass'])}/13（按回执统计）")
         upload = data['upload']
         self.set('delivery.upload', '母版：100% · 云端 SHA / 解码校验通过' if upload.get('transfer_verified') else '母版：尚无已验证上传收据')
+        for transfer in data.get('upload_transfers', []):
+            if transfer.get('stage') not in ('UPLOADING', 'RETRY_PENDING',
+                                              'UPLOAD_TRANSPORT_COMPLETE_REMOTE_HASH_PENDING'):
+                continue
+            source = Path(transfer.get('source', '')).name
+            episode = source.split('.')[0]
+            if not episode.startswith('S03E') or not episode[4:].isdigit():
+                continue
+            part = int(episode[4:]) - 1
+            receipt = read(self.root / '.kwjd/jigong-s03' / (episode + '.master-upload.json'))
+            if receipt.get('transfer_verified'):
+                continue
+            done = transfer.get('remote_bytes', 0)
+            total = transfer.get('total_bytes')
+            value = ratio(done, total)
+            self.set('delivery.upload', f'第 {part} 回母版上传：{percent(value)} · {done/1024**3:.2f} / {(total or 0)/1024**3:.2f} GiB'
+                     + (' · 等待远端 SHA 校验' if transfer['stage'] == 'UPLOAD_TRANSPORT_COMPLETE_REMOTE_HASH_PENDING' else ''))
         received = data['received']
         if received.get('received'):
             self.set('delivery.download', '成片：100% · 已接收校验' + ('，质量验收完成' if received.get('quality_checked') else '，等待质量验收'), 100)
