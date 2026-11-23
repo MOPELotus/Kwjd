@@ -41,6 +41,10 @@
 - 若用户明确退役某个失败母片（本次E49），记录该次哈希与授权、只删除明确指定输出，不等同完成整集，不允许因此清理其他素材。
 
 ## 同步与当前状态
+用户在第三回（S03E04）再次明确时间优先：完成本地导出检查并新鲜SHA锚定后，优先释放本回CacheClip，
+让Windows立即开始下一回；母版继续保留并独立上传。后续上传收据处理必须识别同SHA的local-anchor清理收据，
+不再次快照或删除新一回缓存。`cache_after_master_handoff.py prepare --remote-root <已核实接收根>`
+支持云端另盘的独立接收根；此模式要求已有匹配预清理收据，只校验明确路径的实际handoff，不清新缓存。
 后续母版可以在上一回生产期间完成云端接收，但不得并发生产。
 `receive_master_handoff.py`的5GiB保底按incoming真实文件系统检查，仅计本次尚未传完的母版字节；
 不再把cache/final的整链临时峰值重复计入incoming。接收收据仍明确backend_started=false，
