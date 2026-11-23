@@ -7,7 +7,7 @@ from unittest.mock import patch
 from types import SimpleNamespace
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from jigong_progress_tick import event,quota,tick,additional_master_observations
+from jigong_progress_tick import event,quota,tick,additional_master_observations,quota_resume_state,event_signature
 
 
 class ProgressTickTests(unittest.TestCase):
@@ -19,6 +19,26 @@ class ProgressTickTests(unittest.TestCase):
 
     def test_waiting_for_review_does_not_wake_model(self):
         self.assertIsNone(event(self.snapshot(),{}))
+
+    def test_quota_resume_survives_unknown_and_each_pause_has_distinct_signature(self):
+        paused=quota_resume_state({},1.9,100)
+        unknown=quota_resume_state(paused,None,200)
+        self.assertEqual(unknown,paused)
+        recovered=quota_resume_state(unknown,2,300)
+        snapshot=self.snapshot(quota_recovery_pending=recovered['resume_required'],
+            quota_remaining_percent=2,quota_pause_epoch=recovered['pause_epoch'])
+        kind=event(snapshot,{})
+        self.assertEqual(kind,'MODEL_QUOTA_RECOVERED_RESUME_EXISTING_AGENTS')
+        first=event_signature(kind,{},snapshot)
+        again=quota_resume_state(recovered,50,400)
+        self.assertEqual(again['pause_epoch'],100)
+        self.assertEqual(first,event_signature(kind,{},snapshot))
+        acknowledged={**again,'resume_required':False}
+        self.assertIsNone(event(self.snapshot(quota_recovery_pending=False,quota_remaining_percent=50),{}))
+        second=quota_resume_state(acknowledged,1.5,500)
+        self.assertTrue(second['resume_required'])
+        self.assertNotEqual(first,event_signature(kind,{},dict(snapshot,quota_pause_epoch=second['pause_epoch'])))
+        self.assertIsNone(event(self.snapshot(quota_recovery_pending=True,quota_remaining_percent=None),{}))
 
     def test_following_upload_is_not_received_until_handoff_exists(self):
         following=dict(handoff_present=False,master_verified=False,review_ready=False,job_exists=False)
@@ -105,6 +125,29 @@ class ProgressTickTests(unittest.TestCase):
                 dispatch.assert_not_called()
                 self.assertTrue(report['media_processes_untouched'])
                 self.assertEqual(media.read_bytes(),b'active-background-media')
+
+    def test_each_actual_quota_recovery_queues_same_thread_once_without_touching_media(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);project=root/'repo/config/projects/jigong-s03.json'
+            project.parent.mkdir(parents=True);project.write_text(json.dumps({'cloud_supervision':{
+                'model_pause_below_remaining_percent':2,'continue_media_processes_when_model_paused':True}}))
+            media=root/'post/actual-media.partial.mkv';media.parent.mkdir();media.write_bytes(b'keep-media-running')
+            thread='01a203c2-2956-74e1-a574-bfb03258d250'
+            config=root/'timer.json';config.write_text(json.dumps({'root':str(root),'thread_id':thread}))
+            with patch('subtitle_review_supervisor.validate_episode',return_value=False), \
+                 patch('jigong_progress_tick.subprocess.check_output',return_value='{}'), \
+                 patch('jigong_progress_tick.quota',side_effect=[1.9,ValueError('RPC'),50,50,1.5,50]), \
+                 patch('jigong_progress_tick.subprocess.run',return_value=SimpleNamespace(returncode=0,stdout='queued',stderr='')) as dispatch, \
+                 patch('builtins.print'):
+                reports=[tick(config,wake=True) for _ in range(6)]
+            self.assertEqual(dispatch.call_count,2)
+            self.assertEqual(reports[2]['attention_event'],'MODEL_QUOTA_RECOVERED_RESUME_EXISTING_AGENTS')
+            self.assertEqual(reports[3]['dispatch'],'ALREADY_QUEUED_EVENT')
+            for call in dispatch.call_args_list:
+                command=call.args[0]
+                self.assertEqual(command[command.index('--thread')+1],thread)
+                self.assertIn('--resume',command)
+            self.assertEqual(media.read_bytes(),b'keep-media-running')
 
 
 if __name__=='__main__':unittest.main()

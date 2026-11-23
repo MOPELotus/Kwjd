@@ -43,7 +43,29 @@ def additional_master_observations(root):
     return result
 
 
+def quota_resume_state(prior,remaining,now):
+    """Latch a real low-quota pause across RPC failures until main acknowledges."""
+    state=dict(prior)
+    if remaining is not None and remaining<2:
+        if not state.get('low_quota_active'):
+            state.update(pause_epoch=now,resume_required=True)
+        state['low_quota_active']=True
+    elif remaining is not None:
+        state['low_quota_active']=False
+    return state
+
+
+def event_signature(kind,job,snapshot):
+    key=[kind,job.get('updated_at') if kind and kind.startswith('PRODUCTION_STAGE_CHANGED') else None,
+        snapshot.get('clean_recovery_state') if kind=='FIRST_SRT_READY_START_PRODUCTION' else None]
+    if kind=='MODEL_QUOTA_RECOVERED_RESUME_EXISTING_AGENTS':key.append(snapshot['quota_pause_epoch'])
+    return hashlib.sha256(json.dumps(key,sort_keys=True).encode()).hexdigest()
+
+
 def event(snapshot,previous):
+    if (snapshot.get('quota_recovery_pending') and snapshot.get('quota_remaining_percent') is not None
+            and snapshot['quota_remaining_percent']>=2):
+        return 'MODEL_QUOTA_RECOVERED_RESUME_EXISTING_AGENTS'
     job=snapshot['job'];state=job.get('state');previous_job=previous.get('job',{})
     clean=snapshot.get('clean_recovery_state')
     if clean=='FAILED_RETAINED_FOR_INSPECTION':return 'FIXED_CLEAN_RECOVERY_TEST_NEEDS_ATTENTION'
@@ -126,13 +148,17 @@ def inspect(root,area,config,thread,threshold,wake):
     snapshot['additional_masters']=additional_master_observations(root)
     try:snapshot['quota_remaining_percent']=quota()
     except Exception as error:snapshot.update(quota_remaining_percent=None,quota_error=str(error))
-    kind=event(snapshot,previous);snapshot['attention_event']=kind
     remaining=snapshot['quota_remaining_percent']
+    resume_path=area/'model-quota-resume.json'
+    resume=quota_resume_state(read(resume_path),remaining,now)
+    atomic_json(resume_path,resume)
+    snapshot.update(quota_pause_epoch=resume.get('pause_epoch'),
+        quota_recovery_pending=resume.get('resume_required') is True)
+    kind=event(snapshot,previous);snapshot['attention_event']=kind
     snapshot['model_state']='WAIT_QUOTA_READ' if remaining is None else ('PAUSED_BELOW_2_PERCENT' if remaining<threshold else 'QUOTA_AVAILABLE')
     last=read(area/'timer-last-dispatch.json')
     # Stable event keys prevent repeatedly queuing the same unresolved request.
-    signature=hashlib.sha256(json.dumps([kind,job.get('updated_at') if kind and kind.startswith('PRODUCTION_STAGE_CHANGED') else None,
-        snapshot['clean_recovery_state'] if kind=='FIRST_SRT_READY_START_PRODUCTION' else None],sort_keys=True).encode()).hexdigest()
+    signature=event_signature(kind,job,snapshot)
     snapshot['dispatch']='NO_ATTENTION_EVENT' if not kind else 'MODEL_WAKE_NOT_REQUESTED'
     atomic_json(area/'timer-status.json',snapshot)
     if kind and last.get('signature')==signature and previous.get('attention_event')==kind:
@@ -143,6 +169,7 @@ def inspect(root,area,config,thread,threshold,wake):
             '第一回真实SRT封存后先绑定实际母版时钟再生产；实际质量证据与lotuspc收据才交付清理。'
             '第二回观察post/managed-S03E03/progress.json；真实到货须核验，逐回绑定字幕/母版时钟/样式，首回后串行推进，不等本地再次发命令。'
             '另盘接收根读取.kwjd/queued-master-storage.json和对应managed进度；第三回接在第二回后，禁止再次清理已开始制作的新一回Windows缓存。'
+            '额度恢复事件须核对真实额度并接续原主/原字幕代理；完成后仅将post/managed-S03E02/model-quota-resume.json的resume_required设false并记录ack，不等固定重置日期，不自行兑卡/用点数或联系其他项目。'
             '真实额度低于2%保存并暂停模型，后台实际媒体继续。只在需要动作/新结果时回复；处理后交回定时巡检。')
         command=[config.get('codex_binary',str(Path.home()/'.local/bin/codex')),'queue','--thread',thread,'--message',message,'--resume']
         try:
