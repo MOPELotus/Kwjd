@@ -28,6 +28,21 @@ def quota():
     return min(float(value) for value in values)
 
 
+def additional_master_observations(root):
+    """Observe registered receiving roots; presence only requests main review."""
+    result=[]
+    for episode,binding in read(root/'.kwjd/queued-master-storage.json').get('episodes',{}).items():
+        if not re.fullmatch(r'S03E\d{2}',episode):raise ValueError('Invalid queued episode')
+        receiving=Path(binding['remote_root_for_existing_uploader'])
+        handoff=receiving/'post/handoffs'/(episode+'.master-received.json')
+        if not receiving.is_absolute() or str(handoff)!=binding['staged_real_handoff']:
+            raise ValueError('Receiving root differs from its registered handoff')
+        progress=read(root/'post'/('managed-'+episode)/'progress.json')
+        result.append(dict(episode=episode,handoff_path=str(handoff),
+            handoff_present=handoff.is_file(),master_verified=progress.get('master_handoff_verified') is True))
+    return result
+
+
 def event(snapshot,previous):
     job=snapshot['job'];state=job.get('state');previous_job=previous.get('job',{})
     clean=snapshot.get('clean_recovery_state')
@@ -37,6 +52,9 @@ def event(snapshot,previous):
     following=snapshot.get('following_episode',{})
     if following.get('handoff_present') and not following.get('master_verified'):
         return 'FOLLOWING_MASTER_HANDOFF_REQUIRES_VERIFICATION:S03E03'
+    for queued in snapshot.get('additional_masters',[]):
+        if queued['handoff_present'] and not queued['master_verified']:
+            return 'FOLLOWING_MASTER_HANDOFF_REQUIRES_VERIFICATION:'+queued['episode']
     if state in ('FAILED','WAIT_DISK','WAIT_GPU','WAIT_BACKEND_TECHNICAL','WAIT_STYLE_APPROVAL'):
         return 'PRODUCTION_NEEDS_ATTENTION:'+state
     if state=='READY' and not snapshot['cloud_final_exists']:return 'FINAL_READY_REQUIRES_ACTUAL_CODEX_QC'
@@ -105,6 +123,7 @@ def inspect(root,area,config,thread,threshold,wake):
             master_verified=following.get('master_handoff_verified') is True,
             review_ready=validate_episode(root,'S03E03'),
             job_exists=(root/'post/jobs/S03E03.json').is_file())
+    snapshot['additional_masters']=additional_master_observations(root)
     try:snapshot['quota_remaining_percent']=quota()
     except Exception as error:snapshot.update(quota_remaining_percent=None,quota_error=str(error))
     kind=event(snapshot,previous);snapshot['attention_event']=kind
@@ -123,6 +142,7 @@ def inspect(root,area,config,thread,threshold,wake):
             '接续同一济公传任务，不重复原生字幕子代理/生产Worker，不启动codex exec监督器。'
             '第一回真实SRT封存后先绑定实际母版时钟再生产；实际质量证据与lotuspc收据才交付清理。'
             '第二回观察post/managed-S03E03/progress.json；真实到货须核验，逐回绑定字幕/母版时钟/样式，首回后串行推进，不等本地再次发命令。'
+            '另盘接收根读取.kwjd/queued-master-storage.json和对应managed进度；第三回接在第二回后，禁止再次清理已开始制作的新一回Windows缓存。'
             '真实额度低于2%保存并暂停模型，后台实际媒体继续。只在需要动作/新结果时回复；处理后交回定时巡检。')
         command=[config.get('codex_binary',str(Path.home()/'.local/bin/codex')),'queue','--thread',thread,'--message',message,'--resume']
         try:

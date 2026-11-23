@@ -7,7 +7,7 @@ from unittest.mock import patch
 from types import SimpleNamespace
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from jigong_progress_tick import event,quota,tick
+from jigong_progress_tick import event,quota,tick,additional_master_observations
 
 
 class ProgressTickTests(unittest.TestCase):
@@ -26,6 +26,26 @@ class ProgressTickTests(unittest.TestCase):
         following['handoff_present']=True
         self.assertEqual(event(self.snapshot(following_episode=following),{}),
                          'FOLLOWING_MASTER_HANDOFF_REQUIRES_VERIFICATION:S03E03')
+
+    def test_registered_separate_root_requires_real_handoff_and_main_verification(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);receiving=root/'other-volume/E04';handoff=receiving/'post/handoffs/S03E04.master-received.json'
+            registry=root/'.kwjd/queued-master-storage.json';registry.parent.mkdir()
+            binding=dict(remote_root_for_existing_uploader=str(receiving),staged_real_handoff=str(handoff))
+            registry.write_text(json.dumps({'episodes':{'S03E04':binding}}))
+            observations=additional_master_observations(root)
+            self.assertIsNone(event(self.snapshot(additional_masters=observations),{}))
+            handoff.parent.mkdir(parents=True);handoff.write_text('{}')
+            observations=additional_master_observations(root)
+            self.assertFalse(observations[0]['master_verified'])
+            self.assertEqual(event(self.snapshot(additional_masters=observations),{}),
+                             'FOLLOWING_MASTER_HANDOFF_REQUIRES_VERIFICATION:S03E04')
+            progress=root/'post/managed-S03E04/progress.json';progress.parent.mkdir(parents=True)
+            progress.write_text('{"master_handoff_verified":true}')
+            self.assertIsNone(event(self.snapshot(additional_masters=additional_master_observations(root)),{}))
+            binding['staged_real_handoff']=str(root/'wrong.json')
+            registry.write_text(json.dumps({'episodes':{'S03E04':binding}}))
+            with self.assertRaises(ValueError):additional_master_observations(root)
 
     def test_following_episode_waits_for_serial_slot_and_independent_gates(self):
         following=dict(handoff_present=True,master_verified=True,review_ready=True,job_exists=False)
