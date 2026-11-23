@@ -35,7 +35,7 @@ def main():
     if args.output.exists():
         raise FileExistsError('Refusing existing audition directory')
     if shutil.disk_usage(args.output.parent).free < 26*2**30:
-        raise RuntimeError('Requires25GiB floor plus1GiB bounded budget')
+        raise RuntimeError('Requires5GiB floor plus1GiB bounded budget')
     args.output.mkdir()
     lock=(args.output.parent/'.native-face-chain.lock').open('a+')
     fcntl.flock(lock, fcntl.LOCK_EX|fcntl.LOCK_NB)
@@ -90,7 +90,7 @@ def main():
             i,temp,free=map(int,row.split(','))
             if temp >= (95 if i==0 else 85) or free < (3072 if i==0 else 1024):
                 raise RuntimeError('GPU headroom/temperature wait required: '+rows)
-        if shutil.disk_usage(args.output).free < 25*2**30:raise RuntimeError('Disk floor reached')
+        if shutil.disk_usage(args.output).free < 5*2**30:raise RuntimeError('Disk floor reached')
         last_check=time.monotonic()
     try:
         for variant in ['none','clarity']:

@@ -35,7 +35,7 @@ def mounted_scratch_candidates(post):
             continue  # Inaccessible container namespaces are not usable storage.
 
 
-def choose_scratch(post, required_bytes, reserve_gib=25, *, candidates=None):
+def choose_scratch(post, required_bytes, reserve_gib=5, *, candidates=None):
     """Return only a user-owned writable directory with independent peak reserve.
 
     Prefer the configured disk, then search actual writable mounted disks. Never

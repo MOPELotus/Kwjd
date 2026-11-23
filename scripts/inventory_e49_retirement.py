@@ -105,7 +105,7 @@ def inventory(root):
     phase_mux = 2 * video + 2 * pcm + GIB
     free = shutil.disk_usage(root).free
     projected = free + credits[home]
-    required = 25 * GIB + incoming + max(phase_ai, phase_mux)
+    required = 5 * GIB + incoming + max(phase_ai, phase_mux)
     return {'at': datetime.now().astimezone().isoformat(), 'episode': 'S01E49',
             'operation': 'INVENTORY_ONLY', 'authorization_source': 'Human via Windows peer 2026-10-29: after dual-end new final SHA/media QC release old source and generated non-final episode artifacts; keep new server final, original program/project/SRT/fonts/compact evidence; E51 CacheClip forbidden',
             'execution_gate': 'Actual matching Windows new-file SHA/bytes and media QC proof required; quality=true is not required to retire old source under this new explicit authorization',
@@ -117,7 +117,7 @@ def inventory(root):
                 'projected_home_free_after_retirement_gib': projected/GIB,
                 'incoming_gib': incoming/GIB, 'ai_phase_gib': phase_ai/GIB,
                 'final_mux_phase_gib': phase_mux/GIB,
-                'reserve_gib': 25, 'minimum_free_before_upload_and_production_gib': required/GIB,
+                'reserve_gib': 5, 'minimum_free_before_upload_and_production_gib': required/GIB,
                 'projected_shortfall_gib': max(0, required-projected)/GIB,
                 'production_budget_sufficient': projected >= required,
                 'additional_cache_migration_bytes_not_yet_included': True,

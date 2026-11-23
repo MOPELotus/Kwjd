@@ -123,8 +123,8 @@ def main():
         raise FileExistsError('Use a new directory; previous auditions are preserved')
     args.output.parent.mkdir(parents=True, exist_ok=True)
     for path, budget in [(args.output.parent, 6), (args.tools, 1)]:
-        if shutil.disk_usage(path).free < (25+budget)*2**30:
-            raise RuntimeError('Insufficient measured disk budget above25GiB floor')
+        if shutil.disk_usage(path).free < (5+budget)*2**30:
+            raise RuntimeError('Insufficient measured disk budget above5GiB floor')
     actual_hash = digest(args.input)
     if actual_hash != args.input_sha256:
         raise ValueError('Input SHA mismatch')

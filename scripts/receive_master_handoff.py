@@ -38,8 +38,8 @@ def main():
         return
     candidate=target if target.exists() else partial if args.finalize else None
     if candidate is None or not candidate.exists():
-        if shutil.disk_usage(incoming).free<25*1024**3+3*args.bytes:
-            raise RuntimeError('Need 25GiB reserve plus master/downstream budget')
+        if shutil.disk_usage(incoming).free<5*1024**3+3*args.bytes:
+            raise RuntimeError('Need 5GiB reserve plus master/downstream budget')
         raise SystemExit(44)
     if candidate.stat().st_size!=args.bytes:raise ValueError('Remote size mismatch; preserved')
     with candidate.open('rb') as f: digest=hashlib.file_digest(f,'sha256').hexdigest()

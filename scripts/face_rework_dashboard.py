@@ -40,7 +40,7 @@ def render(root):
             f"暂估剩余推理：{eta}（按累计分段速度；不含暂停、拼接和最终审校）",
             '第一回保留全部现有60fps帧；仅GFPGAN，不再次RIFE或烧字幕',
             f"worker记录PID（可能已退出）：{state.get('pid','?')} | 服务自动重试次数：{service.get('NRestarts','?')}",
-            f"工作磁盘空闲：{data.get('free_gib',0):.2f} GiB（底线25 GiB）",
+            f"工作磁盘空闲：{data.get('free_gib',0):.2f} GiB（底线5 GiB）",
             'GPU遥测：编号 / 设备 / 温度 / 显存已用 / 显存空闲 / 利用率',
             str(data.get('gpu','unknown')),
             '显卡0修脸；显卡1当前闲置正常。保护：显卡0温度95°C、空闲3GiB。',

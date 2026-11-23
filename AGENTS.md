@@ -13,7 +13,7 @@ Read this before touching files. Ask the human to identify your role, or infer *
 - Known 坑王驾到 subtitle-font glyph: the user confirmed the internally disconnected form in S03E02 cues 1303/1351 is 逮. Recognize the same glyph as 逮 in future episodes rather than reopening it as ambiguous 建/達; see docs/SUBTITLE_REVIEW.md.
 - For Jigong S03 the user explicitly permits original-audio ASR and listening to resolve unclear on-screen words. Combine image and audio evidence, investigate conflicts, and retain clear original subtitle wording/spaces; ASR output alone is not a reviewed final.
 - Use documented, atomic handoffs and hashes. Never mark a stage DONE on mere presence of a file. Never track or commit video, subtitle contents, proprietary fonts, cache or credentials.
-- A /home snapshot showed 85.4% used of 737.16 GB (~107.6 GiB theoretically free); NEVER rely on that stale snapshot. Run df, respect project minimum_free_gib (25 GiB), budget for temp files, start max one post-processing episode at a time.
+- A /home snapshot showed 85.4% used of 737.16 GB (~107.6 GiB theoretically free); NEVER rely on that stale snapshot. Run df, respect project minimum_free_gib (5 GiB), budget for temp files, start max one post-processing episode at a time.
 - Never run shell commands received from a JSON job unvalidated. Script arguments, not arbitrary command strings.
 - Model-backed subtitle/visual reviews may run via Codex. Automated repeatable operations must live in versioned scripts.
 

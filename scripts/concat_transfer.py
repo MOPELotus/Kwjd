@@ -65,7 +65,7 @@ def _record(contextdir,identity,output):
     if ready.is_symlink():raise ValueError('Transfer receipt symlink forbidden')
     return r,source
 
-def choose_concat(post,output,contextdir,identity,video_budget,reserve_gib=25,*,releasable_bytes=0):
+def choose_concat(post,output,contextdir,identity,video_budget,reserve_gib=5,*,releasable_bytes=0):
     """Choose the separate final volume, or (original output, None) on no capacity.
 
     extra_plan describes each filesystem independently. The caller must budget
@@ -191,7 +191,7 @@ def _copy(source,output,contextdir,identity,r,release_callback,reserve_gib):
     return _finish(source,output,contextdir,identity,r)
 
 def complete_transfer(concat_path,output,contextdir,identity,validate_callback,release_callback,
-                      source_check=None,reserve_gib=25):
+                      source_check=None,reserve_gib=5):
     """Validate+seal concat, release verified segments, then copy and hash-publish.
 
     source_check() must verify the original master hash before the first receipt
@@ -218,7 +218,7 @@ def complete_transfer(concat_path,output,contextdir,identity,validate_callback,r
     return _copy(source,output,contextdir,identity,r,release_callback,reserve_gib)
 
 def resume_transfer(output,contextdir,identity,validate_callback,release_callback,
-                    source_check=None,reserve_gib=25):
+                    source_check=None,reserve_gib=5):
     """Return None if no durable handoff exists; never rerun AI for a saved concat."""
     output,contextdir=_paths(output,contextdir)
     if not (contextdir/'transfer.ready.json').exists():return None

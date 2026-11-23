@@ -28,8 +28,8 @@ def transcribe(root,episode,start,end,output,cache):
     source_sha=sha(source)
     if not transfer.get("transfer_verified") or transfer["sha256"]!=source_sha:
         raise ValueError("Changed original clip")
-    if shutil.disk_usage(root).free<28*1024**3:
-        raise RuntimeError("Need 25 GiB reserve plus 3 GiB bounded ASR/cache budget")
+    if shutil.disk_usage(root).free<8*1024**3:
+        raise RuntimeError("Need 5 GiB reserve plus 3 GiB bounded ASR/cache budget")
     output.mkdir(parents=True,exist_ok=False); cache.mkdir(parents=True,exist_ok=True)
     audio=output/"original-interval-16k.wav"
     subprocess.run(["ffmpeg","-v","error","-nostdin","-threads","2","-seek_timestamp","1",

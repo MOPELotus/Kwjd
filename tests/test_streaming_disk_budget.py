@@ -18,7 +18,7 @@ class StreamingBudgetTests(unittest.TestCase):
         self.assertGreater(result['additional_peak_bytes'],37*GIB)
         self.assertLess(result['additional_peak_bytes'],38*GIB)
         self.assertEqual(result['max_video_bitrate'],40_000_000)
-        self.assertEqual(result['reserve_gib'],25)
+        self.assertEqual(result['reserve_gib'],5)
     def test_cross_volume_admission_without_png_dump_and_preserves_floor(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);cfg={'fingerprint':'model','scratch':str(root),'rife_backend':'cuda_trt_sm86','post_root':str(root)};fp=backend.fingerprint(cfg)

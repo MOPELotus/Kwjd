@@ -39,8 +39,8 @@ def main():
     post=args.post.resolve();post.mkdir(parents=True,exist_ok=True)
     env=post/'face-venv'; python=env/'bin/python'
     budget=15 if not env.exists() else 2
-    if shutil.disk_usage(post).free<(25+budget)*1024**3:
-        raise RuntimeError('Need 25GiB reserve plus fixed-runtime recovery budget')
+    if shutil.disk_usage(post).free<(5+budget)*1024**3:
+        raise RuntimeError('Need 5GiB reserve plus fixed-runtime recovery budget')
     if not env.exists():subprocess.run(['python3','-m','venv',str(env)],check=True)
     expected=locked_packages()
     inspect_code=('import importlib.metadata as m,json,sys; names=json.loads(sys.argv[1]); '

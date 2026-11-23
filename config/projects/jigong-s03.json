@@ -39,7 +39,7 @@
     "preserve_native_rate_if_at_least": 96000,
     "minimum_channels": 1
   },
-  "minimum_free_gib": 25,
+  "minimum_free_gib": 5,
   "keep_enhanced": false,
   "note": "Explicit Jigong S03 profile; only S03E02 is admitted to the initial managed postproduction handoff.",
   "master_export": {

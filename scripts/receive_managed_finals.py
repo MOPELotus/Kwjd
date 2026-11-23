@@ -155,8 +155,8 @@ def receive(root, config, ep):
         raise ValueError('Different existing local final retained')
     if not target.exists():
         remaining = report['bytes'] - (part.stat().st_size if part.exists() else 0)
-        if shutil.disk_usage(root).free < 25 * 1024**3 + max(0, remaining):
-            raise ValueError('Need download space plus 25GiB reserve')
+        if shutil.disk_usage(root).free < 5 * 1024**3 + max(0, remaining):
+            raise ValueError('Need download space plus 5GiB reserve')
         subprocess.run([sys.executable, str(Path(__file__).with_name('resume_sftp_download.py')),
                         '--ssh-alias', config['host'], '--remote',
                         base + '/post/final/' + ep + '.final-1080p60.mkv',

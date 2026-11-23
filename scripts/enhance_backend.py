@@ -222,7 +222,7 @@ def run(master, output, episode, cfg, *, source_start=0, source_frames=None, pre
         restorer=Restorer(cfg)
     # Process stderr goes directly to the worker's persistent log, not an unread pipe.
     def invoke(args):
-        check_space(cfg['scratch'],128*1024**2,25)
+        check_space(cfg['scratch'],128*1024**2,5)
         model_start=time.monotonic()
         result=subprocess.run(args,env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
         print(json.dumps({'model':Path(args[0]).name,'seconds':round(time.monotonic()-model_start,3)}),flush=True)

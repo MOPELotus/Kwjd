@@ -78,7 +78,7 @@ def check_space(path, required_bytes, reserve_gib):
     return free
 
 
-def ensure_enhanced(master, enhanced, backend, episode, log, reserve_gib=25):
+def ensure_enhanced(master, enhanced, backend, episode, log, reserve_gib=5):
     """No ASS/SRT dependency; accept only hash-bound, probe-validated output.
 
     The executable backend must publish a JSON disk plan with --plan INPUT.

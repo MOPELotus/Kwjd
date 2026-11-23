@@ -114,7 +114,7 @@ def template(post, *, rife_backend='cuda_trt', input_fps=25, season='S01'):
         face_versions=versions,restore_gpu=0,restore_gpu_name='NVIDIA RTX A4000',
         restore_memory_gib=2.5,restore_free_reserve_gib=3.0,light_filter='clarity',max_video_mbps=16,
         segment_source_frames=250,
-        scratch=str(post/'cache/scratch'),minimum_free_gib=max(25,minimum_free_gib()),
+        scratch=str(post/'cache/scratch'),minimum_free_gib=minimum_free_gib(),
         file_sha256={p:sha256(p) for p in sorted(set(paths))})
     cfg.update(scheduling_profile())
     cfg.pop('native_recipe',None);cfg.pop('native_recipe_sha256',None)

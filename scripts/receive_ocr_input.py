@@ -22,8 +22,8 @@ def main():
     partial=folder/(args.episode+'.mp4.uploading')
     candidate=target if target.exists() else partial if args.finalize else None
     if candidate is None or not candidate.is_file():
-        if shutil.disk_usage(folder).free < 25*1024**3:
-            raise RuntimeError('Less than 25 GiB free')
+        if shutil.disk_usage(folder).free < 5*1024**3:
+            raise RuntimeError('Less than 5 GiB free')
         raise SystemExit(44)
     with candidate.open('rb') as stream:
         actual=hashlib.file_digest(stream,'sha256').hexdigest()

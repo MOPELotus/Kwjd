@@ -50,7 +50,7 @@ def plan(master,cfg,output=None,episode=None):
         raise ValueError('Native ASS recipe belongs to a different master')
     result=engine.disk_plan(engine.source_info(master,cfg.get('input_frame_rate',25)),cfg)
     # CUDA uses rawvideo pipes: only compressed video, receipts and logs touch disk.
-    # Retain the portable PNG pipeline's8GiB bound and the25GiB filesystem floor.
+    # Retain the portable PNG pipeline's8GiB bound and the5GiB filesystem floor.
     streaming=cfg.get('rife_backend') in ('cuda_onnx','cuda_trt','cuda_trt_sm86')
     working_bytes=512*1024**2 if streaming else 8*GIB
     result['scratch_peak_bytes']=working_bytes
