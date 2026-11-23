@@ -140,7 +140,9 @@ def submit(root,master,ass,check_only):
         prior=load(job_path)
         if any(prior.get(key)!=value for key,value in identity.items()):raise ValueError('Existing job input binding differs; retained')
         if prior.get('state') in ('READY','FAILED'):return dict(state=prior['state'],episode=ep,job_retained=True)
-    else:atomic_json(job_path,{**identity,'state':'QUEUED','created_at':time.time()})
+    else:
+        job_path.parent.mkdir(parents=True,exist_ok=True)
+        atomic_json(job_path,{**identity,'state':'QUEUED','created_at':time.time()})
     unit='kwjd-fixed-'+ep.lower()
     active=subprocess.run(['systemctl','--user','is-active','--quiet',unit+'.service']).returncode==0
     if not active:
