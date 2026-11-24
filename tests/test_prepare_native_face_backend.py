@@ -136,7 +136,9 @@ class PrepareNativePolicyTests(unittest.TestCase):
         self.assertEqual(cfg['rife_backend'],'cuda_onnx')
         self.assertEqual(cfg['file_sha256'][str(model)],prepare.sha256(model))
         self.assertEqual(cfg['gpu_name'],'Tesla T10')
-        self.assertGreaterEqual(cfg['minimum_free_gib'],25)
+        self.assertEqual(cfg['minimum_free_gib'],5)
+        clock_helper=str(Path(prepare.__file__).with_name('concat_clock.py').resolve())
+        self.assertEqual(cfg['file_sha256'][clock_helper],prepare.sha256(Path(clock_helper)))
         self.assertFalse(any(k.startswith('rife_trt') for k in cfg))
         self.assertFalse((self.post/'backend/native-enabled.json').exists())
         with self.assertRaises(FileNotFoundError):

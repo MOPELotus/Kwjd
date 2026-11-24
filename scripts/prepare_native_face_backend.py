@@ -16,7 +16,7 @@ from enhance_stage import atomic_json,sha256
 from face_frame_processor import WEIGHTS
 from cuda_trt import validate_assets
 
-SOURCES=['enhance_backend.py','enhance_stage.py','segmented_backend.py','concat_transfer.py',
+SOURCES=['enhance_backend.py','enhance_stage.py','segmented_backend.py','concat_clock.py','concat_transfer.py',
     'linux_stage_handoff.py','cuda_trt.py','cuda_rife.py','frame_clock.py','native_face_pipeline.py','native_face_recipe.py',
     'native_frame_queue.py','native_resource_gate.py',
     'native_face_job.py','benchmark_native_face.py','face_frame_processor.py','fixed_workflow.py',
