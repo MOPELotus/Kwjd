@@ -114,3 +114,9 @@ Windows限域清理成功后再原子上传 `post/receipts/S03E02.windows-cleanu
 
 `upload_validated_master.py`遇临时DNS故障可显式传`--connect-address <经核实IP> --host-key-alias <既有known_hosts身份>`。
 二者必须同时提供，仍强制校验原有服务器公钥；SSH与SFTP共用该连接设置，不修改系统DNS、不关闭主机身份校验。
+
+接收盘暂时不足时可给上传入口增加`--wait-for-admission`：本地隐藏进程每60秒读取最终接收根下
+`post/handoffs/<EP>.upload-admission.json`，必须同时匹配episode、母版SHA、字节数，且检查时间
+不超过180秒、`admitted=true`与`assessment.allowed=true`才允许开传。等待状态写本地transfer-state；
+失联、未就绪或过期状态均只等待，不占用模型、不发送母版、不清后续Mask缓存。准入后重新哈希本地母版，
+再沿用完整传输/远端SHA/解码收据流程；此准入只管接收容量，不等于生产或质量批准。

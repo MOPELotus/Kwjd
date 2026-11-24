@@ -38,6 +38,39 @@ def remote(ssh,command):
     return result
 
 
+def wait_for_admission(args, ssh, episode, digest, size):
+    """Wait without a model or transfer until a fresh cloud disk lease allows it."""
+    record = args.remote_root + '/post/handoffs/' + episode + '.upload-admission.json'
+    state_path = args.receipt.with_suffix('.transfer-state.json')
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    while True:
+        check = remote(ssh, ['cat', record])
+        admission = None
+        if check is not None and check.returncode == 0:
+            try:
+                admission = json.loads(check.stdout)
+            except json.JSONDecodeError:
+                pass
+        if admission is not None:
+            if (admission.get('episode') != episode
+                    or admission.get('expected_master_sha256') != digest
+                    or admission.get('expected_master_bytes') != size):
+                raise ValueError('Cloud upload admission belongs to a different master')
+            stamp = admission.get('checked_at')
+            fresh = (type(stamp) in (int, float) and 0 <= time.time() - stamp <= 180)
+            if (fresh and admission.get('admitted') is True
+                    and admission.get('assessment', {}).get('allowed') is True):
+                print('CLOUD_CAPACITY_ADMITTED ' + episode, flush=True)
+                return
+        state = dict(stage='WAIT_REMOTE_CAPACITY', checked_at=time.time(),
+                     source=str(args.validation), destination=record, remote_bytes=0,
+                     total_bytes=size, admission=admission)
+        temporary = state_path.with_suffix('.json.tmp')
+        temporary.write_text(json.dumps(state, indent=2), encoding='utf8')
+        temporary.replace(state_path)
+        time.sleep(60)
+
+
 def prefix_hash(path,count):
     digest=hashlib.sha256()
     with path.open('rb') as stream:
@@ -113,6 +146,8 @@ def main():
     parser.add_argument('--receipt',type=Path,required=True)
     parser.add_argument('--connect-address',help='Verified current IP for a transient DNS failure')
     parser.add_argument('--host-key-alias',help='Existing known_hosts identity; mandatory with an IP override')
+    parser.add_argument('--wait-for-admission',action='store_true',
+                        help='Wait for the matching fresh cloud capacity record before starting a transfer')
     args=parser.parse_args()
     if not re.fullmatch('[A-Za-z0-9_.-]+',args.host) or not re.fullmatch('/[A-Za-z0-9_./-]+',args.remote_root):
         parser.error('Plain SSH alias and absolute remote root required')
@@ -135,6 +170,16 @@ def main():
     if rate not in ('25/1','30/1') or data['video']['r_frame_rate']!=rate:
         raise ValueError('Unexpected validated frame rate')
     command+=['--expected-frame-rate',rate]
+    if args.wait_for_admission:
+        wait_for_admission(args, ssh, episode, digest, before.st_size)
+        # The user may leave the waiting process running while the disk clears.
+        # Re-anchor the actual source after the wait instead of trusting an old hash.
+        after_wait = source.stat()
+        with source.open('rb') as stream:
+            current_digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+        if current_digest != digest or after_wait.st_size != before.st_size:
+            raise ValueError('Master changed while waiting for cloud capacity')
+        before = after_wait
     check=remote(ssh,command)
     if check.returncode==44:
         print('UPLOADING '+episode,flush=True)
