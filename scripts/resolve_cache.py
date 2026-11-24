@@ -26,14 +26,53 @@ def snapshot(folder):
         if path.is_symlink() or (hasattr(path, 'is_junction') and path.is_junction()):
             raise ValueError('Cache links/junctions are retained, never followed for deletion')
         stat = path.stat()
-        entries.append({'path': path.relative_to(folder).as_posix(),
+        entry = {'path': path.relative_to(folder).as_posix(),
                         'directory': path.is_dir(), 'bytes': stat.st_size if path.is_file() else 0,
-                        'mtime_ns': stat.st_mtime_ns})
+                        'mtime_ns': stat.st_mtime_ns}
+        if path.is_file() and path.name == 'Info.txt' and stat.st_size <= 65536:
+            entry['content_sha256'] = sha256(path)
+        entries.append(entry)
     return {'exists': True, 'entries': entries}
 
 
+def snapshots_match(baseline, current):
+    """Allow identical-content small Info.txt rewrites and their parent mtimes.
+
+    Media timestamps, changed metadata contents, additions and removals still fail.
+    Legacy snapshots without a metadata hash retain their original strict gate.
+    """
+    if baseline.get('exists') != current.get('exists'):
+        return False
+    old = {x['path']: x for x in baseline['entries']}
+    new = {x['path']: x for x in current['entries']}
+    if (old.keys() != new.keys() or len(old) != len(baseline['entries'])
+            or len(new) != len(current['entries'])):
+        return False
+    info_rewrites = [name for name, before in old.items()
+                     if Path(name).name == 'Info.txt' and before.get('content_sha256')
+                     and before.get('mtime_ns') != new[name].get('mtime_ns')
+                     and {k:v for k,v in before.items() if k != 'mtime_ns'}
+                     == {k:v for k,v in new[name].items() if k != 'mtime_ns'}]
+    for name, before in old.items():
+        after = dict(new[name])
+        if 'content_sha256' not in before:
+            after.pop('content_sha256', None)
+        if before == after:
+            continue
+        same_info = (Path(name).name == 'Info.txt' and before.get('content_sha256')
+                     and before.get('content_sha256') == after.get('content_sha256'))
+        info_parent = (before.get('directory') is True
+                       and any(Path(info).is_relative_to(Path(name)) for info in info_rewrites))
+        if info_parent or same_info:
+            if ({k:v for k,v in before.items() if k != 'mtime_ns'}
+                    == {k:v for k,v in after.items() if k != 'mtime_ns'}):
+                continue
+        return False
+    return True
+
+
 def check_snapshot(folder, baseline):
-    if snapshot(folder) != baseline:
+    if not snapshots_match(baseline, snapshot(folder)):
         raise ValueError('CacheClip changed since upload began; a new/active task may own it')
 
 
@@ -148,7 +187,7 @@ def cleanup_local_anchor(root, ep, execute=False, expected_snapshot=None):
     if CACHE.resolve() != CACHE.absolute() or CACHE.parent.resolve() != Path('D:/ResolveWork').absolute():
         raise ValueError('CacheClip resolves outside the exact authorized directory')
     baseline = snapshot(CACHE)
-    if expected_snapshot is not None and baseline != expected_snapshot:
+    if expected_snapshot is not None and not snapshots_match(expected_snapshot, baseline):
         raise ValueError('CacheClip changed since the queued cleanup request; retain newer cache')
     report = {'episode': ep, 'state': 'LOCAL_ANCHORED_CACHE_PLAN', 'checked_at': now(),
               'master_sha256': expected, 'master_retained': True, 'cache_path': str(CACHE),
