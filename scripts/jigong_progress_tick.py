@@ -160,7 +160,7 @@ def inspect(root,area,config,thread,threshold,wake):
         subtitle_text_cues_checked=len(review.get('text_reviewed_original_cue_ids',[])),
         cloud_final_exists=(root/'post/handoffs'/(episode+'.cloud-final.json')).is_file(),
         receipt_exists=(root/'post/receipts/S03E02.json').is_file(),
-        both_cleaned=read(area/'progress.json').get('stage')=='DELIVERED_AND_GENERATED_ARTIFACTS_CLEANED',
+        both_cleaned=progress.get('first_episode_delivery_cleaned') is True or progress.get('stage')=='DELIVERED_AND_GENERATED_ARTIFACTS_CLEANED',
         windows_online=online,network_error=network_error,
         windows_rule_acknowledged=target.get('cloud_rule_acknowledged') is True,
         media_processes_untouched=True)
