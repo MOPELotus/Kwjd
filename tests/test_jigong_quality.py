@@ -8,6 +8,17 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 import jigong_quality as m
 
 class QualityTests(unittest.TestCase):
+    def test_each_following_chapter_requires_its_own_real_master_receipt(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);folder=root/'post/handoffs';folder.mkdir(parents=True)
+            path=folder/'S03E03.master-received.json'
+            with self.assertRaises(FileNotFoundError):m.master_identity(root,'S03E03')
+            path.write_text(json.dumps(dict(episode='S03E03',transfer_verified=True,sha256='e'*64,bytes=10)))
+            self.assertEqual(m.master_identity(root,'S03E03'),'e'*64)
+            path.write_text(json.dumps(dict(episode='S03E04',transfer_verified=True,sha256='e'*64,bytes=10)))
+            with self.assertRaises(ValueError):m.master_identity(root,'S03E03')
+            with self.assertRaises(ValueError):m.master_identity(root,'S03E15')
+
     def fixture(self,root):
         post=root/'post';(post/'reports').mkdir(parents=True);(post/'receipts').mkdir()
         evidence=post/'evidence.json';evidence.write_text('actual review fixture')

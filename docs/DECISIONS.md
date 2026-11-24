@@ -107,3 +107,5 @@ The user requested another check of lossy candidates. `--upgrade-lossy` rechecks
 
 
 2026-11-22 用户纠正固定工作流接管：仓库用于锁定环境、工作栈及全链条细节，后续更换母片与ASS即可重复运行。正常清理后的缺失资产必须按既定GFPGAN/A4000+强类型TensorRT RIFE/T10+overlap1配方重新部署；不得以资产已清理为理由改成未证明更快的ONNX方案。此前S03 ONNX短测的生产准入已撤回，未启动整回、无既有成片受影响。固定配方见config/workflows/native-face-v1.json；替代方案只有经过同条件速度与质量验收并明确修订工作流后才可采用。
+
+- 2026-11-24 济公传首回完成后执行既有13回持续授权：逐回真实时钟/字幕/样式/当前固定双卡准入，上一回实际质量通过后串行续作；Windows接收与下一回生产独立。原单服务交接时持队列锁退役已READY空闲作用域，禁止并存多个Worker循环。质量验收器按本回真实接收SHA验证，半小时巡检跟随active_episode，最终清理继续要求本回lotuspc收据。

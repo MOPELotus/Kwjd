@@ -99,6 +99,45 @@ def ensure_timing(root,ep,master_sha,srt_sha):
     return read_mapping(post,ep,master_sha,srt_sha)
 
 
+def serial_gate(root,episode):
+    """A new chapter needs the previous real final QC, not its download."""
+    if not episode.startswith('S03'):return
+    for path in (root/'post/jobs').glob('S03E*.json'):
+        if path.stem!=episode and load(path).get('state')!='READY':
+            raise WaitInput('Another cloud episode still owns the serial slot: '+path.stem)
+    number=int(episode[4:])
+    if number>2:
+        previous=f'S03E{number-1:02d}'
+        path=root/'post/jobs'/(previous+'.json')
+        if not path.exists() or load(path).get('state')!='READY':
+            raise WaitInput('Previous chapter media must finish first')
+        from jigong_quality import verify_quality
+        quality=verify_quality(root,episode=previous)
+        manifest=load(root/'post/handoffs'/(previous+'.cloud-final.json'))
+        if (manifest.get('server_quality_checked') is not True
+                or manifest.get('sha256')!=quality['final_sha256']
+                or manifest.get('quality_evidence_sha256')!=quality['quality_sha256']):
+            raise WaitInput('Previous chapter actual final QC must be published first')
+
+
+def retire_idle_worker(root,episode,unit):
+    """Reuse the same S03 unit; never leave an older scoped loop alongside it."""
+    if not episode.startswith('S03'):return
+    active=subprocess.run(['systemctl','--user','is-active','--quiet',unit+'.service']).returncode==0
+    if not active:return
+    pid=int(subprocess.check_output(['systemctl','--user','show',unit+'.service','--property=MainPID','--value'],text=True))
+    args=Path(f'/proc/{pid}/cmdline').read_bytes().split(b'\0')
+    if b'--episode' not in args:raise WaitInput('Unexpected Worker scope; retain process')
+    owner=args[args.index(b'--episode')+1].decode()
+    if owner==episode:return
+    if load(root/'post/jobs'/(owner+'.json')).get('state')!='READY':
+        raise WaitInput('Previous Worker still owns media work')
+    with (root/'post/jobs/.worker.lock').open('a') as lease:
+        try:fcntl.flock(lease,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        except BlockingIOError:raise WaitInput('Worker is busy; retain process and retry')
+        subprocess.run(['systemctl','--user','stop',unit+'.service'],check=True)
+
+
 def run(root,master,ass,check_only=False):
     with (root/'post/.fixed-submit.lock').open('a') as lease:
         fcntl.flock(lease,fcntl.LOCK_EX|fcntl.LOCK_NB)
@@ -112,6 +151,7 @@ def submit(root,master,ass,check_only):
     project=select_project(repo,match[1]);os.environ['KWJD_PROJECT']=str(project)
     ep,digest,subtitle=inputs(root,master,ass)
     timing=ensure_timing(root,ep,digest,subtitle['srt_sha256'])
+    serial_gate(root,ep)
     if check_only:return dict(state='INPUT_IDENTITIES_AND_CLOCK_VERIFIED',episode=ep,production_started=False,timing=timing)
     clean_report=root/'post/reports/fixed-clean-recovery.json'
     if clean_report.exists() and load(clean_report).get('state','').startswith('RUNNING_'):
@@ -132,6 +172,8 @@ def submit(root,master,ass,check_only):
     validate_fixed_profile(template)  # Full package lock was verified by bootstrap in its own venv.
     from enhance_stage import atomic_json,sha256
     style=freeze_style(root,ep,subtitle)
+    unit='kwjd-fixed-s03e02' if ep.startswith('S03') else 'kwjd-fixed-'+ep.lower()
+    retire_idle_worker(root,ep,unit)
     job_path=root/'post/jobs'/(ep+'.json')
     identity=dict(schema_version=1,episode=ep,master=f'incoming/{ep}.clean-master.mov',
         style=style.relative_to(root/'post').as_posix(),output=f'final/{ep}.final-1080p60.mkv',master_sha256=digest,
@@ -143,7 +185,6 @@ def submit(root,master,ass,check_only):
     else:
         job_path.parent.mkdir(parents=True,exist_ok=True)
         atomic_json(job_path,{**identity,'state':'QUEUED','created_at':time.time()})
-    unit='kwjd-fixed-'+ep.lower()
     active=subprocess.run(['systemctl','--user','is-active','--quiet',unit+'.service']).returncode==0
     if not active:
         subprocess.run(['systemd-run','--user','--collect','--unit',unit,

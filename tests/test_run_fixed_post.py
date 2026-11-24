@@ -7,7 +7,7 @@ from unittest.mock import patch
 import hashlib
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from run_fixed_post import inputs,WaitInput,select_project,freeze_style
+from run_fixed_post import inputs,WaitInput,select_project,freeze_style,serial_gate,retire_idle_worker
 
 
 class FixedPostInputGateTests(unittest.TestCase):
@@ -32,7 +32,39 @@ class FixedPostInputGateTests(unittest.TestCase):
     def test_unadmitted_episode_is_not_added_to_queue(self):
         repo=Path(__file__).resolve().parents[1]
         self.assertEqual(select_project(repo,'S03E02').name,'jigong-s03.json')
-        with self.assertRaisesRegex(ValueError,'admitted'):select_project(repo,'S03E03')
+        self.assertEqual(select_project(repo,'S03E03').name,'jigong-s03.json')
+        with self.assertRaisesRegex(ValueError,'admitted'):select_project(repo,'S03E15')
+
+    def test_next_chapter_cannot_skip_prior_media_or_actual_quality(self):
+        jobs=self.root/'post/jobs';jobs.mkdir()
+        previous=jobs/'S03E02.json';previous.write_text(json.dumps(dict(state='ENHANCING')))
+        with self.assertRaises(WaitInput):serial_gate(self.root,'S03E03')
+        previous.write_text(json.dumps(dict(state='READY')))
+        with patch('jigong_quality.verify_quality',side_effect=ValueError('Missing real quality')):
+            with self.assertRaises(ValueError):serial_gate(self.root,'S03E03')
+
+    def test_next_chapter_needs_qc_manifest_but_not_windows_receipt(self):
+        jobs=self.root/'post/jobs';jobs.mkdir();(jobs/'S03E02.json').write_text(json.dumps(dict(state='READY')))
+        quality=dict(final_sha256='a'*64,quality_sha256='b'*64)
+        manifest=self.root/'post/handoffs/S03E02.cloud-final.json'
+        manifest.write_text(json.dumps(dict(server_quality_checked=True,sha256='a'*64,quality_evidence_sha256='b'*64)))
+        with patch('jigong_quality.verify_quality',return_value=quality):serial_gate(self.root,'S03E03')
+        manifest.write_text(json.dumps(dict(server_quality_checked=True,sha256='c'*64,quality_evidence_sha256='b'*64)))
+        with patch('jigong_quality.verify_quality',return_value=quality):
+            with self.assertRaises(WaitInput):serial_gate(self.root,'S03E03')
+
+    def test_serial_service_retires_only_an_idle_ready_scope(self):
+        from subprocess import CompletedProcess
+        jobs=self.root/'post/jobs';jobs.mkdir();previous=jobs/'S03E02.json'
+        with patch('run_fixed_post.subprocess.run',return_value=CompletedProcess([],0)) as run, \
+                patch('run_fixed_post.subprocess.check_output',return_value='12345'), \
+                patch.object(Path,'read_bytes',return_value=b'python\0server_worker.py\0--episode\0S03E02\0'):
+            previous.write_text(json.dumps(dict(state='ENHANCING')))
+            with self.assertRaises(WaitInput):retire_idle_worker(self.root,'S03E03','kwjd-fixed-s03e02')
+            self.assertEqual(run.call_count,1)  # is-active only; no stop
+            run.reset_mock();previous.write_text(json.dumps(dict(state='READY')))
+            retire_idle_worker(self.root,'S03E03','kwjd-fixed-s03e02')
+            self.assertEqual(run.call_args.args[0],['systemctl','--user','stop','kwjd-fixed-s03e02.service'])
 
     def test_next_master_approval_does_not_rebind_an_active_episode_style(self):
         folder=self.root/'post/styles';folder.mkdir();template=folder/'template.ass'

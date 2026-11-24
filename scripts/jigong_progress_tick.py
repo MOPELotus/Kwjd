@@ -81,6 +81,7 @@ def event_signature(kind,job,snapshot):
     key=[kind,job.get('updated_at') if kind and kind.startswith('PRODUCTION_STAGE_CHANGED') else None,
         snapshot.get('clean_recovery_state') if kind=='FIRST_SRT_READY_START_PRODUCTION' else None]
     if kind=='MODEL_QUOTA_RECOVERED_RESUME_EXISTING_AGENTS':key.append(snapshot['quota_pause_epoch'])
+    if kind=='WINDOWS_RECEIPT_REQUIRES_VERIFICATION':key.append(snapshot.get('pending_delivery_episodes',[]))
     return hashlib.sha256(json.dumps(key,sort_keys=True).encode()).hexdigest()
 
 
@@ -95,7 +96,7 @@ def event(snapshot,previous):
     if clean=='PASSED' and not snapshot.get('clean_recovery_acknowledged',False):return 'FIXED_CLEAN_RECOVERY_TEST_PASSED'
     following=snapshot.get('following_episode',{})
     if following.get('handoff_present') and not following.get('master_verified'):
-        return 'FOLLOWING_MASTER_HANDOFF_REQUIRES_VERIFICATION:S03E03'
+        return 'FOLLOWING_MASTER_HANDOFF_REQUIRES_VERIFICATION:'+following.get('episode','S03E03')
     for queued in snapshot.get('additional_masters',[]):
         if queued['handoff_present'] and not queued['master_verified']:
             return 'FOLLOWING_MASTER_HANDOFF_REQUIRES_VERIFICATION:'+queued['episode']
@@ -104,10 +105,10 @@ def event(snapshot,previous):
     if state=='READY' and not snapshot['cloud_final_exists']:return 'FINAL_READY_REQUIRES_ACTUAL_CODEX_QC'
     if (state=='READY' and snapshot['cloud_final_exists'] and following.get('master_verified')
             and following.get('review_ready') and not following.get('job_exists')):
-        return 'FOLLOWING_EPISODE_READY_FOR_SERIAL_PRODUCTION:S03E03'
+        return 'FOLLOWING_EPISODE_READY_FOR_SERIAL_PRODUCTION:'+following.get('episode','S03E03')
     if snapshot['windows_online'] and not snapshot['windows_rule_acknowledged']:
         return 'ORIGINAL_WINDOWS_ONLINE_RULE_HANDOFF_PENDING'
-    if snapshot['receipt_exists'] and not snapshot['both_cleaned']:return 'WINDOWS_RECEIPT_REQUIRES_VERIFICATION'
+    if snapshot.get('pending_delivery_episodes') or (snapshot['receipt_exists'] and not snapshot['both_cleaned']):return 'WINDOWS_RECEIPT_REQUIRES_VERIFICATION'
     if state in ('ENHANCING','PROCESSING') and snapshot['media_log_age_seconds']>3600:
         return 'PRODUCTION_LOG_UNCHANGED_OVER_ONE_HOUR'
     if not snapshot.get('review_checkpoint_complete',False) and snapshot.get('review_checkpoint_age_seconds',0)>3600:
@@ -134,11 +135,13 @@ def tick(config,wake=False):
 
 
 def inspect(root,area,config,thread,threshold,wake):
-    previous=read(area/'timer-status.json');job=read(root/'post/jobs/S03E02.json')
-    job=recover_enospc(root,'S03E02',job)
-    log=root/'post/logs/S03E02.log';now=time.time()
+    progress=read(area/'progress.json');episode=progress.get('active_episode','S03E02')
+    if not re.fullmatch(r'S03E(?:0[2-9]|1[0-4])',episode):raise ValueError('Invalid active serial episode')
+    previous=read(area/'timer-status.json');job=read(root/'post/jobs'/(episode+'.json'))
+    job=recover_enospc(root,episode,job)
+    log=root/'post/logs'/(episode+'.log');now=time.time()
     from subtitle_review_supervisor import validate_episode
-    review_ready=validate_episode(root,'S03E02')
+    review_ready=validate_episode(root,episode)
     review_path=root/'ocr/subtitle-review/progress.json';review=read(review_path)
     target=read(area/'windows-target.json');online=False;network_error=None
     try:
@@ -148,27 +151,32 @@ def inspect(root,area,config,thread,threshold,wake):
                    and peer.get('Online') is True for peer in data.get('Peer',{}).values())
     except Exception as error:network_error=str(error)
     clean_report=read(root/'post/reports/fixed-clean-recovery.json')
-    snapshot=dict(schema_version=1,checked_at=now,main_thread_id=thread,job=job,
+    snapshot=dict(schema_version=1,checked_at=now,main_thread_id=thread,active_episode=episode,job=job,
         clean_recovery_state=clean_report.get('state'),clean_recovery_acknowledged=clean_report.get('main_acknowledged') is True,
         review_ready=review_ready,media_log_age_seconds=now-log.stat().st_mtime if log.exists() else 1e10,
         review_checkpoint_age_seconds=now-review_path.stat().st_mtime if review_path.exists() else 1e10,
         review_checkpoint_complete=review.get('complete') is True and len(review.get('completed_episodes',[]))==13,
         subtitle_episode=review.get('episode'),subtitle_stage=review.get('stage'),
         subtitle_text_cues_checked=len(review.get('text_reviewed_original_cue_ids',[])),
-        cloud_final_exists=(root/'post/handoffs/S03E02.cloud-final.json').is_file(),
+        cloud_final_exists=(root/'post/handoffs'/(episode+'.cloud-final.json')).is_file(),
         receipt_exists=(root/'post/receipts/S03E02.json').is_file(),
         both_cleaned=read(area/'progress.json').get('stage')=='DELIVERED_AND_GENERATED_ARTIFACTS_CLEANED',
         windows_online=online,network_error=network_error,
         windows_rule_acknowledged=target.get('cloud_rule_acknowledged') is True,
         media_processes_untouched=True)
-    following=read(root/'post/managed-S03E03/progress.json')
-    if following.get('serial_after')=='S03E02':
-        snapshot['following_episode']=dict(episode='S03E03',
-            handoff_present=(root/'post/handoffs/S03E03.master-received.json').is_file(),
+    next_episode=f'S03E{int(episode[4:])+1:02d}'
+    following=read(root/'post'/('managed-'+next_episode)/'progress.json')
+    if following.get('serial_after')==episode:
+        staged=next((item for item in additional_master_observations(root) if item['episode']==next_episode),{})
+        snapshot['following_episode']=dict(episode=next_episode,
+            handoff_present=(root/'post/handoffs'/(next_episode+'.master-received.json')).is_file() or staged.get('handoff_present',False),
             master_verified=following.get('master_handoff_verified') is True,
-            review_ready=validate_episode(root,'S03E03'),
-            job_exists=(root/'post/jobs/S03E03.json').is_file())
+            review_ready=validate_episode(root,next_episode),
+            job_exists=(root/'post/jobs'/(next_episode+'.json')).is_file())
     snapshot['additional_masters']=additional_master_observations(root)
+    snapshot['pending_delivery_episodes']=[path.stem for path in sorted((root/'post/receipts').glob('S03E??.json'))
+        if not ((root/'.kwjd/cleanup'/(path.stem+'.linux.json')).is_file()
+                and (root/'post/receipts'/(path.stem+'.windows-cleanup.json')).is_file())]
     try:snapshot['quota_remaining_percent']=quota()
     except Exception as error:snapshot.update(quota_remaining_percent=None,quota_error=str(error))
     remaining=snapshot['quota_remaining_percent']

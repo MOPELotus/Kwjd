@@ -63,3 +63,11 @@ CacheClip快照对小型`Info.txt`记录内容SHA；仅在内容、大小及路�
 每次新约定必须同步修改AGENTS/决策文档/配置/实现；独立步骤验证后立即commit/push，另一端fetch+普通merge/pull确认HEAD。实际媒体、收据和绝对环境路径不进Git。
 
 2026-10-26 E49新HEVC已完成上传SHA校验、本地导出母片/CacheClip内容清理和云端入队。MiSans84新母片预览已获批准，云端可在增强完成后直接烧录；交接时Worker正在等待实际性能门禁。后续阶段状态以真实作业和收据为准。
+
+2026-11-24济公传首回真实成片质检完成后，已授权的S03E02–S03E14按回目串行推进。
+每回仍独立核验真实接收母版、封存SRT/ASS、原片至母版时钟、实际母版样式预览和当前代码双卡短测。
+`run_fixed_post.py`检查上一回READY及已发布的真实Codex质量证据，不以Windows下载完成阻挡下一回；
+复用`kwjd-fixed-s03e02.service`，交接前持队列锁确认旧回目READY、停止空闲旧作用域，再启动新回目作用域。
+不另留多个Worker循环。`jigong_quality.py --episode S03E03`等读取本回真实母版收据，首回固定SHA继续保留；
+任何回目的成片清理仍须本回真实lotuspc质量收据。半小时巡检读取原托管progress的`active_episode`，
+跟踪本回作业/日志/封存与下一回输入，同时保留旧回目未完成的交付收据检查。
