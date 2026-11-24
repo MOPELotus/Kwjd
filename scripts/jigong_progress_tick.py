@@ -100,6 +100,11 @@ def event(snapshot,previous):
     for queued in snapshot.get('additional_masters',[]):
         if queued['handoff_present'] and not queued['master_verified']:
             return 'FOLLOWING_MASTER_HANDOFF_REQUIRES_VERIFICATION:'+queued['episode']
+    if state=='WAIT_FINAL_QC_REPAIR':
+        followup=snapshot.get('qc_followup_state')
+        if followup=='READY_NEEDS_CODEX':return 'FINAL_QC_SOURCE_CUT_EVIDENCE_READY'
+        if followup in ('SOURCE_CUT_SCAN_PREPARING','SOURCE_CUT_SCAN_RUNNING'):return None
+        return 'FINAL_QC_REPAIR_REQUIRES_ATTENTION'
     if state in ('FAILED','WAIT_DISK','WAIT_GPU','WAIT_BACKEND_TECHNICAL','WAIT_STYLE_APPROVAL'):
         return 'PRODUCTION_NEEDS_ATTENTION:'+state
     if state=='READY' and not snapshot['cloud_final_exists']:return 'FINAL_READY_REQUIRES_ACTUAL_CODEX_QC'
@@ -176,6 +181,7 @@ def inspect(root,area,config,thread,threshold,wake):
             review_ready=validate_episode(root,next_episode),
             job_exists=(root/'post/jobs'/(next_episode+'.json')).is_file())
     snapshot['additional_masters']=additional_master_observations(root)
+    snapshot['qc_followup_state']=read(root/'post/reports'/(episode+'.qc-followup-status.json')).get('state')
     snapshot['pending_delivery_episodes']=[path.stem for path in sorted((root/'post/receipts').glob('S03E??.json'))
         if not ((root/'.kwjd/cleanup'/(path.stem+'.linux.json')).is_file()
                 and (root/'post/receipts'/(path.stem+'.windows-cleanup.json')).is_file())]

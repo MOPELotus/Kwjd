@@ -20,6 +20,14 @@ class ProgressTickTests(unittest.TestCase):
     def test_waiting_for_review_does_not_wake_model(self):
         self.assertIsNone(event(self.snapshot(),{}))
 
+    def test_real_qc_hold_waits_for_tools_and_wakes_original_main_for_evidence(self):
+        s=self.snapshot(job=dict(state='WAIT_FINAL_QC_REPAIR'),qc_followup_state='SOURCE_CUT_SCAN_RUNNING')
+        self.assertIsNone(event(s,{}))
+        s['qc_followup_state']='READY_NEEDS_CODEX'
+        self.assertEqual(event(s,{}),'FINAL_QC_SOURCE_CUT_EVIDENCE_READY')
+        s['qc_followup_state']='ERROR_NEEDS_CODEX'
+        self.assertEqual(event(s,{}),'FINAL_QC_REPAIR_REQUIRES_ATTENTION')
+
     def test_enospc_preserves_failed_receipt_and_reuses_queue_without_media_change(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary);jobs=root/'post/jobs';jobs.mkdir(parents=True)
