@@ -65,6 +65,14 @@ def verify_quality(root,quality=None,episode=EPISODE):
 
 def delivery_step(root,episode=EPISODE):
     root=Path(root);post=root/'post'
+    hold=post/'handoffs'/f'{episode}.cleanup-hold.json'
+    if hold.is_file():
+        dependency=load(hold)
+        if dependency.get('active') is True:
+            if dependency.get('episode')!=episode or dependency.get('master_sha256')!=master_identity(root,episode):
+                raise ValueError('Cleanup dependency hold identity differs')
+            return dict(stage='WAIT_MEDIA_DEPENDENCY_HOLD',hold_path=str(hold),
+                        reason=dependency.get('reason','Media still needed downstream'))
     receipt=post/'receipts'/f'{episode}.json'
     if not receipt.exists():return dict(stage='WAIT_DELIVERY')
     record=load(receipt);validate_receipt(record,episode,'linux')

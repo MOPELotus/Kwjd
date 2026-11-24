@@ -92,3 +92,13 @@ Windows限域清理成功后再原子上传 `post/receipts/S03E02.windows-cleanu
 
 
 固定工作栈已按用户纠正恢复：`config/workflows/native-face-v1.json`和完整requirements锁确定GFPGAN/A4000、强类型TensorRT RIFE/T10及overlap1。ONNX生产准入已撤回。新TensorRT引擎按归档原配方真实重建，模型图SHA与旧版一致；当前母片900原生→1800输出帧、901含前瞻修脸、两处cut、完整解码及PCM等价短测已通过，并实际看过六组源/输出图。实际引擎/样片SHA和视觉证据留post，不进入Git。恢复后的后端准入已启用，整回仍等待第一回真实封存SRT和ASS。之后主代理使用`run_fixed_post.py --master ... --ass ...`完成门禁并提交唯一后台Worker，不再临时选择技术栈。
+
+2026-11-24用户定稿首回片头：只给内部S03E02增加27秒，选第二段最近景做20秒同步修复前/后对比，
+说明卡7秒（由原12秒缩短）；S03E03–S03E14不加。原Windows制作会话负责独立发布版，
+保留已验收的主体文件和收据；含片头版须另记SHA、时钟、报告与验收，旧收据不批准新版。
+片头制作与现有串行云端生产并行。云端首回母版先保留，等待本地明确确认所需截取素材留存；
+`post/handoffs/S03E02.cleanup-hold.json`绑定母版SHA，active=true时`jigong_quality.delivery_step`
+返回WAIT_MEDIA_DEPENDENCY_HOLD，禁止整回自动清理。收到本地确认后再解除该门禁并续原收据清理。
+既有三段母版/成片截取已在本地的报告须保留，不能据此把含片头发布版标成已验收。
+第五回S03E06沿用独立接收根登记与既有巡检；上传预算同时计当前生产剩余峰值及5GiB底线。
+只有新鲜SHA核实的本回唯一链接分段可抵扣已占空间，上传前仍复查；新回目缓存不受旧收据清理。

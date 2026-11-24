@@ -177,5 +177,19 @@
     "paid_credit_fallback": false,
     "prefer_scheduled_checks": true
   },
-  "production_workflow": "config/workflows/native-face-v1.json"
+  "production_workflow": "config/workflows/native-face-v1.json",
+  "publishing_intro": {
+    "episodes": [
+      "S03E02"
+    ],
+    "selected_comparison_excerpt": "second_selected_closest_shot",
+    "synchronized_before_after_seconds": 20,
+    "explanation_card_seconds": 7,
+    "total_seconds": 27,
+    "production_owner": "original_windows_peer",
+    "versioning": "Independent publishing version with its own SHA/report/receipt; preserve accepted body and receipts",
+    "cloud_source_release": "Explicit local excerpt-retention confirmation clears the hash-bound cleanup dependency hold",
+    "other_episodes_seconds": 0,
+    "selected_master_start_seconds": 2400
+  }
 }

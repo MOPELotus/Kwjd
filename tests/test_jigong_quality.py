@@ -8,6 +8,14 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 import jigong_quality as m
 
 class QualityTests(unittest.TestCase):
+    def test_explicit_downstream_media_hold_prevents_receipt_cleanup(self):
+        with tempfile.TemporaryDirectory() as temp,patch.object(m,'cleanup') as clean:
+            root=Path(temp);folder=root/'post/handoffs';folder.mkdir(parents=True)
+            hold=folder/'S03E02.cleanup-hold.json'
+            hold.write_text(json.dumps(dict(active=True,episode='S03E02',master_sha256=m.MASTER,reason='First intro local source retention pending')))
+            self.assertEqual(m.delivery_step(root)['stage'],'WAIT_MEDIA_DEPENDENCY_HOLD')
+            clean.assert_not_called()
+
     def test_each_following_chapter_requires_its_own_real_master_receipt(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);folder=root/'post/handoffs';folder.mkdir(parents=True)

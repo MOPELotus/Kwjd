@@ -182,6 +182,11 @@ def inspect(root,area,config,thread,threshold,wake):
     snapshot['pending_delivery_actions']=[]
     for pending in snapshot['pending_delivery_episodes']:
         status=read(root/'post/reports'/(pending+'.delivery-cleanup-status.json'))
+        hold=read(root/'post/handoffs'/(pending+'.cleanup-hold.json'))
+        report=read(root/'post/reports'/(pending+'.json'))
+        if (hold.get('active') is True and hold.get('episode')==pending
+                and hold.get('master_sha256')==report.get('master_sha256')):
+            continue  # Explicit downstream-media dependency; local release wakes main later.
         # A live pure-tool cleanup loop retries only at the safe idle queue lock.
         # Stale/error state wakes the main agent again; no model wait is needed.
         if not (status.get('state')=='WAIT_SOLE_WORKER_IDLE_QUEUE_LOCK'
