@@ -8,9 +8,22 @@ import subprocess
 import os
 import tempfile
 import time
+import ipaddress
 from pathlib import Path
 
 BACKGROUND = {'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}
+
+
+def connection_options(args):
+    if not args.connect_address and not args.host_key_alias:
+        return []
+    if not args.connect_address or not args.host_key_alias:
+        raise ValueError('Address override requires an explicit existing host-key alias')
+    address = str(ipaddress.ip_address(args.connect_address))
+    if not re.fullmatch(r'[A-Za-z0-9_.:\[\]-]+', args.host_key_alias):
+        raise ValueError('Unsafe host-key alias')
+    return ['-o', 'Hostname=' + address, '-o', 'HostKeyAlias=' + args.host_key_alias,
+            '-o', 'StrictHostKeyChecking=yes']
 
 
 def remote(ssh,command):
@@ -68,7 +81,7 @@ def resumable_transfer(args,source,ssh,command,ssh_binary,sftp_binary):
             with log.open('a',encoding='utf8') as output:
                 process=subprocess.Popen([sftp_binary,'-b',batch_name,'-B','131072','-R','64','-S',ssh_binary,
                     '-o','BatchMode=yes','-o','ConnectTimeout=15','-o','ServerAliveInterval=30',
-                    '-o','ServerAliveCountMax=3',args.host],stdout=output,stderr=subprocess.STDOUT, **BACKGROUND)
+                    '-o','ServerAliveCountMax=3',*connection_options(args),args.host],stdout=output,stderr=subprocess.STDOUT, **BACKGROUND)
                 changed=time.monotonic();last_check=0;size=count
                 while process.poll() is None:
                     if time.monotonic()-last_check>=30:
@@ -98,6 +111,8 @@ def main():
     parser.add_argument('--host',required=True)
     parser.add_argument('--remote-root',required=True)
     parser.add_argument('--receipt',type=Path,required=True)
+    parser.add_argument('--connect-address',help='Verified current IP for a transient DNS failure')
+    parser.add_argument('--host-key-alias',help='Existing known_hosts identity; mandatory with an IP override')
     args=parser.parse_args()
     if not re.fullmatch('[A-Za-z0-9_.-]+',args.host) or not re.fullmatch('/[A-Za-z0-9_./-]+',args.remote_root):
         parser.error('Plain SSH alias and absolute remote root required')
@@ -111,7 +126,8 @@ def main():
     git=Path(os.environ.get('ProgramFiles','C:/Program Files'))/'Git/usr/bin'
     ssh_binary=str(git/'ssh.exe') if (git/'ssh.exe').is_file() else 'ssh'
     sftp_binary=str(git/'sftp.exe') if (git/'sftp.exe').is_file() else 'sftp'
-    ssh=[ssh_binary,'-o','BatchMode=yes','-o','ConnectTimeout=15','-o','ServerAliveInterval=30',args.host]
+    ssh=[ssh_binary,'-o','BatchMode=yes','-o','ConnectTimeout=15','-o','ServerAliveInterval=30',
+         *connection_options(args),args.host]
     command=['python3',args.remote_root+'/repo/scripts/receive_master_handoff.py','--root',args.remote_root,
              '--episode',episode,'--sha256',digest,'--bytes',str(before.st_size),
              '--expected-duration',str(data['duration_seconds'])]

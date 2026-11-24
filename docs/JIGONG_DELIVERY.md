@@ -102,3 +102,15 @@ Windows限域清理成功后再原子上传 `post/receipts/S03E02.windows-cleanu
 既有三段母版/成片截取已在本地的报告须保留，不能据此把含片头发布版标成已验收。
 第五回S03E06沿用独立接收根登记与既有巡检；上传预算同时计当前生产剩余峰值及5GiB底线。
 只有新鲜SHA核实的本回唯一链接分段可抵扣已占空间，上传前仍复查；新回目缓存不受旧收据清理。
+
+## Windows首回发布版
+
+`scripts/append_publishing_intro.py --intro <27秒HEVC/FLAC片头> --body <已验收主体> --output <新发布路径> --report <独立报告> --mkvmerge <程序>`
+只重封装主体，不重编码正文。片头与主体均为Main10/1080p60、FLAC24/48k立体声。
+不同编码器的HEVC参数集必须经Annex-B在各自关键帧携带，不能只按同一codec名称直接拼接；
+准入要求正文逐包时间戳恰好平移27秒、去参数集后的所有编码图像NAL哈希一致、完整正文PCM一致，
+并实际解码衔接及首中尾。构建峰值额外保留5GiB。旧主体和接收收据保留，含片头文件另记SHA。
+本次发布版在Windows数据根的`publish`，技术报告在`.kwjd/publishing/S03E02.with-intro.json`。
+
+`upload_validated_master.py`遇临时DNS故障可显式传`--connect-address <经核实IP> --host-key-alias <既有known_hosts身份>`。
+二者必须同时提供，仍强制校验原有服务器公钥；SSH与SFTP共用该连接设置，不修改系统DNS、不关闭主机身份校验。
