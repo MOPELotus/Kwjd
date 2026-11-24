@@ -108,7 +108,9 @@ def event(snapshot,previous):
         return 'FOLLOWING_EPISODE_READY_FOR_SERIAL_PRODUCTION:'+following.get('episode','S03E03')
     if snapshot['windows_online'] and not snapshot['windows_rule_acknowledged']:
         return 'ORIGINAL_WINDOWS_ONLINE_RULE_HANDOFF_PENDING'
-    if snapshot.get('pending_delivery_episodes') or (snapshot['receipt_exists'] and not snapshot['both_cleaned']):return 'WINDOWS_RECEIPT_REQUIRES_VERIFICATION'
+    if 'pending_delivery_actions' in snapshot:
+        if snapshot['pending_delivery_actions']:return 'WINDOWS_RECEIPT_REQUIRES_VERIFICATION'
+    elif snapshot.get('pending_delivery_episodes') or (snapshot['receipt_exists'] and not snapshot['both_cleaned']):return 'WINDOWS_RECEIPT_REQUIRES_VERIFICATION'
     if state in ('ENHANCING','PROCESSING') and snapshot['media_log_age_seconds']>3600:
         return 'PRODUCTION_LOG_UNCHANGED_OVER_ONE_HOUR'
     if not snapshot.get('review_checkpoint_complete',False) and snapshot.get('review_checkpoint_age_seconds',0)>3600:
@@ -177,6 +179,14 @@ def inspect(root,area,config,thread,threshold,wake):
     snapshot['pending_delivery_episodes']=[path.stem for path in sorted((root/'post/receipts').glob('S03E??.json'))
         if not ((root/'.kwjd/cleanup'/(path.stem+'.linux.json')).is_file()
                 and (root/'post/receipts'/(path.stem+'.windows-cleanup.json')).is_file())]
+    snapshot['pending_delivery_actions']=[]
+    for pending in snapshot['pending_delivery_episodes']:
+        status=read(root/'post/reports'/(pending+'.delivery-cleanup-status.json'))
+        # A live pure-tool cleanup loop retries only at the safe idle queue lock.
+        # Stale/error state wakes the main agent again; no model wait is needed.
+        if not (status.get('state')=='WAIT_SOLE_WORKER_IDLE_QUEUE_LOCK'
+                and 0<=now-status.get('at',0)<=120):
+            snapshot['pending_delivery_actions'].append(pending)
     try:snapshot['quota_remaining_percent']=quota()
     except Exception as error:snapshot.update(quota_remaining_percent=None,quota_error=str(error))
     remaining=snapshot['quota_remaining_percent']
