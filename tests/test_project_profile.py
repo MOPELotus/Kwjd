@@ -23,7 +23,7 @@ class ProfileTests(unittest.TestCase):
         code="""import sys;sys.path.insert(0,'scripts')
 import kwjd,server_worker
 assert kwjd.episode(2)=='S03E02'
-assert kwjd.PROJECT['managed_post_episodes']==['S03E02']
+assert kwjd.PROJECT['managed_post_episodes']==[f'S03E{i:02d}' for i in range(2,15)]
 server_worker.check_rel('../output/S03E02.zh.srt')
 for bad in ['../output/S01E02.zh.srt','../output/S03E02/../../x.zh.srt','../output/S03E02evil.zh.srt']:
     try:server_worker.check_rel(bad)
