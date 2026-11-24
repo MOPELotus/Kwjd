@@ -57,10 +57,17 @@
     "huge_intermediate_default": false,
     "same_name_new_content_requires_new_hash": true,
     "accepted_master_fps": [
-      25,
-      30
+      25
     ],
-    "fps_exception_requires_hash_bound_clock_proof": true
+    "fps_exception_requires_hash_bound_clock_proof": true,
+    "restart_policy": {
+      "decision_date": "2026-11-25",
+      "reason": "Received CFR30 masters contain source-cut mask/image mismatches; user requires fresh AI Mask and native25 export",
+      "source_subtitles": "Preserve reviewed/sealed source SRT and source-clock ASS; independently rebind derived burn clock and style to each replacement master",
+      "old30_masters": "Superseded; no new upload or production approval",
+      "old_video_artifacts": "User authorized cloud cleanup; preserve originals, subtitles, compact review evidence, models and active environments",
+      "cause_status": "25-to30 export/mask mismatch is suspected, not established root cause"
+    }
   },
   "workflow_policy": {
     "residual_hardsubs": "accepted",
@@ -142,7 +149,7 @@
       "final_nvenc_and_lossless_mix"
     ],
     "neural_full_frame_upscale": false,
-    "production_integration_status": "fixed_trt_rebuilt_and_actual_s03_cfr30_fullchain_sample_accepted",
+    "production_integration_status": "awaiting_replacement_native25_master_actual_fullchain_acceptance",
     "existing_60fps_final_rework": {
       "preserve_all_frames": true,
       "repeat_rife": false,
