@@ -174,8 +174,9 @@ def run(master,output,episode,cfg,*,source_start=0,source_frames=None,prepared=N
     # restore its program clock during each segment's final style render.
     for path in [recipe['ass_path'],recipe['fonts_path']]:
         if any(c in str(path) for c in "'\\:[],;"):raise ValueError('Unsafe FFmpeg filter path')
-    origin=float(recipe.get('program_origin_seconds',0))+source_start/source_fps
-    filters=(f"setpts=PTS+{origin}/TB,ass=filename={recipe['ass_path']}:fontsdir={recipe['fonts_path']},"
+    from concat_clock import subtitle_frame_origin
+    origin=subtitle_frame_origin(recipe.get('program_origin_seconds',0),source_start,source_fps)
+    filters=(f"setpts=PTS+{origin},ass=filename={recipe['ass_path']}:fontsdir={recipe['fonts_path']},"
         'setpts=PTS-STARTPTS,scale=in_range=pc:out_range=tv:out_color_matrix=bt709,format=p010le')
     maxrate=cfg.get('max_video_mbps',16)
     if type(maxrate)is not int or not 8<=maxrate<=40:raise ValueError('Invalid final video cap')

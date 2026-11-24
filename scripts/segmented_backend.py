@@ -15,6 +15,7 @@ import subprocess
 
 import enhance_backend as engine
 import concat_transfer
+import concat_clock
 from enhance_stage import atomic_json,check_space,probe,sha256,GIB,validate_video,WaitDisk,WaitGPU
 from linux_stage_handoff import decoded_video_frames,release_verified_file,resume_verified_release
 from master_policy import reject_retired
@@ -24,7 +25,7 @@ def fingerprint(cfg):
     frames=cfg.get('segment_source_frames',250)
     if type(frames) is not int or frames<5 or frames>1500 or frames%5:
         raise ValueError('Resumable segment length must be5..1500 native frames, multiple of5')
-    return hashlib.sha256((cfg['fingerprint']+sha256(__file__)+sha256(concat_transfer.__file__)+str(frames)).encode()).hexdigest()
+    return hashlib.sha256((cfg['fingerprint']+sha256(__file__)+sha256(concat_transfer.__file__)+sha256(concat_clock.__file__)+str(frames)).encode()).hexdigest()
 
 
 def make_identity(episode,digest,fp,count,size,source_fps=25):
@@ -261,7 +262,7 @@ def run(master,output,episode,cfg):
         print(json.dumps({'episode':episode,'segment_complete':index,'source_frames_complete':start+selected,
                           'source_frames_total':count,'resumed':reused}),flush=True)
     listing=directory/'concat.txt'
-    listing.write_text(''.join("file '"+str(p.resolve()).replace("'","'\\''")+"'\n" for p in paths))
+    concat_clock.write_concat(listing,paths,[record['frames'] for record in receipts])
     atomic_json(directory/'concat.pending.json',{**identity,'output':str(output.resolve()),
                                                'concat_path':str(concat_path.absolute()),'segments':receipts})
     subprocess.run(['ffmpeg','-nostdin','-v','error','-n','-f','concat','-safe','0','-i',str(listing),
