@@ -81,7 +81,19 @@
     "max_active_episodes_scope": "cloud_worker_only",
     "cloud_post_fully_managed": true,
     "windows_may_prepare_next_after_verified_upload_cleanup": true,
-    "enhance_before_style_ready_scope": "legacy_style_independent_backends_only"
+    "enhance_before_style_ready_scope": "legacy_style_independent_backends_only",
+    "mask_acceptance": {
+      "occasional_table_or_other_object_loss": "accepted_by_user_standing_rule",
+      "human_quote": "直接加成规则 偶发的桌子/其他什么东西缺失可以接受",
+      "decision_date": "2026-11-25",
+      "do_not_block_or_request_case_by_case_approval_for_occasional_object_loss": true,
+      "continue_checking": [
+        "obvious_face_body_misalignment_or_overlap",
+        "sustained_primary_subject_loss",
+        "studio_or_audience_pixels_intruding_into_subject"
+      ],
+      "whole_film_quality_review_still_required": true
+    }
   },
   "delivery": {
     "filename_pattern": "第{story_part_chinese}回 {chapter_title}.mkv",
