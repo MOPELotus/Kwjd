@@ -6,6 +6,7 @@ The supplied clock offset is a search hypothesis, not a timing approval.
 import argparse
 from fractions import Fraction
 import json
+import os
 from pathlib import Path
 import subprocess
 
@@ -13,6 +14,8 @@ from enhance_stage import atomic_json, check_space, sha256
 from ffmpeg_timestamps import showinfo_frames
 from frame_clock import input_rate
 from jigong_master_restart import enforce
+
+BACKGROUND = {'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}
 
 
 def inspect(args):
@@ -33,7 +36,7 @@ def inspect(args):
     info = json.loads(subprocess.check_output([
         'ffprobe', '-v', 'error', '-select_streams', 'v:0',
         '-show_entries', 'stream=r_frame_rate,nb_frames,start_time', '-of', 'json', str(master)
-    ]))['streams'][0]
+    ], **BACKGROUND))['streams'][0]
     rate = int(input_rate(info['r_frame_rate']))
     enforce(args.episode,args.master_sha256,info['r_frame_rate'])
     if abs(float(info.get('start_time', 0))) > .001:
@@ -44,7 +47,7 @@ def inspect(args):
     def capture(command, log):
         commands.append(command)
         with log.open('w') as out:
-            subprocess.run(command, stdout=subprocess.DEVNULL, stderr=out, check=True)
+            subprocess.run(command, stdout=subprocess.DEVNULL, stderr=out, check=True, **BACKGROUND)
         return showinfo_frames(log.read_text())
 
     scenes = capture([
