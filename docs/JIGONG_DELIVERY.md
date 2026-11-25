@@ -126,3 +126,12 @@ Windows限域清理成功后再原子上传 `post/receipts/S03E02.windows-cleanu
 本回QC证据目录，避免Windows自动接收链提前把待修版本当最终回目。后续回目保持原串行质量门禁。
 纯CPU源片场景候选及母版邻帧取证可后台继续，候选分数不等于人工审图。原半小时巡检在取证完成
 READY_NEEDS_CODEX或工具异常时接续同一主会话，不重复Worker/代理，不启动exec监督器。
+
+2026-11-25用户明确退役本地旧Jigong视频批次。`retire_jigong_old_windows_media.py --root <数据根> --execute`
+只删除匹配旧SHA的母版、首回旧成片/发布版及决策前生成的本批片头试验媒体，并把旧活跃收据、
+时钟、校验、上传及缓存清理状态移到`.kwjd/retired/jigong-cfr30-20261125`，保留清单和实际哈希。
+清理不扫描原片、工程、字幕、背景源或CacheClip；同名新SHA的母版保留，不能据文件名误删。
+`jigong_master_restart.enforce`是Windows验证、上传和接收入口的重做门禁：已知旧7个SHA拒收，
+项目配置现仅接受原生25fps。旧25→30帧率例外不再适用于本轮Jigong；25fps本身不证明Mask缺陷已消失，
+新母版仍须实际对照切镜前后帧核验人脸、身体、桌子及演播室/观众串入，再重新核对字幕时钟。
+封存SRT和原片时钟ASS不退役，首回27秒片头保留排版/底图但重新提取新母版与新成片素材。

@@ -133,14 +133,17 @@ def report_identity(report, ep, upload):
 
 
 def receive(root, config, ep):
+    from jigong_master_restart import enforce
     receipt_path = root / '.kwjd/receipts' / f'{ep}.json'
     if receipt_path.exists():
         receipt = load(receipt_path)
+        enforce(ep, receipt.get('master_sha256', ''))
         if receipt.get('received') and receipt.get('technical_checked'):
             return finish_delivery(root, config, ep, receipt)
     upload_path = root / '.kwjd/uploads' / f'{ep}.json'
     if not upload_path.exists():
         return 'WAIT_MASTER_HANDOFF'
+    enforce(ep, load(upload_path).get('sha256', ''))
     base = config['remote_root']
     answer = remote(config, ['cat', base + '/post/reports/' + ep + '.json'])
     if answer.returncode:

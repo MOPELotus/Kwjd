@@ -169,6 +169,8 @@ def main():
     rate=data.get('frame_rate_audit',{}).get('expected_frame_rate','25/1')
     if rate not in ('25/1','30/1') or data['video']['r_frame_rate']!=rate:
         raise ValueError('Unexpected validated frame rate')
+    from jigong_master_restart import enforce
+    enforce(episode, digest, rate)
     command+=['--expected-frame-rate',rate]
     if args.wait_for_admission:
         wait_for_admission(args, ssh, episode, digest, before.st_size)

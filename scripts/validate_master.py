@@ -82,6 +82,10 @@ def main():
     p.add_argument('--frame-clock-proof',type=Path,help='Required for an explicit CFR30 candidate')
     args = p.parse_args()
     path = args.file.resolve(strict=True)
+    from jigong_master_restart import enforce
+    episode_match = re.match(r'(S0[1-4]E[0-9]{2,3})[.]clean-master[.]', path.name)
+    episode = episode_match[1] if episode_match else ''
+    enforce(episode, '', args.expected_frame_rate)
     before = path.stat()
     info = json.loads(subprocess.check_output([
         'ffprobe', '-v', 'error', '-show_format', '-show_streams', '-of', 'json', str(path)],
@@ -107,6 +111,7 @@ def main():
                            **({'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}))
     peak = re.search(r'max_volume: ([-\d.]+) dB', peaks.stderr)
     digest = digest or hashlib.file_digest(path.open('rb'), 'sha256').hexdigest()
+    enforce(episode, digest, video['r_frame_rate'])
     after = path.stat()
     assert (before.st_size, before.st_mtime_ns) == (after.st_size, after.st_mtime_ns), 'File changed'
     report = {'checked_at': datetime.now(timezone.utc).isoformat(),
