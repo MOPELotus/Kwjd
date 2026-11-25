@@ -7,7 +7,7 @@ from unittest.mock import patch
 import hashlib
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from run_fixed_post import inputs,WaitInput,select_project,freeze_style,serial_gate,retire_idle_worker,restart_master_gate
+from run_fixed_post import inputs,WaitInput,select_project,freeze_style,serial_gate,retire_idle_worker,restart_master_gate,archive_retired_pending_report
 
 
 class FixedPostInputGateTests(unittest.TestCase):
@@ -73,6 +73,28 @@ class FixedPostInputGateTests(unittest.TestCase):
         self.assertEqual(select_project(repo,'S03E02').name,'jigong-s03.json')
         self.assertEqual(select_project(repo,'S03E03').name,'jigong-s03.json')
         with self.assertRaisesRegex(ValueError,'admitted'):select_project(repo,'S03E15')
+
+    def test_retired_pending_checkpoint_is_archived_but_current_one_is_retained(self):
+        self.restart_policy({'S03E02':'a'*64})
+        pending=self.root/'post/reports/S03E02.pending.json';pending.parent.mkdir()
+        old=json.dumps(dict(episode='S03E02',master_sha256='a'*64)).encode()
+        pending.write_bytes(old)
+        self.assertTrue(archive_retired_pending_report(self.root,'S03E02'))
+        self.assertFalse(pending.exists())
+        archived=list((self.root/'.kwjd/retired/jigong-cfr30-20261125/reports').iterdir())
+        self.assertEqual([p.read_bytes() for p in archived],[old])
+        pending.write_text(json.dumps(dict(episode='S03E02',master_sha256='b'*64)))
+        self.assertFalse(archive_retired_pending_report(self.root,'S03E02'))
+        self.assertTrue(pending.exists())
+
+    def test_retired_pending_with_media_cannot_be_silently_archived(self):
+        self.restart_policy({'S03E02':'a'*64})
+        pending=self.root/'post/reports/S03E02.pending.json';pending.parent.mkdir()
+        pending.write_text(json.dumps(dict(episode='S03E02',master_sha256='a'*64)))
+        final=self.root/'post/final/S03E02.final-1080p60.mkv';final.parent.mkdir();final.write_bytes(b'retained')
+        with self.assertRaisesRegex(WaitInput,'still has media'):
+            archive_retired_pending_report(self.root,'S03E02')
+        self.assertTrue(pending.exists());self.assertTrue(final.exists())
 
     def test_next_chapter_cannot_skip_prior_media_or_actual_quality(self):
         jobs=self.root/'post/jobs';jobs.mkdir()

@@ -59,6 +59,32 @@ def retired_job(root,episode,job):
         and job.get('master_sha256')==data['retired_master_sha256'][episode])
 
 
+def archive_retired_pending_report(root,episode):
+    """An old publication checkpoint must not trigger new-master recovery."""
+    from enhance_stage import sha256
+    root=Path(root);pending=root/'post/reports'/(episode+'.pending.json')
+    if not pending.exists():return False
+    data=load(pending)
+    if not retired_job(root,episode,dict(state='SUPERSEDED_WAIT_NATIVE25_MASTER',
+            master_sha256=data.get('master_sha256'))):return False
+    if pending.is_symlink() or data.get('episode')!=episode:
+        raise WaitInput('Invalid retired publication checkpoint; retain for inspection')
+    final=root/'post/final'/(episode+'.final-1080p60.mkv')
+    partial=final.with_name(final.stem+'.partial'+final.suffix)
+    if final.exists() or partial.exists():
+        raise WaitInput('Retired publication still has media; explicit retirement required')
+    digest=sha256(pending)
+    archive=root/'.kwjd/retired/jigong-cfr30-20261125/reports'
+    archive.mkdir(parents=True,exist_ok=True)
+    saved=archive/(pending.name+'.'+digest)
+    if not saved.exists():
+        with saved.open('xb') as output:output.write(pending.read_bytes())
+    if saved.is_symlink() or sha256(saved)!=digest or sha256(pending)!=digest:
+        raise ValueError('Retired publication archive differs; retain checkpoint')
+    pending.unlink()
+    return True
+
+
 def select_project(repo,episode):
     candidates=[repo/'config/project.json',*(repo/'config/projects').glob('*.json')]
     matches=[p for p in candidates if load(p).get('season')==episode[:3]]
@@ -215,6 +241,7 @@ def submit(root,master,ass,check_only):
     validate_fixed_profile(template)  # Full package lock was verified by bootstrap in its own venv.
     from enhance_stage import atomic_json,sha256
     style=freeze_style(root,ep,subtitle)
+    archive_retired_pending_report(root,ep)
     unit='kwjd-fixed-s03e02' if ep.startswith('S03') else 'kwjd-fixed-'+ep.lower()
     retire_idle_worker(root,ep,unit)
     job_path=root/'post/jobs'/(ep+'.json')
