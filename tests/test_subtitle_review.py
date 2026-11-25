@@ -64,6 +64,37 @@ class ReviewGateTests(unittest.TestCase):
         self.report["evidence"]=[dict(path=str(outside),sha256=sha(outside))]
         self.assertFalse(self.check())
 
+    def focused_report(self):
+        for key in ['gap_audit_complete','boundary_audit_complete',
+                    'short_line_audit_complete','two_line_audit_complete']:
+            self.report.pop(key)
+        self.report.update(review_policy='focused-v1',text_review_complete=True,
+            timing_review_complete=True,targeted_review_complete=True,
+            omitted_audits=['whole_episode_gap_allframes','whole_episode_short_allframes',
+                'whole_episode_fullframe_sampling','independent_all_boundary_second_pass',
+                'unchanged_text_second_pass'])
+
+    def test_focused_review_accepts_explicit_user_waiver_without_fake_old_audits(self):
+        self.focused_report()
+        self.assertTrue(self.check())
+        self.report['reviewed_original_cue_ids']=[]
+        self.assertFalse(self.check())
+
+    def test_focused_review_still_requires_timing_targeted_checks_and_resolved_issues(self):
+        self.focused_report()
+        for key in ['timing_review_complete','targeted_review_complete','text_review_complete']:
+            self.report[key]=False;self.assertFalse(self.check());self.report[key]=True
+        self.report['open_issues']=['known unresolved glyph']
+        self.assertFalse(self.check())
+
+    def test_unknown_policy_and_undisclosed_or_malformed_waivers_are_rejected(self):
+        self.focused_report();self.report['review_policy']='skip-everything'
+        self.assertFalse(self.check())
+        self.report['review_policy']='focused-v1';self.report['omitted_audits'].pop()
+        self.assertFalse(self.check())
+        self.report['omitted_audits']=[{}]
+        self.assertFalse(self.check())
+
 if __name__=="__main__":
     unittest.main()
 

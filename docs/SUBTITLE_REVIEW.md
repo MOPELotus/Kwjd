@@ -3,6 +3,31 @@
 本流程专用于已完成OCR的草稿复核，不能把“又跑一次OCR”或文件存在当作审校。
 原始裁片、草稿和字幕正文不提交Git。所有证据和可恢复状态放数据根的 `ocr/subtitle-review/`。
 
+## 当前精简审校规则（2026-11-26，覆盖下文旧版要求）
+
+用户明确认为极少量偶发小错与重复检查的额度付出不成比例，授权采用
+`config/projects/jigong-s03.json` 的 `subtitle_review.policy = focused-v1`。
+已封存前四回保持原报告/SRT/ASS，不重做；当前及后续未封存回目沿已有检查点执行。
+
+保留每条草稿的真实原片文字核对、台标排除、空格保留和一遍时间轴核对。
+正常清楚条目看一张可读原帧即可，不强制首中末三张重复阅读；怀疑句内变化、漏句、
+错误合并/拆分、异常时长或疑字时才补必要邻帧或有限音频辅助。新补句、实际改动和
+已知疑点复核后通过，普通未改条目不再全量二遍，不强制所有边界做40ms逐帧配对。
+
+撤销常规整回空档全帧、整回短句全帧、全画面逐秒审图、独立全边界二遍、未改文字二遍。
+不生成这些大专项，也不因旧脚本或旧提示要求而补做。只针对具体异常进行局部检查，
+不把新模式描述为整片逐帧/零漏字保证。已有证据和真实修订保留，不删文件冒充节省额度。
+
+新完成报告使用 `review_policy: focused-v1`，真实填写 `text_review_complete`、
+`timing_review_complete`、`targeted_review_complete`；`omitted_audits`明确列出配置中的
+五项 `disabled_routine_audits`。不要求被撤掉专项的旧 `*_audit_complete` 字段为true，
+也不能伪造它们已做。仍须全部原cue处置、source/draft/final及实际证据SHA、真实会话、
+无已知未决文字歧义、合法不重叠时间轴、真实seal和ASS绑定。
+没有 `review_policy` 的历史严格版报告继续按原四项audit校验，不追溯改签。
+
+只接续原生字幕代理，不启动下文历史 `--execute` / `codex exec` 监督器。
+真实额度低于2%保存暂停模型、后台媒体继续，不兑卡、不用点数。
+
 ## 已确认的节目字形
 
 2026-11-23用户确认：《坑王驾到》原字幕字体中，内部笔画明显断开的这一字形是“逮”。
@@ -45,7 +70,7 @@ S03E02原cue 1303、1351的两处均已由用户看图确认；卿卿误我也�
 因此不再绝对排除ASR。清晰字幕仍忠实保留画面原字、措辞和空格，不能盲目用ASR全文替换，
 不能根据常识润色或补造标点；画音冲突留存双方证据，判断清楚后才定稿，未解不得seal。
 
-必须补查初次OCR可能遗漏的短句、短行和双行，以及首尾、原SRT空档和异常长空档。
+以下扫描/完整专项说明仅适用于历史严格版；focused-v1仅在具体疑点处使用这些工具，不强制整回补查。
 不能只看草稿中已有cue，也不能把少量时间点抽查写成整片覆盖。
 `subtitle_review_scan.py`可按不超过120秒的区间用CPU解码每帧，保留源PTS、逐帧白色像素
 变化指标、候选变化帧及其前一帧。使用独立Pillow/NumPy环境，不运行OCR或占用GPU。
@@ -59,7 +84,7 @@ S03E02原cue 1303、1351的两处均已由用户看图确认；卿卿误我也�
 实际时间用showinfo整数PTS乘以输入time_base计算，并保留原始解码日志及哈希；
 不可直接解析经过有效位数舍入的pts_time显示值。晚于1000秒的旧显示值可能丢失数毫秒，
 需要精确边界时保留旧证据、重新取证，不覆盖已绑定的原索引或把旧显示时间称为精确PTS。
-修订后的内容和边界再次核对，通过后才正式发布并逐集 `kwjd.py seal-srt --approve`。
+focused-v1只对实际修订项及疑点复核，不再要求全量独立二遍；通过后才正式发布并逐集 `kwjd.py seal-srt --approve`。
 
 只在13回所有正式字幕都具有真实完整审校证据、无未解决项且封存SHA一致，并且13份ASS
 样式版全部通过SRT/模板/字体/真实预览的绑定校验后结束。逐回真实seal后即可生成ASS，
@@ -73,8 +98,8 @@ S03E02原cue 1303、1351的两处均已由用户看图确认；卿卿误我也�
 
 每回的 `reports/S03E##.json`绑定 `source_sha256`、`draft_sha256`、`final_srt_sha256`；
 `reviewed_original_cue_ids`必须覆盖原稿全部cue并有对应实际看图处置记录。
-`gap_audit_complete`、`boundary_audit_complete`、`short_line_audit_complete`、
-`two_line_audit_complete`仅可在对应工作实际完成时为true，`open_issues`必须为空；
+历史严格版的`gap_audit_complete`、`boundary_audit_complete`、`short_line_audit_complete`、
+`two_line_audit_complete`仅可在对应工作实际完成时为true；新focused-v1按上文三项完成字段和显式省略清单验收。两版`open_issues`均必须为空；
 `evidence`列出实际索引路径和SHA，`model_review_sessions`列出真实会话ID。
 单元测试仅证明门禁拒绝缺失/不匹配/覆盖不全的收据，不证明视频内容已正确。
 

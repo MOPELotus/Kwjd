@@ -210,5 +210,26 @@
     "cloud_source_release": "Explicit local excerpt-retention confirmation clears the hash-bound cleanup dependency hold",
     "other_episodes_seconds": 0,
     "selected_master_start_seconds": 2400
+  },
+  "subtitle_review": {
+    "policy": "focused-v1",
+    "decision_date": "2026-11-26",
+    "authorization": "User accepts occasional minor omissions rather than high quota cost of repeated exhaustive visual audits",
+    "required": [
+      "per_cue_source_pixel_review",
+      "one_pass_timing_review",
+      "targeted_anomaly_and_changed_content_recheck",
+      "resolve_known_text_uncertainties",
+      "sha_bound_seal_and_ass"
+    ],
+    "disabled_routine_audits": [
+      "whole_episode_gap_allframes",
+      "whole_episode_short_allframes",
+      "whole_episode_fullframe_sampling",
+      "independent_all_boundary_second_pass",
+      "unchanged_text_second_pass"
+    ],
+    "known_issue_checks": "Use extra native frames or bounded audio assistance only for a concrete uncertainty, suspected omission, abnormal timestamp or changed split; no mandatory frame-perfect neighbor sweep for ordinary unchanged cues",
+    "preserve_completed_seals": true
   }
 }
