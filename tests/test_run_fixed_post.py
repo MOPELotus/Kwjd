@@ -8,6 +8,7 @@ import hashlib
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 from run_fixed_post import inputs,WaitInput,select_project,freeze_style,serial_gate,retire_idle_worker,restart_master_gate,archive_retired_pending_report
+from run_fixed_post import archive_retired_artifact_registry
 
 
 class FixedPostInputGateTests(unittest.TestCase):
@@ -95,6 +96,19 @@ class FixedPostInputGateTests(unittest.TestCase):
         with self.assertRaisesRegex(WaitInput,'still has media'):
             archive_retired_pending_report(self.root,'S03E02')
         self.assertTrue(pending.exists());self.assertTrue(final.exists())
+
+    def test_replacement_retires_only_old_master_bound_cleanup_registry(self):
+        self.restart_policy({'S03E02':'a'*64})
+        registry=self.root/'.kwjd/artifacts/S03E02.linux.json';registry.parent.mkdir()
+        def inventory(digest):return dict(episode='S03E02',role='linux',artifacts=[
+            dict(relative='incoming/S03E02.clean-master.mov',fingerprint=dict(kind='file',sha256=digest))])
+        original=json.dumps(inventory('a'*64)).encode();registry.write_bytes(original)
+        self.assertTrue(archive_retired_artifact_registry(self.root,'S03E02'))
+        saved=list((self.root/'.kwjd/retired/jigong-cfr30-20261125/artifacts').iterdir())
+        self.assertEqual([p.read_bytes() for p in saved],[original]);self.assertFalse(registry.exists())
+        registry.write_text(json.dumps(inventory('b'*64)))
+        self.assertFalse(archive_retired_artifact_registry(self.root,'S03E02'))
+        self.assertTrue(registry.exists())
 
     def test_next_chapter_cannot_skip_prior_media_or_actual_quality(self):
         jobs=self.root/'post/jobs';jobs.mkdir()

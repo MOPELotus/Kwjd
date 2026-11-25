@@ -85,6 +85,28 @@ def archive_retired_pending_report(root,episode):
     return True
 
 
+def archive_retired_artifact_registry(root,episode):
+    """Preserve the old cleanup inventory before registering a replacement."""
+    from enhance_stage import sha256
+    root=Path(root);registry=root/'.kwjd/artifacts'/(episode+'.linux.json')
+    if not registry.exists():return False
+    data=load(registry)
+    masters=[row.get('fingerprint',{}).get('sha256') for row in data.get('artifacts',[])
+             if row.get('relative')==f'incoming/{episode}.clean-master.mov']
+    if len(masters)!=1 or not retired_job(root,episode,dict(
+            state='SUPERSEDED_WAIT_NATIVE25_MASTER',master_sha256=masters[0])):return False
+    if registry.is_symlink() or data.get('episode')!=episode or data.get('role')!='linux':
+        raise WaitInput('Invalid retired artifact registry; retain for inspection')
+    digest=sha256(registry);archive=root/'.kwjd/retired/jigong-cfr30-20261125/artifacts'
+    archive.mkdir(parents=True,exist_ok=True);saved=archive/(registry.name+'.'+digest)
+    if not saved.exists():
+        with saved.open('xb') as output:output.write(registry.read_bytes())
+    if saved.is_symlink() or sha256(saved)!=digest or sha256(registry)!=digest:
+        raise ValueError('Retired artifact archive differs; retain registry')
+    registry.unlink()
+    return True
+
+
 def select_project(repo,episode):
     candidates=[repo/'config/project.json',*(repo/'config/projects').glob('*.json')]
     matches=[p for p in candidates if load(p).get('season')==episode[:3]]
@@ -242,6 +264,7 @@ def submit(root,master,ass,check_only):
     from enhance_stage import atomic_json,sha256
     style=freeze_style(root,ep,subtitle)
     archive_retired_pending_report(root,ep)
+    archive_retired_artifact_registry(root,ep)
     unit='kwjd-fixed-s03e02' if ep.startswith('S03') else 'kwjd-fixed-'+ep.lower()
     retire_idle_worker(root,ep,unit)
     job_path=root/'post/jobs'/(ep+'.json')
