@@ -5,9 +5,11 @@ import importlib.metadata
 import json
 import math
 import re
-import shutil
 import subprocess
 from pathlib import Path
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+from scripts.subtitle_review_storage import require_space
 
 def sha(path):
     with Path(path).open("rb") as stream:
@@ -28,8 +30,8 @@ def transcribe(root,episode,start,end,output,cache):
     source_sha=sha(source)
     if not transfer.get("transfer_verified") or transfer["sha256"]!=source_sha:
         raise ValueError("Changed original clip")
-    if shutil.disk_usage(root).free<8*1024**3:
-        raise RuntimeError("Need 5 GiB reserve plus 3 GiB bounded ASR/cache budget")
+    require_space(output,3)
+    require_space(cache,3)
     output.mkdir(parents=True,exist_ok=False); cache.mkdir(parents=True,exist_ok=True)
     audio=output/"original-interval-16k.wav"
     subprocess.run(["ffmpeg","-v","error","-nostdin","-threads","2","-seek_timestamp","1",

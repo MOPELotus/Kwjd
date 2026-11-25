@@ -8,7 +8,6 @@ import argparse
 import json
 from pathlib import Path
 import re
-import shutil
 import subprocess
 import sys
 
@@ -18,6 +17,7 @@ from PIL import Image, ImageDraw
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.subtitle_review_evidence import sha
 from scripts.ffmpeg_timestamps import showinfo_frames
+from scripts.subtitle_review_storage import require_space
 
 
 def scan(root, episode, start, end, output):
@@ -25,8 +25,7 @@ def scan(root, episode, start, end, output):
         raise ValueError('Episode outside scope')
     if not 0 <= start < end or end - start > 120:
         raise ValueError('Expected bounded interval <=120 seconds')
-    if shutil.disk_usage(root).free < 7 * 1024**3:
-        raise ValueError('Need 5 GiB reserve plus 2 GiB evidence allowance')
+    require_space(output,2)
     source = root / 'input' / (episode + '.mp4')
     source_sha = sha(source)
     receipt = json.loads(source.with_suffix('.mp4.transfer.json').read_text())
