@@ -1,5 +1,9 @@
 # 最终回传、清理、下一集
 
+用户明确要求失败Mask清缓存重跑时，使用`resolve_cache.py cleanup-for-rerun --root <数据根> --episode <EP> --reason <用户本次原话> --execute`。
+此路径只释放固定CacheClip内容，仍先验证路径无链接/越界、两次快照不变；保留目录、工程和其他素材。
+它记录独立FAILED_MASK_CACHE_RELEASED_FOR_RERUN收据，不要求或伪造有效母版/上传证明，不可代替正常交接清理。
+
 ## 文件名
 
 内部ID始终S01Exx。Windows最终成片按源文件里的故事回数和回目标题命名：`第一回 家门遭横祸，俊才跌凡尘.mkv`。这里E49是“卿卿误我（一）”，不是第49回。不按固定E49–55硬编码；从manifests/InputName或现存视频名发现，保存小型元数据到.kwjd/catalog，素材临时副本清理后仍能复现命名。缺回数/标题时明确补元数据，禁止猜名和覆盖另一集。
