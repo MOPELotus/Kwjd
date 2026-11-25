@@ -8,6 +8,19 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 import jigong_quality as m
 
 class QualityTests(unittest.TestCase):
+    def test_restarted_first_chapter_uses_new25_receipt_instead_of_historical_sha(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);(root/'.kwjd').mkdir();folder=root/'post/handoffs';folder.mkdir(parents=True)
+            (root/'.kwjd/jigong-native25-restart.json').write_text('{"active":true}')
+            target=folder/'S03E02.master-received.json'
+            receipt=dict(episode='S03E02',transfer_verified=True,sha256='e'*64,bytes=10,master_frame_rate='25/1')
+            target.write_text(json.dumps(receipt))
+            self.assertEqual(m.master_identity(root,'S03E02'),'e'*64)
+            target.write_text(json.dumps({**receipt,'sha256':m.MASTER}))
+            with self.assertRaisesRegex(ValueError,'Superseded'):m.master_identity(root,'S03E02')
+            target.write_text(json.dumps({**receipt,'master_frame_rate':'30/1'}))
+            with self.assertRaisesRegex(ValueError,'native25'):m.master_identity(root,'S03E02')
+
     def test_explicit_downstream_media_hold_prevents_receipt_cleanup(self):
         with tempfile.TemporaryDirectory() as temp,patch.object(m,'cleanup') as clean:
             root=Path(temp);folder=root/'post/handoffs';folder.mkdir(parents=True)

@@ -11,6 +11,8 @@ import subprocess
 
 from enhance_stage import atomic_json, check_space, sha256
 from ffmpeg_timestamps import showinfo_frames
+from frame_clock import input_rate
+from jigong_master_restart import enforce
 
 
 def inspect(args):
@@ -32,8 +34,10 @@ def inspect(args):
         'ffprobe', '-v', 'error', '-select_streams', 'v:0',
         '-show_entries', 'stream=r_frame_rate,nb_frames,start_time', '-of', 'json', str(master)
     ]))['streams'][0]
-    if Fraction(info['r_frame_rate']) != 30 or abs(float(info.get('start_time', 0))) > .001:
-        raise ValueError('This diagnostic requires the received zero-origin CFR30 master')
+    rate = int(input_rate(info['r_frame_rate']))
+    enforce(args.episode,args.master_sha256,info['r_frame_rate'])
+    if abs(float(info.get('start_time', 0))) > .001:
+        raise ValueError('This diagnostic requires the received zero-origin native master')
     full = int(info['nb_frames'])
     commands = []
 
@@ -49,18 +53,18 @@ def inspect(args):
         '-vf', "scale=480:270,select='gt(scene,0.25)',showinfo", '-frames:v', str(args.limit),
         '-fps_mode', 'passthrough', '-n', str(area / 'source-%03d.jpg')
     ], area / 'source-decode.log')
-    centers = [round((row['seconds'] + args.offset_ms / 1000) * 30) for row in scenes]
+    centers = [round((row['seconds'] + args.offset_ms / 1000) * rate) for row in scenes]
     indices = sorted({i for center in centers for i in range(center - 4, center + 5)
                       if 0 <= i < full})
     expression = '+'.join(f'eq(n\\,{i})' for i in indices)
     frames = capture([
         'ffmpeg', '-nostdin', '-v', 'info', '-threads', '2', '-filter_threads', '2',
-        '-copyts', '-i', str(master), '-t', str((max(indices) + 1) / 30 + .1),
+        '-copyts', '-i', str(master), '-t', str((max(indices) + 1) / rate + .1),
         '-map', '0:v:0', '-an', '-vf', f'select={expression},scale=480:270,showinfo',
         '-frames:v', str(len(indices)), '-fps_mode', 'passthrough', '-n',
         str(area / 'master-%03d.jpg')
     ], area / 'master-decode.log')
-    if len(frames) != len(indices) or any(abs(row['seconds'] - i / 30) > .001
+    if len(frames) != len(indices) or any(abs(row['seconds'] - i / rate) > .001
                                         for row, i in zip(frames, indices)):
         raise ValueError('Actual decoded frame PTS differ from selected native frame indices')
     mapping = {i: area / f'master-{k + 1:03d}.jpg' for k, i in enumerate(indices)}
@@ -75,7 +79,7 @@ def inspect(args):
                         if i in mapping]
             entries = [(area / f'source-{ordinal + 1:03d}.jpg',
                         f'SOURCE cut {scene["seconds"]:.6f}')] + [
-                            (mapping[i], f'MASTER n={i} t={i / 30:.6f}') for i in selected]
+                            (mapping[i], f'MASTER n={i} t={i / rate:.6f}') for i in selected]
             for column, (path, label) in enumerate(entries):
                 with Image.open(path) as picture:
                     canvas.paste(picture.resize((256, 144)), (column * 256, row_index * 166 + 22))
@@ -90,6 +94,7 @@ def inspect(args):
     atomic_json(area / 'index.json', dict(
         schema_version=1, episode=args.episode, source=str(source), master=str(master),
         master_sha256=args.master_sha256, master_bytes=before.st_size,
+        master_frame_rate=rate,
         offset_hypothesis_ms=args.offset_ms, source_scan_seconds=args.seconds,
         scene_candidates=scenes, master_frame_indices=indices, decoded_master_frames=frames,
         pages=pages, commands=commands, visual_review_complete=False,

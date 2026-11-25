@@ -12,8 +12,10 @@ EPISODE='S03E02'
 MASTER='0aaa63c922cd92e211c3515003169aed8c466251b66f4b233e539cb62cb0baa6'
 
 def master_identity(root,episode):
-    if episode==EPISODE:return MASTER
-    if not re.fullmatch(r'S03E(?:0[3-9]|1[0-4])',episode):
+    restart_path=Path(root)/'.kwjd/jigong-native25-restart.json'
+    restarting=restart_path.is_file() and load(restart_path).get('active') is True
+    if episode==EPISODE and not restarting:return MASTER
+    if not re.fullmatch(r'S03E(?:0[2-9]|1[0-4])',episode):
         raise ValueError('Episode is outside the managed Jigong task')
     receipt=load(Path(root)/'post/handoffs'/f'{episode}.master-received.json')
     digest=receipt.get('sha256','')
@@ -21,6 +23,11 @@ def master_identity(root,episode):
         or not re.fullmatch(r'[0-9a-f]{64}',digest)
         or type(receipt.get('bytes')) is not int or receipt['bytes']<=0):
         raise ValueError('Actual episode master receipt required')
+    if restarting:
+        from jigong_master_restart import enforce
+        enforce(episode,digest,receipt.get('master_frame_rate'))
+        if receipt.get('master_frame_rate')!='25/1':
+            raise ValueError('Restart quality needs actual native25 receiving receipt')
     return digest
 
 

@@ -22,6 +22,9 @@ def load(path):return json.loads(Path(path).read_text())
 
 def restart_master_gate(root,episode,master,digest):
     """A retired generation cannot become eligible by reusing its old receipt."""
+    from jigong_master_restart import enforce
+    try:enforce(episode,digest)
+    except ValueError as error:raise WaitInput(str(error)) from error
     policy=Path(root)/'.kwjd/jigong-native25-restart.json'
     if not episode.startswith('S03') or not policy.exists():return
     data=load(policy)
@@ -39,8 +42,21 @@ def restart_master_gate(root,episode,master,digest):
     if (len(streams)!=1 or Fraction(streams[0]['r_frame_rate'])!=25
             or Fraction(streams[0]['avg_frame_rate'])!=25):
         raise WaitInput('Native25 restart rejects a non25 replacement master')
+    try:
+        enforce(episode,digest,streams[0]['r_frame_rate'])
+        enforce(episode,digest,streams[0]['avg_frame_rate'])
+    except ValueError as error:raise WaitInput(str(error)) from error
     # Container rate alone does not prove native timeline/Mask provenance. Real
     # receiving, clock, style, cut review and new GPU acceptance remain required.
+
+
+def retired_job(root,episode,job):
+    policy=Path(root)/'.kwjd/jigong-native25-restart.json'
+    if not policy.is_file():return False
+    data=load(policy)
+    return (data.get('active') is True and job.get('state')=='SUPERSEDED_WAIT_NATIVE25_MASTER'
+        and episode in data.get('retired_master_sha256',{})
+        and job.get('master_sha256')==data['retired_master_sha256'][episode])
 
 
 def select_project(repo,episode):
@@ -127,7 +143,8 @@ def serial_gate(root,episode):
     """A new chapter needs the previous real final QC, not its download."""
     if not episode.startswith('S03'):return
     for path in (root/'post/jobs').glob('S03E*.json'):
-        if path.stem!=episode and load(path).get('state')!='READY':
+        prior=load(path)
+        if path.stem!=episode and prior.get('state')!='READY' and not retired_job(root,path.stem,prior):
             raise WaitInput('Another cloud episode still owns the serial slot: '+path.stem)
     number=int(episode[4:])
     if number>2:
@@ -192,6 +209,8 @@ def submit(root,master,ass,check_only):
     from native_face_job import enabled
     if not enabled(root/'post'):raise WaitInput('Fixed stack recovered; actual current-code fullchain acceptance still required')
     template=load(root/'post/backend/runtime.native-template.json')
+    from jigong_master_restart import enforce
+    enforce(ep,digest,str(template.get('input_frame_rate',25))+'/1')
     from fixed_workflow import validate_fixed_profile
     validate_fixed_profile(template)  # Full package lock was verified by bootstrap in its own venv.
     from enhance_stage import atomic_json,sha256
@@ -204,9 +223,18 @@ def submit(root,master,ass,check_only):
         submitted_ass_sha256=sha256(ass),picture_pipeline='native_light_gfpgan_rife_ass_one_encode')
     if job_path.exists():
         prior=load(job_path)
-        if any(prior.get(key)!=value for key,value in identity.items()):raise ValueError('Existing job input binding differs; retained')
+        if retired_job(root,ep,prior):
+            # New master/ASS/clock/style and actual backend acceptance have all
+            # passed above; preserve the retired generation before fresh queueing.
+            archive=root/'.kwjd/retired/jigong-cfr30-20261125/jobs'
+            archive.mkdir(parents=True,exist_ok=True)
+            saved=archive/(ep+'.'+prior['master_sha256']+'.json')
+            if saved.exists() and load(saved)!=prior:raise ValueError('Retired job archive changed; retained')
+            if not saved.exists():atomic_json(saved,prior)
+            job_path.unlink()
+        elif any(prior.get(key)!=value for key,value in identity.items()):raise ValueError('Existing job input binding differs; retained')
         if prior.get('state') in ('READY','FAILED'):return dict(state=prior['state'],episode=ep,job_retained=True)
-    else:
+    if not job_path.exists():
         job_path.parent.mkdir(parents=True,exist_ok=True)
         atomic_json(job_path,{**identity,'state':'QUEUED','created_at':time.time()})
     active=subprocess.run(['systemctl','--user','is-active','--quiet',unit+'.service']).returncode==0

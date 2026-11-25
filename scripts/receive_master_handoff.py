@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
+from jigong_master_restart import enforce
 
 
 def incoming_budget(incoming, total_bytes, partial=None, free_bytes=None):
@@ -37,6 +38,9 @@ def main():
     args=parser.parse_args()
     if not re.fullmatch(r'S0[1-4]E\d{2,3}',args.episode) or not re.fullmatch('[a-f0-9]{64}',args.sha256) or args.bytes<=0:
         parser.error('Invalid master identity')
+    # Reject superseded identity/rate even at upload preflight or prefix-resume;
+    # no directory creation, file rename or receipt publication has happened.
+    enforce(args.episode,args.sha256,args.expected_frame_rate)
     post=args.root.resolve()/'post';incoming=post/'incoming'
     incoming.mkdir(parents=True,exist_ok=True)
     target=incoming/(args.episode+'.clean-master.mov')
@@ -61,6 +65,8 @@ def main():
     info=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_format','-show_streams','-of','json',str(candidate)]))
     video=next(s for s in info['streams'] if s['codec_type']=='video')
     audio=next(s for s in info['streams'] if s['codec_type']=='audio')
+    enforce(args.episode,digest,video['r_frame_rate'])
+    enforce(args.episode,digest,video['avg_frame_rate'])
     if (video['codec_name']!='hevc' or video.get('profile')!='Main 10' or video.get('pix_fmt')!='yuv420p10le'
             or (video['width'],video['height'],video['r_frame_rate'])!=(1920,1080,args.expected_frame_rate)
             or video['avg_frame_rate']!=args.expected_frame_rate

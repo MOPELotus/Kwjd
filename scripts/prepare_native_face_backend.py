@@ -20,7 +20,7 @@ SOURCES=['enhance_backend.py','enhance_stage.py','segmented_backend.py','concat_
     'linux_stage_handoff.py','cuda_trt.py','cuda_rife.py','frame_clock.py','native_face_pipeline.py','native_face_recipe.py',
     'native_frame_queue.py','native_resource_gate.py',
     'native_face_job.py','benchmark_native_face.py','face_frame_processor.py','fixed_workflow.py',
-    'render_face_samples.py','server_worker.py','subtitle_timing.py','font_preflight.py','prepare_native_face_backend.py','storage_policy.py','stage_storage.py']
+    'render_face_samples.py','server_worker.py','subtitle_timing.py','font_preflight.py','prepare_native_face_backend.py','storage_policy.py','stage_storage.py','jigong_master_restart.py']
 
 
 # Scheduling is independent of the frozen picture/audio recipe. Keep explicit
@@ -124,6 +124,9 @@ def template(post, *, rife_backend='cuda_trt', input_fps=25, season='S01'):
 def prepare(post,recipe=None,validation=None,activate=False,*,rife_backend='cuda_trt',input_fps=25,season='S01'):
     if activate and rife_backend!='cuda_trt':
         raise ValueError('Fixed production workflow requires TensorRT; alternative runtimes are comparison-only, not cleanup recovery')
+    if season=='S03':
+        from jigong_master_restart import enforce
+        enforce('S03E02','0'*64,str(input_fps)+'/1')
     post=Path(post).absolute();(post/'backend').mkdir(parents=True,exist_ok=True)
     cfg=template(post,rife_backend=rife_backend,input_fps=input_fps,season=season)
     output=post/'backend/runtime.native-template.json'

@@ -90,6 +90,8 @@ def event(snapshot,previous):
             and snapshot['quota_remaining_percent']>=2):
         return 'MODEL_QUOTA_RECOVERED_RESUME_EXISTING_AGENTS'
     job=snapshot['job'];state=job.get('state');previous_job=previous.get('job',{})
+    if state=='SUPERSEDED_WAIT_NATIVE25_MASTER' and snapshot.get('replacement_master_ready'):
+        return 'NATIVE25_REPLACEMENT_MASTER_REQUIRES_REBINDING:'+snapshot.get('active_episode','S03E02')
     clean=snapshot.get('clean_recovery_state')
     if clean=='FAILED_RETAINED_FOR_INSPECTION':return 'FIXED_CLEAN_RECOVERY_TEST_NEEDS_ATTENTION'
     if snapshot['review_ready'] and not job:return 'FIRST_SRT_READY_START_PRODUCTION'
@@ -181,6 +183,14 @@ def inspect(root,area,config,thread,threshold,wake):
             review_ready=validate_episode(root,next_episode),
             job_exists=(root/'post/jobs'/(next_episode+'.json')).is_file())
     snapshot['additional_masters']=additional_master_observations(root)
+    restart=read(root/'.kwjd/jigong-native25-restart.json')
+    received=read(root/'post/handoffs'/(episode+'.master-received.json'))
+    snapshot['replacement_master_ready']=(restart.get('active') is True
+        and received.get('transfer_verified') is True and received.get('episode')==episode
+        and received.get('master_frame_rate')=='25/1'
+        and re.fullmatch('[0-9a-f]{64}',received.get('sha256','')) is not None
+        and received['sha256'] not in restart.get('retired_master_sha256',{}).values()
+        and (root/'post/incoming'/(episode+'.clean-master.mov')).is_file())
     snapshot['qc_followup_state']=read(root/'post/reports'/(episode+'.qc-followup-status.json')).get('state')
     snapshot['pending_delivery_episodes']=[path.stem for path in sorted((root/'post/receipts').glob('S03E??.json'))
         if not ((root/'.kwjd/cleanup'/(path.stem+'.linux.json')).is_file()

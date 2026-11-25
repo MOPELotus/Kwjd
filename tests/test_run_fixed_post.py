@@ -58,6 +58,16 @@ class FixedPostInputGateTests(unittest.TestCase):
         with self.assertRaisesRegex(WaitInput,'inventory'):
             restart_master_gate(self.root,'S03E02',self.master,self.receipt['sha256'])
 
+    def test_retired_later_job_does_not_block_first_replacement_but_cannot_approve_next(self):
+        self.restart_policy({'S03E02':'a'*64,'S03E03':'b'*64})
+        jobs=self.root/'post/jobs';jobs.mkdir()
+        (jobs/'S03E03.json').write_text(json.dumps(dict(state='SUPERSEDED_WAIT_NATIVE25_MASTER',master_sha256='b'*64)))
+        serial_gate(self.root,'S03E02')
+        (jobs/'S03E02.json').write_text(json.dumps(dict(state='SUPERSEDED_WAIT_NATIVE25_MASTER',master_sha256='a'*64)))
+        with self.assertRaisesRegex(WaitInput,'finish first'):serial_gate(self.root,'S03E03')
+        (jobs/'S03E03.json').write_text(json.dumps(dict(state='SUPERSEDED_WAIT_NATIVE25_MASTER',master_sha256='c'*64)))
+        with self.assertRaisesRegex(WaitInput,'owns'):serial_gate(self.root,'S03E02')
+
     def test_unadmitted_episode_is_not_added_to_queue(self):
         repo=Path(__file__).resolve().parents[1]
         self.assertEqual(select_project(repo,'S03E02').name,'jigong-s03.json')

@@ -67,6 +67,11 @@ class PrepareNativePolicyTests(unittest.TestCase):
             prepare.prepare(self.post,activate=True,rife_backend='cuda_onnx',input_fps=30,season='S03')
         self.assertFalse((self.post/'backend/runtime.native-template.json').exists())
 
+    def test_jigong_production_preparation_rejects30_before_writing_runtime(self):
+        with self.assertRaisesRegex(ValueError,'native25'):
+            prepare.prepare(self.post,rife_backend='cuda_trt',input_fps=30,season='S03')
+        self.assertFalse((self.post/'backend/runtime.native-template.json').exists())
+
     def test_standalone_profiles_keep_serial_gate_independent_from_overlap(self):
         expected = {'serial': (False, False, 1), 'serial-gate': (False, True, 1),
                     'overlap1-legacy': (True, False, 1),

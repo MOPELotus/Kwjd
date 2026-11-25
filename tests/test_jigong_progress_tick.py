@@ -20,6 +20,14 @@ class ProgressTickTests(unittest.TestCase):
     def test_waiting_for_review_does_not_wake_model(self):
         self.assertIsNone(event(self.snapshot(),{}))
 
+    def test_retired_job_wakes_for_fresh25_rebinding_without_reusing_old_qc(self):
+        s=self.snapshot(active_episode='S03E02',job=dict(state='SUPERSEDED_WAIT_NATIVE25_MASTER'),
+                        replacement_master_ready=False)
+        self.assertIsNone(event(s,{'job':s['job']}))
+        s['replacement_master_ready']=True
+        self.assertEqual(event(s,{'job':s['job']}),
+                         'NATIVE25_REPLACEMENT_MASTER_REQUIRES_REBINDING:S03E02')
+
     def test_real_qc_hold_waits_for_tools_and_wakes_original_main_for_evidence(self):
         s=self.snapshot(job=dict(state='WAIT_FINAL_QC_REPAIR'),qc_followup_state='SOURCE_CUT_SCAN_RUNNING')
         self.assertIsNone(event(s,{}))

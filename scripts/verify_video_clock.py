@@ -41,7 +41,14 @@ def check(source,master,offset):
     detector=cv2.CascadeClassifier(cv2.data.haarcascades+'haarcascade_frontalface_default.xml')
     if detector.empty():raise ValueError('Native clock face detector asset is unavailable')
     rows=[]
-    for anchor in [60,900,1200,1500,1800,2100,2400,2700,3000,3300,3500]:
+    def duration(path):
+        return float(json.loads(subprocess.check_output(['ffprobe','-v','error',
+            '-show_entries','format=duration','-of','json',str(path)]))['format']['duration'])
+    source_duration,master_duration=duration(source),duration(master)
+    anchors=[t for t in [60,900,1200,1500,1800,2100,2400,2700,3000,3300,3500]
+             if t+1/source_rate<source_duration and 0<=t+offset-.2
+             and t+offset+.2+1/master_rate<master_duration]
+    for anchor in anchors:
         images,source_pts=decode_frames(source,anchor,1);image=images[0]
         candidates,master_pts=decode_frames(master,anchor+offset-.2,window_count)
         target=source_pts[0]+offset

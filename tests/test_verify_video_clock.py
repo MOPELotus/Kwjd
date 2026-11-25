@@ -12,7 +12,7 @@ import verify_video_clock as clock
 
 
 class NativeClockTests(unittest.TestCase):
-    def check_synthetic(self, matching_index=5, detected_anchors=None, master_rate=25):
+    def check_synthetic(self, matching_index=5, detected_anchors=None, master_rate=25, duration=3700):
         rng = np.random.default_rng(263)
         source = np.full((540, 960), 180, dtype=np.uint8)
         face = rng.integers(20, 220, size=(60, 60), dtype=np.uint8)
@@ -31,6 +31,7 @@ class NativeClockTests(unittest.TestCase):
             for i in range(11)]
 
         def probe(command):
+            if 'format=duration' in command:return ('{"format":{"duration":"%s"}}'%duration).encode()
             rate = master_rate if command[-1] == 'master.mov' else 25
             return ('{"streams":[{"avg_frame_rate":"%s/1","r_frame_rate":"%s/1"}]}' % (rate, rate)).encode()
 
@@ -49,6 +50,11 @@ class NativeClockTests(unittest.TestCase):
         self.assertTrue(result['verified'])
         self.assertTrue(all(row['best_index'] == 5 and row['match']
                             for row in result['rows']))
+
+    def test_shorter_native25_program_does_not_decode_out_of_range_anchor(self):
+        result=self.check_synthetic(duration=3431)
+        self.assertTrue(result['verified'])
+        self.assertEqual(max(row['anchor'] for row in result['rows']),3300)
 
     def test_face_match_at_wrong_native_time_still_fails(self):
         result = self.check_synthetic(matching_index=0)
