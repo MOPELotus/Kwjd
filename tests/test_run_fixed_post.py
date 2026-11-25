@@ -7,7 +7,7 @@ from unittest.mock import patch
 import hashlib
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from run_fixed_post import inputs,WaitInput,select_project,freeze_style,serial_gate,retire_idle_worker
+from run_fixed_post import inputs,WaitInput,select_project,freeze_style,serial_gate,retire_idle_worker,restart_master_gate
 
 
 class FixedPostInputGateTests(unittest.TestCase):
@@ -28,6 +28,35 @@ class FixedPostInputGateTests(unittest.TestCase):
     def test_filename_presence_or_modified_master_does_not_admit_production(self):
         self.master.write_bytes(b'changed')
         with self.assertRaisesRegex(ValueError,'receipt'):inputs(self.root,self.master,self.root/'missing.ass')
+
+    def restart_policy(self,denied):
+        directory=self.root/'.kwjd';directory.mkdir()
+        (directory/'jigong-native25-restart.json').write_text(json.dumps(dict(
+            schema_version=1,active=True,required_input_fps=25,retired_master_sha256=denied)))
+
+    def test_old_sha_is_rejected_even_with_matching_transfer_receipt(self):
+        self.restart_policy({'S03E02':self.receipt['sha256']})
+        with patch('run_fixed_post.subprocess.check_output') as probe:
+            with self.assertRaisesRegex(WaitInput,'Retired30'):inputs(self.root,self.master,self.root/'missing.ass')
+        probe.assert_not_called()
+
+    def test_new_hash_cannot_bypass_native25_rate_gate(self):
+        self.restart_policy({'S03E02':'a'*64})
+        with patch('run_fixed_post.subprocess.check_output',return_value=json.dumps(
+                {'streams':[{'r_frame_rate':'30/1','avg_frame_rate':'30/1'}]})):
+            with self.assertRaisesRegex(WaitInput,'non25'):
+                restart_master_gate(self.root,'S03E02',self.master,self.receipt['sha256'])
+
+    def test_new_native25_still_cannot_bypass_subtitle_gate(self):
+        self.restart_policy({'S03E02':'a'*64})
+        with patch('run_fixed_post.subprocess.check_output',return_value=json.dumps(
+                {'streams':[{'r_frame_rate':'25/1','avg_frame_rate':'25/1'}]})):
+            with self.assertRaisesRegex(WaitInput,'sealed'):inputs(self.root,self.master,self.root/'missing.ass')
+
+    def test_incomplete_restart_policy_fails_closed(self):
+        self.restart_policy({})
+        with self.assertRaisesRegex(WaitInput,'inventory'):
+            restart_master_gate(self.root,'S03E02',self.master,self.receipt['sha256'])
 
     def test_unadmitted_episode_is_not_added_to_queue(self):
         repo=Path(__file__).resolve().parents[1]

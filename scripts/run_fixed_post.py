@@ -20,6 +20,29 @@ class WaitInput(RuntimeError):pass
 def load(path):return json.loads(Path(path).read_text())
 
 
+def restart_master_gate(root,episode,master,digest):
+    """A retired generation cannot become eligible by reusing its old receipt."""
+    policy=Path(root)/'.kwjd/jigong-native25-restart.json'
+    if not episode.startswith('S03') or not policy.exists():return
+    data=load(policy)
+    if data.get('active') is not True:return
+    denied=data.get('retired_master_sha256')
+    if (data.get('schema_version')!=1 or data.get('required_input_fps')!=25
+            or not isinstance(denied,dict) or not denied
+            or any(not re.fullmatch('[0-9a-f]{64}',v) for v in denied.values())):
+        raise WaitInput('Native25 restart policy requires an explicit retired-master SHA inventory')
+    if digest in denied.values():
+        raise WaitInput('Retired30 master SHA is rejected; fresh native25 DaVinci export required')
+    from fractions import Fraction
+    streams=json.loads(subprocess.check_output(['ffprobe','-v','error','-select_streams','v:0',
+        '-show_entries','stream=r_frame_rate,avg_frame_rate','-of','json',str(master)]))['streams']
+    if (len(streams)!=1 or Fraction(streams[0]['r_frame_rate'])!=25
+            or Fraction(streams[0]['avg_frame_rate'])!=25):
+        raise WaitInput('Native25 restart rejects a non25 replacement master')
+    # Container rate alone does not prove native timeline/Mask provenance. Real
+    # receiving, clock, style, cut review and new GPU acceptance remain required.
+
+
 def select_project(repo,episode):
     candidates=[repo/'config/project.json',*(repo/'config/projects').glob('*.json')]
     matches=[p for p in candidates if load(p).get('season')==episode[:3]]
@@ -43,6 +66,7 @@ def inputs(root,master,ass):
     if (receipt.get('transfer_verified') is not True or receipt.get('episode')!=ep
             or receipt.get('sha256')!=digest or receipt.get('bytes')!=master.stat().st_size):
         raise ValueError('Master lacks its matching real handoff receipt')
+    restart_master_gate(root,ep,master,digest)
     if not validate_episode(root,ep) or not validate_ass(root,ep):
         raise WaitInput('Waiting for genuinely reviewed/sealed first-episode SRT and bound ASS')
     canonical_ass=root/'output/ass'/(ep+'.ass')
