@@ -212,16 +212,43 @@ def cleanup_local_anchor(root, ep, execute=False, expected_snapshot=None):
     return report
 
 
+def cleanup_for_rerun(root, ep, reason, execute=False):
+    """An explicit request to discard a failed Mask needs no fake master receipt."""
+    if not reason or not reason.strip():
+        raise ValueError('Explicit user rerun authorization is required')
+    if CACHE.resolve() != CACHE.absolute() or CACHE.parent.resolve() != Path('D:/ResolveWork').absolute():
+        raise ValueError('CacheClip resolves outside the exact authorized directory')
+    baseline = snapshot(CACHE)
+    report = dict(episode=ep, state='FAILED_MASK_CACHE_PLAN', checked_at=now(),
+                  cache_path=str(CACHE), bytes=sum(x['bytes'] for x in baseline['entries']),
+                  authorization=reason, master_validated=False, uploaded=False)
+    if execute:
+        time.sleep(2)
+        check_snapshot(CACHE, baseline)
+        for item in list(CACHE.iterdir()) if CACHE.exists() else []:
+            if item.is_dir():
+                shutil.rmtree(item)
+            else:
+                item.unlink()
+        report['state'] = 'FAILED_MASK_CACHE_RELEASED_FOR_RERUN'
+        report['remaining_top_level_entries'] = len(list(CACHE.iterdir())) if CACHE.exists() else 0
+        save(Path(root) / '.kwjd/cache-cleanup' / f'{ep}.mask-rerun.{time.time_ns()}.json', report)
+    return report
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('command', choices=('snapshot', 'cleanup', 'cleanup-local', 'delete-uploaded-master'))
+    p.add_argument('command', choices=('snapshot', 'cleanup', 'cleanup-local', 'cleanup-for-rerun', 'delete-uploaded-master'))
     p.add_argument('--root', required=True, type=Path)
     p.add_argument('--episode', required=True)
     p.add_argument('--execute', action='store_true')
+    p.add_argument('--reason', help='Exact explicit user authorization for failed Mask cache release')
     args = p.parse_args()
     from episode_lifecycle import episode
     episode(args.episode)
-    if args.command == 'snapshot':
+    if args.command == 'cleanup-for-rerun':
+        result = cleanup_for_rerun(args.root, args.episode, args.reason, args.execute)
+    elif args.command == 'snapshot':
         result = {'episode': args.episode, 'cache_path': str(CACHE),
                   'cache_snapshot': snapshot(CACHE), 'captured_at': now()}
         save(args.root / '.kwjd/cache-snapshots' / f'{args.episode}.json', result)
