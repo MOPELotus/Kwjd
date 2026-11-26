@@ -92,7 +92,22 @@
         "sustained_primary_subject_loss",
         "studio_or_audience_pixels_intruding_into_subject"
       ],
-      "whole_film_quality_review_still_required": true
+      "whole_film_quality_review_still_required": true,
+      "accepted_specific_cases": [
+        {
+          "episode": "S03E02",
+          "master_sha256": "74ecf24f5f44fb7c09d59c3454b4c2ecb0dead6286d908d7a2ff5acb1a8bd20a",
+          "final_sha256": "f9dc4d6b3007c5112426d58746bdc52a8b1985afeedd27adb988879e4c658c15",
+          "master_range_seconds": [
+            529.84,
+            563.56
+          ],
+          "description": "Approximately34s close-shot subject absence disclosed during actual finalQC",
+          "user_quote": "就这么一点的话问题不大",
+          "decision_date": "2026-11-26",
+          "acceptance_scope": "This disclosed occurrence in this exact master/final only; retain defect evidence, no repair required, no blanket future close-shot waiver"
+        }
+      ]
     }
   },
   "delivery": {
