@@ -11,6 +11,22 @@ spec.loader.exec_module(m)
 
 
 class StatusTests(unittest.TestCase):
+    def test_parallel_lanes_use_independent_episode_checkpoints(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);base=root/'ocr/subtitle-review';base.mkdir(parents=True)
+            (root/'.kwjd').mkdir()
+            workers=[]
+            for name,ep,count in [('main','S03E11',976),('lane-b','S03E12',16)]:
+                status=root/f'{name}.json';status.write_text('{"state":"RUNNING"}')
+                workers.append(dict(id=name,episodes=[ep],status_path=str(status)))
+                (base/f'progress-{ep}.json').write_text(json.dumps(dict(episode=ep,
+                    total_original_cues=1600,text_reviewed_original_cue_ids=list(range(count)))))
+            (root/'.kwjd/subtitle-executor.json').write_text(json.dumps(dict(workers=workers)))
+            result=m.render(root,[])
+            self.assertIn('并行审校：2路',result)
+            self.assertIn('main｜S03E11｜976/1600',result)
+            self.assertIn('lane-b｜S03E12｜16/1600',result)
+
     def test_payloads_and_commands_are_not_rendered(self):
         event = dict(type='tool_execution_start', toolName='bash', args=dict(command='secret-command'))
         self.assertNotIn('secret-command', m.describe(event))

@@ -1,12 +1,14 @@
-"""Run the sole subtitle reviewer through a separately authenticated OMP process.
+"""Run episode-scoped reviewers through separately authenticated OMP processes.
 
 No App/OAuth credentials or inherited provider environment enter the child.
 Runtime state, prompts, sessions and logs belong in the private data root.
 """
 import argparse
+from contextlib import ExitStack
 import fcntl
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import time
@@ -61,16 +63,25 @@ def write_state(path, **values):
     temp.replace(path)
 
 
-def checkpoint(root):
+def checkpoint(root, episodes=None):
     result = []
-    for number in range(2, 15):
-        ep = f'S03E{number:02d}'
+    for ep in episodes or [f'S03E{number:02d}' for number in range(2, 15)]:
         p = root / f'ocr/subtitle-review/progress-{ep}.json'
         if p.is_file():
             d = json.loads(p.read_text())
             result.append((ep, d.get('complete') is True,
                            len(d.get('text_reviewed_original_cue_ids', []))))
     return result
+
+
+def acquire_episodes(stack, area, episodes):
+    locks = area / 'episode-locks'
+    locks.mkdir(exist_ok=True)
+    for episode in sorted(episodes):
+        if not re.fullmatch(r'S03E(?:0[2-9]|1[0-4])', episode):
+            raise ValueError('Invalid episode assignment')
+        handle = stack.enter_context((locks / (episode + '.lock')).open('a'))
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
 
 
 def main():
@@ -80,14 +91,25 @@ def main():
     parser.add_argument('--agent-dir', type=Path, required=True)
     parser.add_argument('--prompt-file', type=Path, required=True)
     parser.add_argument('--binary', type=Path, default=Path('/home/lotus/.local/bin/omp'))
+    parser.add_argument('--worker-id', default='main')
+    parser.add_argument('--episodes', nargs='+')
     args = parser.parse_args()
-    area = args.root / 'ocr/subtitle-review/api-handoff'
+    if not re.fullmatch(r'[a-z][a-z0-9-]{0,31}', args.worker_id):
+        parser.error('Invalid worker ID')
+    base = args.root / 'ocr/subtitle-review/api-handoff'
+    area = base if args.worker_id == 'main' else base / 'workers' / args.worker_id
     area.mkdir(parents=True, exist_ok=True)
-    with (area / 'omp-owner.lock').open('a') as lock:
+    with ExitStack() as stack:
+        lock = stack.enter_context((area / 'omp-owner.lock').open('a'))
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        assigned = args.episodes or [f'S03E{n:02d}' for n in range(11, 15)]
+        acquire_episodes(stack, base, assigned)
         validate_configuration(args.agent_dir)
         env = child_environment(args.key_file, args.agent_dir)
         env['JIGONG_OMP_TRANSPORT_LOG'] = str(area / 'omp-transport.jsonl')
+        env['JIGONG_OMP_SESSION_DIR'] = str(area / 'omp-sessions')
+        env['JIGONG_OMP_WORKER_ID'] = args.worker_id
+        env['JIGONG_OMP_EPISODES'] = ','.join(assigned)
         prompt = args.prompt_file.read_text()
         sessions = area / 'omp-sessions'
         sessions.mkdir(exist_ok=True)
@@ -95,7 +117,7 @@ def main():
         resume = any(sessions.rglob('*.jsonl'))
         state = area / 'omp-status.json'
         for attempt in range(100):
-            before = checkpoint(args.root)
+            before = checkpoint(args.root, assigned)
             log = area / f'omp-run-{time.time_ns()}.jsonl'
             with log.open('x') as output:
                 child = subprocess.Popen(command(args.binary, args.root, sessions, prompt, resume),
@@ -103,9 +125,17 @@ def main():
                                          stderr=subprocess.STDOUT)
                 write_state(state, state='RUNNING', pid=child.pid, provider='jigong-relay',
                             api='openai-responses', model='gpt-6.1-sol', effort='medium',
-                            log=str(log), account_auth_inherited=False, attempt=attempt)
+                            log=str(log), account_auth_inherited=False, attempt=attempt,
+                            worker_id=args.worker_id, assigned_episodes=assigned)
                 code = child.wait()
-            after = checkpoint(args.root)
+            after = checkpoint(args.root, assigned)
+            if code == 0 and args.episodes and len(after) == len(assigned) and all(x[1] for x in after):
+                from subtitle_review_supervisor import validate_episode
+                from subtitle_review_ass import validate_ass
+                if all(validate_episode(args.root, ep) and validate_ass(args.root, ep) for ep in assigned):
+                    write_state(state, state='COMPLETE', validated_episodes=assigned,
+                                assigned_episodes=assigned, worker_id=args.worker_id, log=str(log))
+                    return 0
             if code != 0 or after == before:
                 write_state(state, state='NEEDS_ATTENTION', exit_code=code, log=str(log),
                             reason='CLI failed or returned without saved subtitle progress; no blind retry')
@@ -123,8 +153,8 @@ def main():
                 write_state(state, state='NEEDS_ATTENTION', reason='Completion validation failed', log=str(log))
                 return 1
             resume = True
-            prompt = ('继续同一字幕任务，从实际落盘检查点接续。只用当前隔离外部API，'
-                      '保持原门禁与focused-v1，直到13回SRT/ASS真实验证完成。不要新建代理。')
+            prompt = (args.prompt_file.read_text() + '\n继续同一任务，从实际已保存检查点接续，'
+                      '严格只处理分配回目，不写共享progress.json，不新建代理。')
             time.sleep(30)
         write_state(state, state='NEEDS_ATTENTION', reason='Bounded continuation limit reached')
         return 1

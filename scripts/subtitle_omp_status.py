@@ -81,6 +81,19 @@ def describe(event):
     return None
 
 
+def worker_states(root):
+    base = root / 'ocr/subtitle-review'
+    executor = read(root / '.kwjd/subtitle-executor.json')
+    result = []
+    for item in executor.get('workers', []):
+        status = read(Path(item['status_path']))
+        episodes = item['episodes']
+        candidates = [read(base / f'progress-{ep}.json') for ep in episodes]
+        progress = next((p for p in candidates if p.get('complete') is not True), candidates[-1])
+        result.append((item['id'], status, progress))
+    return result or [('main', read(base/'api-handoff/omp-status.json'), read(base/'progress.json'))]
+
+
 class Events:
     def __init__(self):
         self.path = None
@@ -140,12 +153,29 @@ def render(root, recent):
     ratio = f'{count / total:.1%}' if total else '未知'
     latest = next((line for line in reversed(recent) if ' 检查点：' not in line), '')
     activity = latest.split(' ', 2)[-1] if latest else '等待新的工具记录'
+    workers = worker_states(root)
+    lanes = []
+    if len(workers) > 1:
+        if any(status.get('state')=='NEEDS_ATTENTION' for _,status,_ in workers):
+            label = '部分线程等待排查'
+        elif completed==13 and all(status.get('state')=='COMPLETE' for _,status,_ in workers):
+            label = '全部完成'
+        else:
+            label = '并行运行中' if any(status.get('state')=='RUNNING' for _,status,_ in workers) else '等待启动'
+        for worker, status, current in workers:
+            ep = current.get('episode', '?')
+            done = len(current.get('text_reviewed_original_cue_ids', []))
+            size = current.get('total_original_cues', 0)
+            fraction = f'{done/size:.1%}' if size else '等待初始化'
+            state = {'RUNNING':'运行中','COMPLETE':'分配回目已完成','NEEDS_ATTENTION':'等待排查'}.get(status.get('state'),'等待启动')
+            lanes.append(f'  {worker}｜{ep}｜{done}/{size}条 · {fraction}｜{state}')
     return '\n'.join([
         '济公传 · OMP字幕实时状态', f'刷新：{stamp()}（北京时间）',
         f'执行：{label}｜外部 Responses API｜gpt-6.1-sol / medium',
         f'当前：第{number}回（{episode or "未知"}）',
         f'本回已保存：{count}/{total}条 · {ratio}',
         f'已封存SRT及ASS：{completed}/13（文件SHA匹配）',
+        *(['', f'并行审校：{len(workers)}路', *lanes, ''] if lanes else []),
         f'当前阶段：{activity}', f'检查点更新：{age}',
         '说明：截图生成不计审校进度；百分比只计已保存的逐条审校。',
         '', '最近操作（日志无时间戳时显示首次观察时间）：',
@@ -161,21 +191,45 @@ def main():
     args = parser.parse_args()
     if args.watch and args.watch < 1:
         parser.error('Watch interval must be at least one second')
-    events = Events()
+    readers = {}
+    recent = deque(maxlen=8)
     area = args.root / 'ocr/subtitle-review/api-handoff'
     prior = None
     first = True
     while True:
-        owner = read(area / 'omp-status.json')
-        added = events.update(owner.get('log'))
+        added = []
+        workers = worker_states(args.root)
+        for worker, owner, _ in workers:
+            reader = readers.setdefault(worker, Events())
+            for line in reader.update(owner.get('log')):
+                entry = line[:14] + f' [{worker}]' + line[14:]
+                recent.append(entry)
+                added.append(entry)
+        if args.publish and len(workers) > 1:
+            # Sole aggregate writer; lane workers update only progress-EP.json.
+            active = [p for _, _, p in workers if p.get('complete') is not True and p.get('episode')]
+            if active:
+                chosen = dict(min(active, key=lambda p:p['episode']))
+                chosen['parallel_workers'] = [w for w, _, _ in workers]
+                temp = args.root / 'ocr/subtitle-review/progress.json.parallel.tmp'
+                temp.write_text(json.dumps(chosen,ensure_ascii=False,indent=2)+'\n')
+                temp.replace(args.root / 'ocr/subtitle-review/progress.json')
+            elif all(status.get('state')=='COMPLETE' for _,status,_ in workers) and sealed_count(args.root)==13:
+                progress_path = args.root / 'ocr/subtitle-review/progress.json'
+                completed = read(progress_path)
+                completed.update(complete=True,completed_episodes=[f'S03E{n:02d}' for n in range(2,15)],
+                                 stage='ALL_13_REVIEWED_SEALED_AND_ASS_READY',updated_at=time.time())
+                temporary = progress_path.with_suffix('.parallel.tmp')
+                temporary.write_text(json.dumps(completed,ensure_ascii=False,indent=2)+'\n')
+                temporary.replace(progress_path)
         progress = read(args.root / 'ocr/subtitle-review/progress.json')
         marker = (progress.get('episode'), len(progress.get('text_reviewed_original_cue_ids', [])))
         if marker != prior:
             message = f'{stamp()} 检查点：{marker[0]} 已保存{marker[1]}/{progress.get("total_original_cues", 0)}条'
-            events.recent.append(message)
+            recent.append(message)
             added.append(message)
             prior = marker
-        output = render(args.root, events.recent)
+        output = render(args.root, recent)
         if args.publish:
             temp = area / 'status.txt.tmp'
             temp.write_text(output)

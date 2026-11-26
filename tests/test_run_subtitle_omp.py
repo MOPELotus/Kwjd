@@ -1,6 +1,7 @@
 import importlib.util
 import os
 import json
+from contextlib import ExitStack
 from pathlib import Path
 import tempfile
 import unittest
@@ -12,6 +13,24 @@ spec.loader.exec_module(runner)
 
 
 class IsolationTests(unittest.TestCase):
+    def test_other_lanes_progress_cannot_count_as_this_lanes_progress(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);base=root/'ocr/subtitle-review';base.mkdir(parents=True)
+            for ep,count in [('S03E11',976),('S03E12',16)]:
+                (base/f'progress-{ep}.json').write_text(json.dumps(dict(complete=False,
+                    text_reviewed_original_cue_ids=list(range(count)))))
+            self.assertEqual(runner.checkpoint(root,['S03E11']),[('S03E11',False,976)])
+
+    def test_overlapping_episode_assignments_are_exclusive(self):
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as first:
+            area=Path(directory)
+            runner.acquire_episodes(first,area,['S03E11','S03E13'])
+            with ExitStack() as second:
+                with self.assertRaises(BlockingIOError):
+                    runner.acquire_episodes(second,area,['S03E11'])
+            with ExitStack() as second:
+                runner.acquire_episodes(second,area,['S03E12','S03E14'])
+
     def test_default_image_budget_cannot_silently_truncate_subtitle_pages(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

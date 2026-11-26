@@ -24,6 +24,8 @@ class ProgressTickTests(unittest.TestCase):
         self.assertEqual(event(self.snapshot(external_subtitle={'state':'NEEDS_ATTENTION'}),{}),
                          'EXTERNAL_API_SUBTITLE_REQUIRES_ATTENTION')
         self.assertIsNone(event(self.snapshot(external_subtitle={'state':'RUNNING'}),{}))
+        self.assertEqual(event(self.snapshot(external_subtitle_workers=[{'state':'RUNNING'},
+                          {'state':'NEEDS_ATTENTION'}]),{}),'EXTERNAL_API_SUBTITLE_REQUIRES_ATTENTION')
 
     def test_retired_job_wakes_for_fresh25_rebinding_without_reusing_old_qc(self):
         s=self.snapshot(active_episode='S03E02',job=dict(state='SUPERSEDED_WAIT_NATIVE25_MASTER'),

@@ -122,6 +122,8 @@ def event(snapshot,previous):
         return 'PRODUCTION_LOG_UNCHANGED_OVER_ONE_HOUR'
     if snapshot.get('external_subtitle',{}).get('state')=='NEEDS_ATTENTION':
         return 'EXTERNAL_API_SUBTITLE_REQUIRES_ATTENTION'
+    if any(worker.get('state')=='NEEDS_ATTENTION' for worker in snapshot.get('external_subtitle_workers',[])):
+        return 'EXTERNAL_API_SUBTITLE_REQUIRES_ATTENTION'
     if not snapshot.get('review_checkpoint_complete',False) and snapshot.get('review_checkpoint_age_seconds',0)>3600:
         return 'SUBTITLE_REVIEW_CHECKPOINT_UNCHANGED_OVER_ONE_HOUR'
     if snapshot['both_cleaned'] and not previous.get('both_cleaned'):return 'DELIVERY_AND_CLEANUP_COMPLETED'
@@ -179,6 +181,7 @@ def inspect(root,area,config,thread,threshold,wake):
     if executor.get('active') is True and executor.get('mode')=='isolated-omp-responses':
         snapshot['external_subtitle']=read(root/'ocr/subtitle-review/api-handoff/omp-status.json')
         snapshot['subtitle_executor']='isolated-omp-responses'
+        snapshot['external_subtitle_workers']=[read(worker['status_path']) for worker in executor.get('workers',[])]
     next_episode=f'S03E{int(episode[4:])+1:02d}'
     following=read(root/'post'/('managed-'+next_episode)/'progress.json')
     if following.get('serial_after')==episode:
