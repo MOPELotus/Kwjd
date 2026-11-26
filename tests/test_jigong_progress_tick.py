@@ -20,6 +20,11 @@ class ProgressTickTests(unittest.TestCase):
     def test_waiting_for_review_does_not_wake_model(self):
         self.assertIsNone(event(self.snapshot(),{}))
 
+    def test_external_subtitle_failure_wakes_main_but_running_does_not(self):
+        self.assertEqual(event(self.snapshot(external_subtitle={'state':'NEEDS_ATTENTION'}),{}),
+                         'EXTERNAL_API_SUBTITLE_REQUIRES_ATTENTION')
+        self.assertIsNone(event(self.snapshot(external_subtitle={'state':'RUNNING'}),{}))
+
     def test_retired_job_wakes_for_fresh25_rebinding_without_reusing_old_qc(self):
         s=self.snapshot(active_episode='S03E02',job=dict(state='SUPERSEDED_WAIT_NATIVE25_MASTER'),
                         replacement_master_ready=False)

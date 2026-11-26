@@ -1,0 +1,47 @@
+import importlib.util
+import os
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+
+spec = importlib.util.spec_from_file_location('runner', Path(__file__).parents[1] / 'scripts/run_subtitle_omp.py')
+runner = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(runner)
+
+
+class IsolationTests(unittest.TestCase):
+    def test_provider_auth_is_not_inherited(self):
+        with tempfile.TemporaryDirectory() as directory:
+            key = Path(directory) / 'key'
+            key.write_text('test-key')
+            key.chmod(0o600)
+            with patch.dict(os.environ, {'OPENAI_API_KEY': 'wrong', 'CODEX_HOME': '/wrong',
+                                        'ANTHROPIC_API_KEY': 'wrong', 'OMP_PROFILE': 'wrong'}):
+                env = runner.child_environment(key, Path(directory) / 'agent')
+            self.assertEqual(env['JIGONG_RESPONSES_API_KEY'], 'test-key')
+            for name in ['OPENAI_API_KEY', 'CODEX_HOME', 'ANTHROPIC_API_KEY', 'OMP_PROFILE']:
+                self.assertNotIn(name, env)
+
+    def test_public_or_empty_key_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            key = Path(directory) / 'key'
+            key.write_text('')
+            key.chmod(0o600)
+            with self.assertRaises(ValueError):
+                runner.child_environment(key, Path(directory))
+            key.write_text('test-key')
+            key.chmod(0o644)
+            with self.assertRaises(ValueError):
+                runner.child_environment(key, Path(directory))
+
+    def test_fixed_external_model_and_bounded_tools(self):
+        args = runner.command(Path('/bin/omp'), Path('/data'), Path('/sessions'), 'continue', True)
+        self.assertEqual(args[args.index('--model') + 1], 'jigong-relay/gpt-6.1-sol')
+        self.assertIn('--continue', args)
+        self.assertEqual(args[args.index('--tools') + 1], 'read,bash,edit,write')
+        self.assertNotIn('--api-key', args)
+
+
+if __name__ == '__main__':
+    unittest.main()
