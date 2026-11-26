@@ -11,6 +11,14 @@ spec.loader.exec_module(m)
 
 
 class StatusTests(unittest.TestCase):
+    def test_display_refresh_does_not_make_a_stalled_checkpoint_look_new(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'progress.json';value=dict(episode='S03E11',updated_at=100)
+            self.assertTrue(m.write_changed(path,value))
+            previous=path.stat().st_mtime_ns
+            self.assertFalse(m.write_changed(path,value))
+            self.assertEqual(path.stat().st_mtime_ns,previous)
+
     def test_parallel_lanes_use_independent_episode_checkpoints(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);base=root/'ocr/subtitle-review';base.mkdir(parents=True)

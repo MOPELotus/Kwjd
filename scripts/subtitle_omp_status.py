@@ -20,6 +20,17 @@ def read(path):
         return {}
 
 
+def write_changed(path, value):
+    # Preserve checkpoint mtime when a display refresh observes no real work.
+    # The hourly stall detector depends on that mtime.
+    if read(path) == value:
+        return False
+    temp = path.with_suffix('.aggregate.tmp')
+    temp.write_text(json.dumps(value,ensure_ascii=False,indent=2)+'\n')
+    temp.replace(path)
+    return True
+
+
 def stamp(epoch=None):
     return datetime.fromtimestamp(time.time() if epoch is None else epoch, ZONE).strftime('%m-%d %H:%M:%S')
 
@@ -211,17 +222,14 @@ def main():
             if active:
                 chosen = dict(min(active, key=lambda p:p['episode']))
                 chosen['parallel_workers'] = [w for w, _, _ in workers]
-                temp = args.root / 'ocr/subtitle-review/progress.json.parallel.tmp'
-                temp.write_text(json.dumps(chosen,ensure_ascii=False,indent=2)+'\n')
-                temp.replace(args.root / 'ocr/subtitle-review/progress.json')
+                write_changed(args.root / 'ocr/subtitle-review/progress.json', chosen)
             elif all(status.get('state')=='COMPLETE' for _,status,_ in workers) and sealed_count(args.root)==13:
                 progress_path = args.root / 'ocr/subtitle-review/progress.json'
                 completed = read(progress_path)
-                completed.update(complete=True,completed_episodes=[f'S03E{n:02d}' for n in range(2,15)],
-                                 stage='ALL_13_REVIEWED_SEALED_AND_ASS_READY',updated_at=time.time())
-                temporary = progress_path.with_suffix('.parallel.tmp')
-                temporary.write_text(json.dumps(completed,ensure_ascii=False,indent=2)+'\n')
-                temporary.replace(progress_path)
+                if completed.get('stage')!='ALL_13_REVIEWED_SEALED_AND_ASS_READY':
+                    completed.update(complete=True,completed_episodes=[f'S03E{n:02d}' for n in range(2,15)],
+                                     stage='ALL_13_REVIEWED_SEALED_AND_ASS_READY',updated_at=time.time())
+                    write_changed(progress_path, completed)
         progress = read(args.root / 'ocr/subtitle-review/progress.json')
         marker = (progress.get('episode'), len(progress.get('text_reviewed_original_cue_ids', [])))
         if marker != prior:
