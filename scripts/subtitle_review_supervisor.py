@@ -77,6 +77,8 @@ def validate_episode(root,episode):
         path=Path(item["path"])
         if not path.resolve().is_relative_to(review.resolve()) or sha(path)!=item["sha256"]:
             return False
+    from subtitle_review_cleanup import verify_retirement
+    if not verify_retirement(review,episode,report):return False
     cues=read_srt(final)
     if not cues or any(end<=start for start,end,text in cues) or any(cues[i][0]<cues[i-1][1] for i in range(1,len(cues))):
         return False
