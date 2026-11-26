@@ -18,6 +18,13 @@
 13回完成标记还必须通过原有13份SRT/ASS验证才能结束。
 定时器仍只用官方队列恢复同一个主会话，不唤醒已移交的原生字幕代理。
 
+人类可读监视器`subtitle_omp_status.py --root DATA --watch 5`只读实际进度及OMP工具日志，
+显示当前回目、已保存cue百分比、阶段和最近八次操作。它不调用任何模型；
+`--publish`每五秒原子刷新私有`api-handoff/status.txt`并追加`human.log`，
+不输出命令正文、图片数据或凭据。日志没有原时间戳时标明使用观察时间。
+SSH端可用`watch -n 5 -t cat DATA/ocr/subtitle-review/api-handoff/status.txt`实时查看，
+退出查看不停止字幕任务。
+
 OMP直接使用read图像工具审校；首批原图复用下述已取证文件，单次非流式请求的502
 不被当作已审或自动重试。下述直接Responses工具作为可选有界单批工具保留，
 不得与唯一OMP同时审同一批。
