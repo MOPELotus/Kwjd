@@ -3,13 +3,35 @@ from pathlib import Path
 import unittest
 import tempfile
 import json
+import hashlib
+import os
 from unittest.mock import patch
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from jigong_receive_admission import transfer_assessment,snapshot
+from jigong_receive_admission import transfer_assessment,snapshot,occupied_segment_credit
 
 
 class ReceiveProductionBudgetTests(unittest.TestCase):
+    def test_credit_only_sha_verified_current_regular_segments_and_recheck_changes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            post=Path(temp);(post/'backend').mkdir();master='a'*64;fingerprint='b'*64;ep='S03E03'
+            (post/'backend/production-ready.json').write_text(json.dumps(dict(
+                master_sha256=master,backend_fingerprint=fingerprint,technical_checked=True)))
+            folder=post/f'cache/{ep}/{ep}.segments'/(master[:16]+'-'+fingerprint[:16]);folder.mkdir(parents=True)
+            media=folder/'000001.mkv';media.write_bytes(b'verified-current-encode')
+            receipt=folder/'000001.ready.json';receipt.write_text(json.dumps(dict(
+                episode=ep,master_sha256=master,backend_fingerprint=fingerprint,
+                sha256=hashlib.sha256(media.read_bytes()).hexdigest())))
+            job=dict(episode=ep,master_sha256=master);device=media.stat().st_dev
+            self.assertEqual(occupied_segment_credit(post,job,device,1000),media.stat().st_size)
+            media.write_bytes(b'changed')
+            self.assertEqual(occupied_segment_credit(post,job,device,1000),0)
+            media.unlink();target=post/'other-file';target.write_bytes(b'other')
+            media.symlink_to(target)
+            self.assertEqual(occupied_segment_credit(post,job,device,1000),0)
+            media.unlink();os.link(target,media)
+            self.assertEqual(occupied_segment_credit(post,job,device,1000),0)
+
     def test_separate_receiver_still_reads_actual_production_owner(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp)/'receive';production=Path(temp)/'production'
