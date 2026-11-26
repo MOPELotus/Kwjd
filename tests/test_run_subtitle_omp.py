@@ -1,5 +1,6 @@
 import importlib.util
 import os
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -11,6 +12,17 @@ spec.loader.exec_module(runner)
 
 
 class IsolationTests(unittest.TestCase):
+    def test_default_image_budget_cannot_silently_truncate_subtitle_pages(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            model = dict(id='gpt-6.1-sol',input=['text','image'])
+            config = {'providers':{'jigong-relay':dict(baseUrl='https://api.zhehentiaohe.cn/v1',
+                api='openai-responses',apiKey='JIGONG_RESPONSES_API_KEY',models=[model])}}
+            path = root/'models.yml';path.write_text(json.dumps(config))
+            with self.assertRaises(ValueError):runner.validate_configuration(root)
+            model['imageCountBudget']=32;path.write_text(json.dumps(config))
+            runner.validate_configuration(root)
+
     def test_provider_auth_is_not_inherited(self):
         with tempfile.TemporaryDirectory() as directory:
             key = Path(directory) / 'key'

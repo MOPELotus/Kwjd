@@ -38,6 +38,23 @@ def command(binary, root, sessions, prompt, resume=False):
     return args + [prompt]
 
 
+def validate_configuration(agent_dir):
+    # This task provisions models.yml as JSON (valid YAML). An unspecified
+    # custom-provider image budget defaults to five in this OMP build.
+    providers = json.loads((agent_dir / 'models.yml').read_text()).get('providers', {})
+    if set(providers) != {'jigong-relay'}:
+        raise ValueError('Expected only the isolated external provider')
+    provider = providers['jigong-relay']
+    models = provider.get('models', [])
+    if (provider.get('baseUrl') != 'https://api.zhehentiaohe.cn/v1'
+            or provider.get('api') != 'openai-responses'
+            or provider.get('apiKey') != 'JIGONG_RESPONSES_API_KEY'
+            or len(models) != 1 or models[0].get('id') != 'gpt-6.1-sol'
+            or 'image' not in models[0].get('input', [])
+            or models[0].get('imageCountBudget') != 32):
+        raise ValueError('External route/model/image delivery configuration differs from verified setup')
+
+
 def write_state(path, **values):
     temp = path.with_suffix('.tmp')
     temp.write_text(json.dumps(dict(at=time.time(), **values), indent=2) + '\n')
@@ -68,6 +85,7 @@ def main():
     area.mkdir(parents=True, exist_ok=True)
     with (area / 'omp-owner.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        validate_configuration(args.agent_dir)
         env = child_environment(args.key_file, args.agent_dir)
         env['JIGONG_OMP_TRANSPORT_LOG'] = str(area / 'omp-transport.jsonl')
         prompt = args.prompt_file.read_text()
