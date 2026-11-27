@@ -116,11 +116,16 @@ def snapshot(root, episode, production_root=None):
         peaks[devices['cache']]=max(0,peaks.get(devices['cache'],0)-occupied)
     assessment=transfer_assessment(peaks,free,incoming.stat().st_dev,size,
                                    partial.stat().st_size if partial.exists() else 0)
-    return {**base,'admitted':assessment['allowed'],'assessment':assessment,
+    result={**base,'admitted':assessment['allowed'],'assessment':assessment,
             'state':'UPLOAD_CAPACITY_ADMITTED' if assessment['allowed'] else 'WAIT_ACTIVE_PRODUCTION_PEAK',
             'active_production_episodes':[j['episode'] for j in jobs],
             'verified_occupied_current_segment_credit_bytes':occupied,
             'scope':'Conservative remaining active phase peaks (only SHA-verified occupied current segments credited) plus remaining incoming bytes and5GiB per filesystem; actual receipt still needs main verification'}
+    if intake.get('local_quality_disposition_pending') is True:
+        result.update(admitted=False,capacity_admitted=assessment['allowed'],
+            state='WAIT_LOCAL_QUALITY_DISPOSITION',local_quality_disposition_pending=True,
+            upload_hold_reason='Disclosed local master quality issue awaits explicit disposition; capacity does not approve quality')
+    return result
 
 
 def main():

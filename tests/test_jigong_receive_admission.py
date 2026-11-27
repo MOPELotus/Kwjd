@@ -53,6 +53,23 @@ class ReceiveProductionBudgetTests(unittest.TestCase):
             self.assertIn(str(production/'post/incoming/S03E03.clean-master.mov'),probe.call_args.args[0])
             self.assertEqual(peaks.call_args.args[:3],(3660.44,48000,2))
 
+    def test_local_quality_hold_preserves_capacity_assessment_but_never_admits(self):
+        from types import SimpleNamespace
+        for pending, free, capacity in [(True,100*2**30,True),(True,2**30,False),(False,100*2**30,True)]:
+            with self.subTest(pending=pending,free=free),tempfile.TemporaryDirectory() as temp:
+                root=Path(temp);folder=root/'post/managed-S03E08';folder.mkdir(parents=True)
+                for name in ['cache','final','jobs']:(root/'post'/name).mkdir()
+                (folder/'native25-intake.json').write_text(json.dumps(dict(
+                    expected_master_sha256='d'*64,expected_master_bytes=100,
+                    local_quality_disposition_pending=pending)))
+                with patch('jigong_receive_admission.shutil.disk_usage',return_value=SimpleNamespace(free=free)):
+                    result=snapshot(root,'S03E08')
+                self.assertEqual(result['assessment']['allowed'],capacity)
+                self.assertEqual(result['admitted'],capacity and not pending)
+                if pending:
+                    self.assertEqual(result['state'],'WAIT_LOCAL_QUALITY_DISPOSITION')
+                    self.assertEqual(result['capacity_admitted'],capacity)
+
     def test_user_pause_prevents_admission_and_receiving_directory_creation(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);folder=root/'post/managed-S03E03';folder.mkdir(parents=True)
