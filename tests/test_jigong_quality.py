@@ -40,6 +40,17 @@ class QualityTests(unittest.TestCase):
             with self.assertRaises(ValueError):m.master_identity(root,'S03E03')
             with self.assertRaises(ValueError):m.master_identity(root,'S03E15')
 
+    def test_authorized_external_reviewer_is_scoped_and_has_real_identity(self):
+        r=dict(kind='external_omp_responses',session_id='01a203ac-7e99-7153-a57a-e82c19cd6fd1',
+               provider='jigong-relay',endpoint='https://api.zhehentiaohe.cn/v1/responses',
+               model='gpt-6.1-sol',reasoning_effort='medium',response_ids=['resp_actual'])
+        self.assertTrue(m.valid_reviewer(r,'S03E04'))
+        self.assertTrue(m.valid_reviewer(r,'S03E14'))
+        for ep in ['S03E02','S03E03','S03E15','S01E04']:
+            self.assertFalse(m.valid_reviewer(r,ep))
+        for key,value in [('response_ids',[]),('provider','other'),('model','other'),('session_id','fake')]:
+            self.assertFalse(m.valid_reviewer({**r,key:value},'S03E04'))
+
     def fixture(self,root):
         post=root/'post';(post/'reports').mkdir(parents=True);(post/'receipts').mkdir()
         evidence=post/'evidence.json';evidence.write_text('actual review fixture')

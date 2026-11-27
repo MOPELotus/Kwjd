@@ -11,6 +11,23 @@ from episode_lifecycle import cleanup,load,sha256,validate_receipt
 EPISODE='S03E02'
 MASTER='0aaa63c922cd92e211c3515003169aed8c466251b66f4b233e539cb62cb0baa6'
 
+def valid_reviewer(reviewer, episode):
+    """User-authorized Nov27 delegation; preserve actual reviewer provenance."""
+    if not re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', reviewer.get('session_id', '')):
+        return False
+    if reviewer.get('kind') == 'codex':
+        return True
+    ids = reviewer.get('response_ids')
+    return (re.fullmatch(r'S03E(?:0[4-9]|1[0-4])', episode or '') is not None
+            and reviewer.get('kind') == 'external_omp_responses'
+            and reviewer.get('provider') == 'jigong-relay'
+            and reviewer.get('endpoint') == 'https://api.zhehentiaohe.cn/v1/responses'
+            and reviewer.get('model') == 'gpt-6.1-sol'
+            and reviewer.get('reasoning_effort') == 'medium'
+            and isinstance(ids, list) and bool(ids)
+            and all(isinstance(x, str) and bool(x.strip()) for x in ids))
+
+
 def master_identity(root,episode):
     restart_path=Path(root)/'.kwjd/jigong-native25-restart.json'
     restarting=restart_path.is_file() and load(restart_path).get('active') is True
@@ -48,8 +65,8 @@ def verify_quality(root,quality=None,episode=EPISODE):
         if not re.fullmatch(r'[0-9a-f]{64}',data.get(section,{}).get(key,'')):
             raise ValueError('Actual asset hash required: '+key)
     reviewer=data.get('reviewed_by',{})
-    if reviewer.get('kind')!='codex' or not re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}',reviewer.get('session_id','')):
-        raise ValueError('Actual Codex review session required')
+    if not valid_reviewer(reviewer, episode):
+        raise ValueError('Actual authorized review session required')
     if not isinstance(data.get('accepted_limitations'),list):raise ValueError('Explicit accepted review limits required')
     for section in ('visual','subtitles','synchronization','audio'):
         record=data.get(section,{})

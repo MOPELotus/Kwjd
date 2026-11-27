@@ -120,6 +120,10 @@ def event(snapshot,previous):
     elif snapshot.get('pending_delivery_episodes') or (snapshot['receipt_exists'] and not snapshot['both_cleaned']):return 'WINDOWS_RECEIPT_REQUIRES_VERIFICATION'
     if state in ('ENHANCING','PROCESSING') and snapshot['media_log_age_seconds']>3600:
         return 'PRODUCTION_LOG_UNCHANGED_OVER_ONE_HOUR'
+    if snapshot.get('external_subtitle',{}).get('state')=='NEEDS_ATTENTION':
+        return 'EXTERNAL_API_SUBTITLE_REQUIRES_ATTENTION'
+    if any(worker.get('state')=='NEEDS_ATTENTION' for worker in snapshot.get('external_subtitle_workers',[])):
+        return 'EXTERNAL_API_SUBTITLE_REQUIRES_ATTENTION'
     if not snapshot.get('review_checkpoint_complete',False) and snapshot.get('review_checkpoint_age_seconds',0)>3600:
         return 'SUBTITLE_REVIEW_CHECKPOINT_UNCHANGED_OVER_ONE_HOUR'
     if snapshot['both_cleaned'] and not previous.get('both_cleaned'):return 'DELIVERY_AND_CLEANUP_COMPLETED'
@@ -173,6 +177,11 @@ def inspect(root,area,config,thread,threshold,wake):
         windows_online=online,network_error=network_error,
         windows_rule_acknowledged=target.get('cloud_rule_acknowledged') is True,
         media_processes_untouched=True)
+    executor=read(root/'.kwjd/subtitle-executor.json')
+    if executor.get('active') is True and executor.get('mode')=='isolated-omp-responses':
+        snapshot['external_subtitle']=read(root/'ocr/subtitle-review/api-handoff/omp-status.json')
+        snapshot['subtitle_executor']='isolated-omp-responses'
+        snapshot['external_subtitle_workers']=[read(worker['status_path']) for worker in executor.get('workers',[])]
     next_episode=f'S03E{int(episode[4:])+1:02d}'
     following=read(root/'post'/('managed-'+next_episode)/'progress.json')
     if following.get('serial_after')==episode:
@@ -225,13 +234,18 @@ def inspect(root,area,config,thread,threshold,wake):
     atomic_json(area/'timer-status.json',snapshot)
     if kind and last.get('signature')==signature and previous.get('attention_event')==kind:
         snapshot['dispatch']='ALREADY_QUEUED_EVENT'
+    elif kind and read(root/'.kwjd/production-executor.json').get('active') is True:
+        snapshot['dispatch']='DELEGATED_TO_EXTERNAL_OMP_NO_APP_WAKE'
     elif kind and wake and remaining is not None and remaining>=threshold:
-        message=('【云端半小时巡检】事件 '+kind+'。读取 post/managed-S03E02/timer-status.json 与 progress.json，'
+        subtitle_resume=('恢复主会话；字幕已交由独立OMP和外部Responses API，读取.kwjd/subtitle-executor.json，'
+            '不得唤醒原生字幕代理或新增审校进程；外部API任务不随App额度暂停。'
+            if snapshot.get('subtitle_executor')=='isolated-omp-responses' else '接续原主/原字幕代理；')
+        message=('【云端'+config.get('inspection_label','半小时')+'巡检】事件 '+kind+'。读取 post/managed-S03E02/timer-status.json 与 progress.json，'
             '接续同一济公传任务，不重复原生字幕子代理/生产Worker，不启动codex exec监督器。'
             '第一回真实SRT封存后先绑定实际母版时钟再生产；实际质量证据与lotuspc收据才交付清理。'
             '第二回观察post/managed-S03E03/progress.json；真实到货须核验，逐回绑定字幕/母版时钟/样式，首回后串行推进，不等本地再次发命令。'
             '另盘接收根读取.kwjd/queued-master-storage.json和对应managed进度；第三回接在第二回后，禁止再次清理已开始制作的新一回Windows缓存。'
-            '额度恢复事件须核对真实额度并接续原主/原字幕代理；完成后仅将post/managed-S03E02/model-quota-resume.json的resume_required设false并记录ack，不等固定重置日期，不自行兑卡/用点数或联系其他项目。'
+            '额度恢复事件须核对真实额度并'+subtitle_resume+'完成后仅将post/managed-S03E02/model-quota-resume.json的resume_required设false并记录ack，不等固定重置日期，不自行兑卡/用点数或联系其他项目。'
             '真实额度低于2%保存并暂停模型，后台实际媒体继续。只在需要动作/新结果时回复；处理后交回定时巡检。')
         command=[config.get('codex_binary',str(Path.home()/'.local/bin/codex')),'queue','--thread',thread,'--message',message,'--resume']
         try:

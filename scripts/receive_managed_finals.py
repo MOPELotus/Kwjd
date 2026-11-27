@@ -31,15 +31,16 @@ def remote(config, arguments, input_text=None):
 
 
 def quality_identity(quality, receipt):
+    from jigong_quality import valid_reviewer
     if (quality.get('schema_version') != 1
             or quality.get('episode') != receipt['episode']
             or quality.get('master_sha256') != receipt['master_sha256']
             or quality.get('final_sha256') != receipt['sha256']
             or quality.get('final_bytes') != receipt['bytes']
             or quality.get('review_complete') is not True
-            or quality.get('reviewed_by', {}).get('kind') != 'codex'
+            or not valid_reviewer(quality.get('reviewed_by', {}), receipt['episode'])
             or not quality.get('reviewed_by', {}).get('session_id')):
-        raise ValueError('Actual Codex quality review is not bound to this final')
+        raise ValueError('Actual authorized quality review is not bound to this final')
     evidence = []
     for name in ('visual', 'subtitles', 'synchronization', 'audio'):
         section = quality.get(name, {})
@@ -132,6 +133,31 @@ def report_identity(report, ep, upload):
     return digest
 
 
+def published_quality(config, ep, report):
+    """Require actual cloud QC publication before starting any transfer."""
+    base = config['remote_root']
+    answer = remote(config, ['python3', base + '/repo/scripts/jigong_quality.py',
+                             '--root', base, '--episode', ep])
+    if answer.returncode:
+        return False
+    quality = json.loads(answer.stdout)
+    identity = dict(episode=ep, master_sha256=report['master_sha256'],
+                    sha256=report['sha256'], bytes=report['bytes'])
+    quality_identity(quality, identity)
+    answer = remote(config, ['cat', base + '/post/handoffs/' + ep + '.cloud-final.json'])
+    if answer.returncode:
+        return False
+    published = json.loads(answer.stdout)
+    if (published.get('server_quality_checked') is not True
+            or published.get('episode') != ep
+            or published.get('master_sha256') != identity['master_sha256']
+            or published.get('sha256') != identity['sha256']
+            or published.get('bytes') != identity['bytes']
+            or published.get('quality_evidence_sha256') != quality.get('quality_sha256')):
+        raise ValueError('Published actual QC differs from download identity')
+    return True
+
+
 def receive(root, config, ep):
     from jigong_master_restart import enforce
     receipt_path = root / '.kwjd/receipts' / f'{ep}.json'
@@ -151,13 +177,8 @@ def receive(root, config, ep):
         return 'WAIT_CLOUD_FINAL' if answer.returncode == 1 else 'OFFLINE_RETRY'
     report = json.loads(answer.stdout)
     digest = report_identity(report, ep, load(upload_path))
-    # Technical readiness alone must never release a final for download.
-    answer = remote(config, ['cat', base + '/post/reports/' + ep + '.quality.json'])
-    if answer.returncode:
-        return 'WAIT_CLOUD_QUALITY'
-    quality_identity(json.loads(answer.stdout), dict(episode=ep,
-                     master_sha256=report['master_sha256'], sha256=digest,
-                     bytes=report['bytes']))
+    if not published_quality(config, ep, report):
+        return 'WAIT_ACTUAL_QC_PUBLICATION'
     if (receipt and receipt.get('received') and receipt.get('technical_checked')
             and receipt.get('sha256') == digest):
         return finish_delivery(root, config, ep, receipt)

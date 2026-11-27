@@ -94,3 +94,21 @@ TensorRT10.13.3.9，在物理T10上编译。转换图必须复现既有SHA；FP1
 2026-11-23用户将仓库统一磁盘保底调整为5GiB，各季生产、字幕取证、传输和恢复入口沿用。
 先逐文件系统核算生产及临时文件峰值，再额外保留5GiB；不合并不同磁盘余量，也不省略峰值预算。
 历史文档与证据中的25GiB为旧规则。已经运行且绑定源码哈希的任务保留其启动快照，完成后同步新规则。
+
+## Jigong external delegation, 2026-11-27
+
+The user delegated current cloud work, including actual chapter3 (S03E04) and
+subsequent final QC, to the existing isolated OMP Responses provider
+`jigong-relay`, `https://api.zhehentiaohe.cn/v1/responses`, model
+`gpt-6.1-sol`, medium reasoning, using the existing private key. This is explicit
+authorization for external model requests. No App OAuth or reset credits.
+Record the true OMP UUID, response IDs and immutable actual-view evidence; never
+label an external review as Codex. The quality verifier accepts this identity
+only for S03E04–S03E14. All four actual QC sections, asset hashes, original PCM
+equality and matching lotuspc receipt/cleanup gates remain mandatory. Update the
+Windows receiver checkout before accepting these records. Unchanged media recipe,
+serial Worker, per-master clock/style/calibration, source preservation and bounded
+mask exceptions still apply. Private ownership: `.kwjd/production-executor.json`.
+While external ownership is active the hourly tool timer records status without
+queuing App model wakeups. The external controller handles production/QC/publish,
+matching-receipt cleanup and subsequent chapters; no native review agent restart.

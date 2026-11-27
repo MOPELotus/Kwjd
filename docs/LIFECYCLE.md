@@ -54,6 +54,13 @@ CacheClip快照对小型`Info.txt`记录内容SHA；仅在内容、大小及路�
 不再次快照或删除新一回缓存。`cache_after_master_handoff.py prepare --remote-root <已核实接收根>`
 支持云端另盘的独立接收根；此模式要求已有匹配预清理收据，只校验明确路径的实际handoff，不清新缓存。
 后续母版可以在上一回生产期间完成云端接收，但不得并发生产。
+接收许可必须持续写到现有上传器实际等待的`remote_root/post/handoffs/EP.upload-admission.json`，
+不能从旧的另盘排队记录推断上传器已经换根；改变接收根前须两端核实且没有活跃上传。
+`jigong_receive_admission.py`保留每盘5GiB，并按真实生产根预算当前整链剩余峰值。
+已经占盘的本回已完成编码片段，只在母版/后端指纹匹配、单链接普通文件及SHA通过时
+扣除对应物理占用，最多扣除各阶段均包含的cache视频预算，避免与当前free重复预留。
+未完成、其它回目、symlink/hardlink和身份变化的片段不获得抵扣；校验缓存绑定inode/大小/mtime/ctime，
+文件改变必须重新核SHA。该抵扣不清理媒体，不降低5GiB保底，不构成下一回生产准入。
 `receive_master_handoff.py`的5GiB保底按incoming真实文件系统检查，仅计本次尚未传完的母版字节；
 不再把cache/final的整链临时峰值重复计入incoming。接收收据仍明确backend_started=false，
 不构成后期准入；Worker开始本回时必须重新核对cache/final各自实际挂载的生产峰值预算。

@@ -245,6 +245,14 @@
       "unchanged_text_second_pass"
     ],
     "known_issue_checks": "Use extra native frames or bounded audio assistance only for a concrete uncertainty, suspected omission, abnormal timestamp or changed split; no mandatory frame-perfect neighbor sweep for ordinary unchanged cues",
-    "preserve_completed_seals": true
+    "preserve_completed_seals": true,
+    "focused_middle_batch_storage": {
+      "maximum_frames_per_batch": 48,
+      "additional_allowance_gib": 0.5,
+      "minimum_filesystem_free_gib": 5,
+      "scope": "Single middle1920x220 crops plus contact pages and logs only; bounded raw frame payload at48frames about61MB",
+      "full_scan_allowance_gib_unchanged": 2,
+      "asr_allowance_gib_unchanged": 3
+    }
   }
 }
