@@ -167,12 +167,13 @@ def freeze_style(root,ep,subtitle):
 def ensure_timing(root,ep,master_sha,srt_sha):
     from enhance_stage import sha256,atomic_json
     from subtitle_timing import read_mapping
+    from jigong_quality import valid_reviewer
     post=root/'post';receipt=post/'receipts'/(ep+'.subtitle-timing.json')
     if not receipt.exists():
         evidence=post/'reports'/(ep+'.program-clock-reviewed.json');data=load(evidence)
         clock=Path(data['video_clock_evidence_path'])
         if (data.get('reviewed_video_mapping') is not True or data.get('master_sha256')!=master_sha
-                or data.get('reviewed_by',{}).get('kind')!='codex'
+                or not valid_reviewer(data.get('reviewed_by',{}),ep)
                 or data.get('source_sha256')!=sha256(root/'input'/(ep+'.mp4'))
                 or not clock.resolve().is_relative_to((post/'reports').resolve())
                 or clock.is_symlink() or sha256(clock)!=data.get('video_clock_evidence_sha256')):

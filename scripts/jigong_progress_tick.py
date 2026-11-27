@@ -234,6 +234,8 @@ def inspect(root,area,config,thread,threshold,wake):
     atomic_json(area/'timer-status.json',snapshot)
     if kind and last.get('signature')==signature and previous.get('attention_event')==kind:
         snapshot['dispatch']='ALREADY_QUEUED_EVENT'
+    elif kind and read(root/'.kwjd/production-executor.json').get('active') is True:
+        snapshot['dispatch']='DELEGATED_TO_EXTERNAL_OMP_NO_APP_WAKE'
     elif kind and wake and remaining is not None and remaining>=threshold:
         subtitle_resume=('恢复主会话；字幕已交由独立OMP和外部Responses API，读取.kwjd/subtitle-executor.json，'
             '不得唤醒原生字幕代理或新增审校进程；外部API任务不随App额度暂停。'
