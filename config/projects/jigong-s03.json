@@ -115,6 +115,15 @@
           "user_quote": "只有这一小段的话 接受",
           "decision_date": "2026-11-27",
           "acceptance_scope": "This disclosed occurrence in this exact master only; preserve evidence and continue the established upload/serial production workflow. Bounded review does not prove this is the only occurrence or waive future defects; final still needs actual QC."
+        },
+        {
+          "episode": "S03E08",
+          "master_sha256": "c5c17ab9a6e1205ddfbb90cb0c3e2461161494b94230208fd5801b6432aca952",
+          "master_range_seconds": [213.8, 224.24],
+          "description": "Approximately10.44s close-shot subject absence disclosed during bounded local master review; cut boundaries and internal samples actually viewed",
+          "user_quote": "只有这一处的话问题不大",
+          "decision_date": "2026-11-27",
+          "acceptance_scope": "Accept this disclosed occurrence in this exact master based on the reported bounded review; preserve evidence and continue upload/serial production. No guarantee that the entire episode has only one defect, no blanket future waiver; actual final QC remains required."
         }
       ]
     }
