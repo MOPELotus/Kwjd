@@ -92,6 +92,14 @@
         "sustained_primary_subject_loss",
         "studio_or_audience_pixels_intruding_into_subject"
       ],
+      "short_subject_or_hand_loss": {
+        "accepted_by_user_standing_rule": true,
+        "human_quote": "不是很长的都是可以的",
+        "decision_date": "2026-11-27",
+        "do_not_request_case_by_case_approval": true,
+        "duration_threshold_seconds": null,
+        "interpretation": "Short-duration person, hand or torso absence is accepted across Jigong episodes; this includes the disclosed E09 2.12s and12.08s cases. User specified no exact numeric threshold; do not invent one. Report clearly prolonged loss or materially worse new problems. Preserve evidence and actual final QC."
+      },
       "whole_film_quality_review_still_required": true,
       "accepted_specific_cases": [
         {
@@ -124,6 +132,24 @@
           "user_quote": "只有这一处的话问题不大",
           "decision_date": "2026-11-27",
           "acceptance_scope": "Accept this disclosed occurrence in this exact master based on the reported bounded review; preserve evidence and continue upload/serial production. No guarantee that the entire episode has only one defect, no blanket future waiver; actual final QC remains required."
+        },
+        {
+          "episode": "S03E09",
+          "master_sha256": "8545c057f9a72f3b1d137fbd9f02e4d1d1543c8544e4fc4e0663a68804d22d22",
+          "master_ranges_seconds": [
+            [
+              4.36,
+              6.48
+            ],
+            [
+              17.96,
+              30.04
+            ]
+          ],
+          "description": "Disclosed2.12s hand/torso loss and12.08s normal-wide speaker loss, based on bounded actual visual inspection",
+          "user_quote": "不是很长的都是可以的",
+          "decision_date": "2026-11-27",
+          "acceptance_scope": "Accepted under the new standing short-duration subject-loss rule; preserve evidence and final QC, no whole-film defect-free claim"
         }
       ]
     }
