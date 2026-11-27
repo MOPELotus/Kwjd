@@ -10,9 +10,46 @@ from unittest.mock import patch
 from receive_managed_finals import report_identity, quality_identity
 from types import SimpleNamespace
 import receive_managed_finals as finals
+import hashlib
 
 
 class ManagedHandoffs(unittest.TestCase):
+    def test_replacement_retains_old_video_until_new_mix_checks_pass(self):
+        for pcm_matches in (False, True):
+            with self.subTest(pcm_matches=pcm_matches), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                old_hash = hashlib.sha256(b'old').hexdigest()
+                new_hash = hashlib.sha256(b'new').hexdigest()
+                receipt = dict(episode='S03E04', master_sha256='a'*64,
+                               sha256=old_hash, received=True, technical_checked=True)
+                target = root / 'final/chapter.mkv'
+                target.parent.mkdir()
+                target.write_bytes(b'old')
+                finals.save(root / '.kwjd/receipts/S03E04.json', receipt)
+                finals.save(root / '.kwjd/uploads/S03E04.json', dict(verified=True, sha256='a'*64))
+                report = dict(episode='S03E04', master_sha256='a'*64, sha256=new_hash,
+                              bytes=3, master_duration=10, final_decode_checked=True,
+                              final_pcm_equivalent=True, decoded_pcm_sha256='c'*64)
+                info = dict(format=dict(duration='10'), streams=[dict(codec_type='video',
+                            profile='Main 10', pix_fmt='yuv420p10le')])
+                def run(command, **kwargs):
+                    if 'resume_sftp_download.py' in command[1]:
+                        self.assertEqual(target.read_bytes(), b'old')
+                        part = Path(command[command.index('--part')+1])
+                        part.parent.mkdir(parents=True, exist_ok=True)
+                        part.write_bytes(b'new')
+                pcm = 'c'*64 if pcm_matches else 'd'*64
+                with patch('jigong_master_restart.enforce'), patch.object(finals, 'published_quality', return_value=True), patch.object(finals, 'remote', return_value=SimpleNamespace(returncode=0, stdout=json.dumps(report))), patch.object(finals, 'catalog', return_value=dict(final_name='chapter.mkv')), patch.object(finals, 'check_final_media'), patch.object(finals.subprocess, 'run', side_effect=run), patch.object(finals.subprocess, 'check_output', side_effect=[json.dumps(info), 'SHA256='+pcm]), patch.object(finals, 'record_final', return_value={}), patch.object(finals, 'finish_delivery', return_value='ACCEPTED'):
+                    if pcm_matches:
+                        self.assertEqual(finals.receive(root, dict(host='host', remote_root='/post'), 'S03E04'), 'ACCEPTED')
+                        self.assertEqual(target.read_bytes(), b'new')
+                        self.assertEqual((root / '.kwjd/retired/finals/S03E04' / old_hash / 'chapter.mkv').read_bytes(), b'old')
+                    else:
+                        with self.assertRaisesRegex(ValueError, 'mix differs'):
+                            finals.receive(root, dict(host='host', remote_root='/post'), 'S03E04')
+                        self.assertEqual(target.read_bytes(), b'old')
+                        self.assertTrue((root / '.kwjd/receipts/S03E04.json').exists())
+
     def test_unreviewed_cloud_final_never_starts_download(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
