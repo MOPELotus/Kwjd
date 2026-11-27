@@ -6,6 +6,8 @@
 
 ## 文件名
 
+济公传只有第一回S03E02加27秒片头；含片头版即最终成片，统一存放final下的回目名。其他回目不加片头，也直接存放final。`scripts/promote_publishing_final.py --root <Windows数据根>`将已有验证拼接版移入final，正文移到publish/sources供原云端收据继续核验，原收据SHA不变，仅更新来源实际路径并关联最终版。独立最终身份见.kwjd/publishing/S03E02.final.json，不以正文的旧质量收据冒充不同SHA的整片审查。
+
 内部ID始终S01Exx。Windows最终成片按源文件里的故事回数和回目标题命名：`第一回 家门遭横祸，俊才跌凡尘.mkv`。这里E49是“卿卿误我（一）”，不是第49回。不按固定E49–55硬编码；从manifests/InputName或现存视频名发现，保存小型元数据到.kwjd/catalog，素材临时副本清理后仍能复现命名。缺回数/标题时明确补元数据，禁止猜名和覆盖另一集。
 
 ## 收据门禁

@@ -110,7 +110,7 @@ Windows限域清理成功后再原子上传 `post/receipts/S03E02.windows-cleanu
 不同编码器的HEVC参数集必须经Annex-B在各自关键帧携带，不能只按同一codec名称直接拼接；
 准入要求正文逐包时间戳恰好平移27秒、去参数集后的所有编码图像NAL哈希一致、完整正文PCM一致，
 并实际解码衔接及首中尾。构建峰值额外保留5GiB。旧主体和接收收据保留，含片头文件另记SHA。
-本次发布版在Windows数据根的`publish`，技术报告在`.kwjd/publishing/S03E02.with-intro.json`。
+仅第一回追加片头，追加后就是最终成片。统一放在Windows数据根的`final`，技术报告在`.kwjd/publishing/S03E02.with-intro.json`及`S03E02.final.json`。已有publish版用`promote_publishing_final.py --root <数据根>`核验并迁移；已验收正文来源移至publish/sources，保留原云端收据身份，后续各回不加片头直接交付final。
 
 `upload_validated_master.py`遇临时DNS故障可显式传`--connect-address <经核实IP> --host-key-alias <既有known_hosts身份>`。
 二者必须同时提供，仍强制校验原有服务器公钥；SSH与SFTP共用该连接设置，不修改系统DNS、不关闭主机身份校验。
