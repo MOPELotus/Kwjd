@@ -50,7 +50,12 @@ def is_cut(left, right, threshold=.05, center_threshold=.10):
     # Replaced scenery stays similar when the original camera jumps wide/close.
     # A whole-frame20% threshold missed an actual cut at59.36s in E49.
     return (float(difference.mean())>=threshold
-            or float(difference[5:50,24:72].mean())>=center_threshold)
+            or float(difference[5:50,24:72].mean())>=center_threshold
+            # Native25 masked subjects can change camera scale while most of
+            # the replacement scenery stays identical (S03E04 at38.28s).
+            # Keep the same threshold, but also inspect the central torso.
+            # Exclude lower captions and retain normal small hand motion.
+            or float(difference[5:41,36:60].mean())>=center_threshold)
 
 
 def validate_native_scheduling(data):

@@ -14,6 +14,25 @@ from enhance_stage import sha256, GIB
 
 
 class BackendTests(unittest.TestCase):
+    def test_cut_with_static_replacement_background_and_changing_subject(self):
+        import numpy as np
+        from PIL import Image
+        a=np.zeros((54,96,3),dtype=np.uint8)
+        b=a.copy();b[20:38,36:60]=90
+        difference=np.abs(a.astype(float)-b)/255
+        self.assertLess(difference.mean(),.05)
+        self.assertLess(difference[5:50,24:72].mean(),.10)
+        self.assertTrue(backend.is_cut(Image.fromarray(a),Image.fromarray(b)))
+
+    def test_small_gesture_and_lower_subtitle_changes_are_not_cuts(self):
+        import numpy as np
+        from PIL import Image
+        a=np.zeros((54,96,3),dtype=np.uint8)
+        for region in [(slice(20,26),slice(40,46)),(slice(48,52),slice(20,76))]:
+            b=a.copy();b[region]=90
+            self.assertFalse(backend.is_cut(Image.fromarray(a),Image.fromarray(b)))
+        self.assertFalse(backend.is_cut(Image.fromarray(a),Image.fromarray(a+4)))
+
     def test_native_scheduling_rejects_invalid_options_before_model_hash_reads(self):
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp)/'runtime.json'
