@@ -8,9 +8,42 @@ import json
 import tempfile
 from unittest.mock import patch
 from receive_managed_finals import report_identity, quality_identity
+from types import SimpleNamespace
+import receive_managed_finals as finals
 
 
 class ManagedHandoffs(unittest.TestCase):
+    def test_unreviewed_cloud_final_never_starts_download(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            upload = root / '.kwjd/uploads/S03E04.json'
+            upload.parent.mkdir(parents=True)
+            upload.write_text(json.dumps(dict(verified=True, sha256='a'*64)))
+            report = dict(episode='S03E04', sha256='b'*64, master_sha256='a'*64,
+                          final_decode_checked=True, final_pcm_equivalent=True,
+                          decoded_pcm_sha256='c'*64, bytes=12)
+            answers = [SimpleNamespace(returncode=0, stdout=json.dumps(report)),
+                       SimpleNamespace(returncode=1, stdout='')]
+            with patch('jigong_master_restart.enforce'), patch.object(finals, 'remote', side_effect=answers), patch.object(finals.subprocess, 'run') as download:
+                self.assertEqual(finals.receive(root, dict(remote_root='/post'), 'S03E04'), 'WAIT_CLOUD_QUALITY')
+                download.assert_not_called()
+
+    def test_wrong_revision_quality_never_starts_download(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            upload = root / '.kwjd/uploads/S03E04.json'
+            upload.parent.mkdir(parents=True)
+            upload.write_text(json.dumps(dict(verified=True, sha256='a'*64)))
+            report = dict(episode='S03E04', sha256='b'*64, master_sha256='a'*64,
+                          final_decode_checked=True, final_pcm_equivalent=True,
+                          decoded_pcm_sha256='c'*64, bytes=12)
+            answers = [SimpleNamespace(returncode=0, stdout=json.dumps(report)),
+                       SimpleNamespace(returncode=0, stdout=json.dumps(dict(final_sha256='d'*64)))]
+            with patch('jigong_master_restart.enforce'), patch.object(finals, 'remote', side_effect=answers), patch.object(finals.subprocess, 'run') as download:
+                with self.assertRaisesRegex(ValueError, 'not bound'):
+                    finals.receive(root, dict(remote_root='/post'), 'S03E04')
+                download.assert_not_called()
+
     def test_precleaned_cache_does_not_snapshot_a_later_episode(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)

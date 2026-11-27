@@ -135,10 +135,11 @@ def report_identity(report, ep, upload):
 def receive(root, config, ep):
     from jigong_master_restart import enforce
     receipt_path = root / '.kwjd/receipts' / f'{ep}.json'
+    receipt = None
     if receipt_path.exists():
         receipt = load(receipt_path)
         enforce(ep, receipt.get('master_sha256', ''))
-        if receipt.get('received') and receipt.get('technical_checked'):
+        if receipt.get('windows_cleanup_published'):
             return finish_delivery(root, config, ep, receipt)
     upload_path = root / '.kwjd/uploads' / f'{ep}.json'
     if not upload_path.exists():
@@ -150,13 +151,25 @@ def receive(root, config, ep):
         return 'WAIT_CLOUD_FINAL' if answer.returncode == 1 else 'OFFLINE_RETRY'
     report = json.loads(answer.stdout)
     digest = report_identity(report, ep, load(upload_path))
+    # Technical readiness alone must never release a final for download.
+    answer = remote(config, ['cat', base + '/post/reports/' + ep + '.quality.json'])
+    if answer.returncode:
+        return 'WAIT_CLOUD_QUALITY'
+    quality_identity(json.loads(answer.stdout), dict(episode=ep,
+                     master_sha256=report['master_sha256'], sha256=digest,
+                     bytes=report['bytes']))
+    if (receipt and receipt.get('received') and receipt.get('technical_checked')
+            and receipt.get('sha256') == digest):
+        return finish_delivery(root, config, ep, receipt)
     remote_report = root / '.kwjd/remote-reports' / f'{ep}.json'
+    previous_report = load(remote_report) if remote_report.exists() else None
     save(remote_report, report)
     part = root / '.kwjd/downloads' / (digest + '.downloading')
     target = root / 'final' / catalog(root, ep)['final_name']
-    if target.exists() and sha256(target) != digest:
-        raise ValueError('Different existing local final retained')
-    if not target.exists():
+    replacing = target.exists() and sha256(target) != digest
+    if replacing and (not receipt or sha256(target) != receipt.get('sha256')):
+        raise ValueError('Unrecognized different existing local final retained')
+    if not target.exists() or replacing:
         remaining = report['bytes'] - (part.stat().st_size if part.exists() else 0)
         if shutil.disk_usage(root).free < 5 * 1024**3 + max(0, remaining):
             raise ValueError('Need download space plus 5GiB reserve')
@@ -166,7 +179,7 @@ def receive(root, config, ep):
                         '--part', str(part), '--sha256', digest], check=True, **BACKGROUND_PROCESS)
         if part.stat().st_size != report['bytes']:
             raise ValueError('Downloaded byte count differs')
-    candidate = target if target.exists() else part
+    candidate = target if target.exists() and not replacing else part
     info = json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-show_format',
                        '-show_streams', '-of', 'json', str(candidate)], text=True, encoding='utf-8',
                        **BACKGROUND_PROCESS))
@@ -189,6 +202,21 @@ def receive(root, config, ep):
         raise ValueError('Returned mix differs from cloud lossless evidence')
     if candidate == part:
         target.parent.mkdir(parents=True, exist_ok=True)
+        if replacing:
+            if sha256(target) != receipt['sha256']:
+                raise ValueError('Previous final changed during replacement download')
+            archive = root / '.kwjd/retired/finals' / ep / receipt['sha256']
+            if not archive.resolve().is_relative_to(root.resolve()) or target.is_symlink():
+                raise ValueError('Unsafe previous-final archive path')
+            archive.mkdir(parents=True, exist_ok=True)
+            if (archive / target.name).exists():
+                raise ValueError('Previous-final archive already exists; retain both revisions')
+            save(archive / 'receipt.json', receipt)
+            if previous_report:
+                save(archive / 'report.json', previous_report)
+            target.replace(archive / target.name)
+            # Preserve the old receipt before admitting a new SHA.
+            receipt_path.replace(archive / 'active-receipt.json')
         part.replace(target)
     receipt = record_final(root, ep, target, remote_report)
     return finish_delivery(root, config, ep, receipt)

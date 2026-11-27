@@ -59,7 +59,7 @@ CacheClip快照对小型`Info.txt`记录内容SHA；仅在内容、大小及路�
 不构成后期准入；Worker开始本回时必须重新核对cache/final各自实际挂载的生产峰值预算。
 2026-11-22济公传使用`cache_after_master_handoff.py prepare/run`在用户排队时冻结CacheClip（当前上传已开始时也允许补拍，但只释放此后不变的快照），等待真实`receive_master_handoff.py`的SHA/字节数/远端抽样解码收据。它转存可追溯上传收据，随后重新检查本地/远端哈希、固定目录和两次快照，再只清CacheClip内容；当前本地母片保留到最终交接阶段。
 
-`receive_managed_finals.py --root <Windows数据根> --config <本机配置>`可在登录时隐藏启动，配置明确SSH alias、remote_root和episodes；单实例锁避免重复下载。仅接收标准post/reports报告中与当前母版一致、完整解码且混音PCM等价的成片，以SHA命名暂存断点续传，检查最终SHA/字节数/完整音频PCM/媒体/首中尾解码，按已登记回目命名。不同本地版本不覆盖。接收收据保持quality_checked=false；真实画面/字幕/同步/声音验收证据通过后，才执行现有收据门禁清理。离线、文件尚未发布、空间不足或失败都保留云端成片及恢复资料。
+`receive_managed_finals.py --root <Windows数据根> --config <本机配置>`可在登录时隐藏启动，配置明确SSH alias、remote_root和episodes；单实例锁避免重复下载。下载前须同时验证标准post/reports技术报告与绑定同一母版/成片SHA、字节数及四项实际审查的quality报告；仅技术READY不允许开传。以SHA命名暂存断点续传，检查最终SHA/字节数/完整音频PCM/媒体/首中尾解码，按已登记回目命名。已有不同版本必须匹配本地旧收据；新版全部技术检查通过后才保存旧收据并替换，旧版视频先移至精确SHA目录，用户明确退役时可删除该旧视频，保留小型证据。接收收据保持quality_checked=false；真实画面/字幕/同步/声音证据逐一fresh SHA核验通过后，才执行现有收据门禁清理。离线、文件尚未发布、空间不足或失败都保留云端成片及恢复资料。
 
 全托管可复用云端Codex对同SHA最终片实际完成的质量审查：`post/reports/<EP>.quality.json`必须绑定本次master/final SHA、字节数、Codex会话、画面/字幕/同步/声音四项实际检查及各自非空证据列表。Windows对证据逐一远端fresh SHA，比较审校SRT/ASS身份与混音PCM报告，并重新哈希本地完全相同成片后才写quality_checked。该证据不是无人元数据脚本生成的质量批准。原子上传`post/receipts/<EP>.json`后，按既有登记清单清理本地本集生成物；再上传真实`<EP>.windows-cleanup.json`，云端持久流程只有双方清理收据都匹配才完成。原始素材、工程、封存字幕/ASS/字体、质量证据和Windows最终片保留。
 
