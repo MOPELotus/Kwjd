@@ -126,7 +126,22 @@ class NativeFrames:
                 raise WaitGPU('Native face/RIFE shared GPU admission/cooling: '+rows.strip())
 
 
-def run(master,output,episode,cfg,*,source_start=0,source_frames=None,prepared=None,restorer=None):
+def reviewed_cut_frames(evidence, episode, master_sha, source_start, count):
+    """Allow bounded repair only at actually reviewed native master cuts."""
+    if evidence is None:return set()
+    from jigong_quality import valid_reviewer
+    if (evidence.get('episode')!=episode or evidence.get('master_sha256')!=master_sha
+            or evidence.get('native_fps')!=25 or evidence.get('actual_frames_reviewed') is not True
+            or not valid_reviewer(evidence.get('reviewed_by',{}),episode)):
+        raise ValueError('Reviewed native cut identity differs')
+    frames=evidence.get('cut_frames')
+    if (not isinstance(frames,list) or not frames or len(set(frames))!=len(frames)
+            or any(type(n)is not int or not source_start<n<source_start+count for n in frames)):
+        raise ValueError('Reviewed cuts must be distinct interior native frame indices')
+    return set(frames)
+
+
+def run(master,output,episode,cfg,*,source_start=0,source_frames=None,prepared=None,restorer=None,cut_evidence=None):
     import numpy as np
     from PIL import Image
     import enhance_backend as engine
@@ -152,6 +167,7 @@ def run(master,output,episode,cfg,*,source_start=0,source_frames=None,prepared=N
     if prepared is not None and recipe['master_sha256']!=prepared['sha256']:
         raise ValueError('Fused ASS recipe belongs to another native master')
     if prepared is None and recipe['master_sha256']!=sha256(master):raise ValueError('Fused recipe master differs')
+    reviewed_cuts=reviewed_cut_frames(cut_evidence,episode,recipe['master_sha256'],source_start,count)
     options=pipeline_options(cfg);capacity=options['capacity']
     model_start=time.monotonic();loaded_this_run=restorer is None
     restorer=restorer or NativeFrames(cfg)
@@ -254,7 +270,7 @@ def run(master,output,episode,cfg,*,source_start=0,source_frames=None,prepared=N
                 previous,a=read()
                 for index in range(count):
                     if index+1<available:
-                        following,b=read();start=time.monotonic();cut=engine.is_cut(previous,following)
+                        following,b=read();start=time.monotonic();cut=(source_start+index+1 in reviewed_cuts or engine.is_cut(previous,following))
                         times['cut_detection']+=time.monotonic()-start
                     else:following,b,cut=previous,a,False
                     if cut:cuts.append(source_start+index+1)
@@ -291,6 +307,7 @@ def run(master,output,episode,cfg,*,source_start=0,source_frames=None,prepared=N
             native_recipe_sha256=cfg['native_recipe_sha256'],ass_sha256=recipe['ass_sha256'],
             frame_log_sha256=sha256(frame_log),decode_command=decoder_command,encode_command=encoder_command,
             video_encodes=1,ass_after_rife=True,pipeline_prefetch=prefetch,
+            reviewed_cut_evidence=cut_evidence,
             resource_wait_in_process=gate is not None,
             benchmark_native_frame_sha256=cfg.get('benchmark_native_frame_sha256',False),
             timing_semantics='Wall stages may overlap; face substage times are included in face; gate waits are separate',

@@ -112,3 +112,12 @@ mask exceptions still apply. Private ownership: `.kwjd/production-executor.json`
 While external ownership is active the hourly tool timer records status without
 queuing App model wakeups. The external controller handles production/QC/publish,
 matching-receipt cleanup and subsequent chapters; no native review agent restart.
+
+For a masked native25 camera cut missed by the bounded visual detector, a repair
+may supply `render_native_segment_repair.py` with an actually reviewed cut record
+bound to the episode, exact master SHA, native frame indices and reviewer session.
+Only the declared 250-frame segment is rendered with the existing fixed recipe;
+its receipt records the reviewed cut evidence. Model/device/encode settings and
+heuristic thresholds stay unchanged. `stage_native_segment_repair.py` must prove
+unchanged compressed packets outside the patch, complete PCM identity and final
+decode; actual candidate cut/join review still precedes any publication.
